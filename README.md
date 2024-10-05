@@ -26,6 +26,6 @@ npx prisma migrate diff \
 Cómo aplicar migraciones:
 
 ```bash
-npx wrangler d1 migrations apply svelte-test --local
+npx wrangler d1 migrations apply y-tu-que-compras --local
 npx prisma generate
 ```

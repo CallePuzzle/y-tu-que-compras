@@ -36,11 +36,11 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          wranglerVersion: 3.74.0
+          wranglerVersion: 3.80.0
           command: d1 migrations apply y-tu-que-compras --remote
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          wranglerVersion: 3.74.0
+          wranglerVersion: 3.80.0
