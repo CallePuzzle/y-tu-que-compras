@@ -1,40 +1,16 @@
-<script>
-	
-	let newProduct = ""
-	/**
-     * @type {any[]}
-     */
-	let products = []
-
-	function addProduct() {
-		products.push(newProduct)
-	}
+<script lang="ts">
+	import { t } from '$lib/translations';
 </script>
 
-<svelte:head>
-	<title>Home</title>
-	<meta name="description" content="Svelte demo app" />
-</svelte:head>
-
-<section>
-	<input bind:value={newProduct} type="text">
-	<button on:click={addProduct}>Añadir</button>
-
-	{newProduct}
-	{products}
-	<ul>
-		{#each products as item}
-			<li>{item}</li>
-		{/each}
-	</ul>
-</section>
-
-<style>
-	section {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		align-items: center;
-		flex: 0.6;
-	}
-</style>
+<div class="hero bg-base-200 min-h-screen">
+	<div class="hero-content text-center">
+		<div class="max-w-md">
+			<h1 class="text-5xl font-bold">{$t('profile.hello')} there</h1>
+			<p class="py-6">
+				Provident cupiditate voluptatem et in. Quaerat fugiat ut assumenda excepturi exercitationem
+				quasi. In deleniti eaque aut repudiandae et a id nisi.
+			</p>
+			<button class="btn btn-primary">Get Started</button>
+		</div>
+	</div>
+</div>

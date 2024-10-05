@@ -1,0 +1,15 @@
+name = "svelte-test"
+account_id = "173bf7921f79923475ce95a48b845583"
+
+main = "./.cloudflare/worker.js"
+site.bucket = "./.cloudflare/public"
+
+build.command = "npm run build"
+
+compatibility_date = "2024-03-20"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "svelte-test"
+database_id = "4b1a18d0-ffd4-40a4-87ff-48ebe64e39bb"
