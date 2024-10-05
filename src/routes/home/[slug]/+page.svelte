@@ -1,5 +1,10 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { Icon } from 'svelte-icons-pack';
+	import { LuApple } from 'svelte-icons-pack/lu';
+	import { FaSolidListCheck } from 'svelte-icons-pack/fa';
+	import { RiOthersFridgeLine } from 'svelte-icons-pack/ri';
+	import { Routes } from '$lib/routes';
 
 	let {
 		data
@@ -10,7 +15,7 @@
 	const home = data.home;
 </script>
 
-<div class="hero bg-base-200 min-h-screen">
+<div class="hero bg-base-200">
 	<div class="hero-content flex-col lg:flex-row">
 		<img
 			src="https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp"
@@ -23,4 +28,36 @@
 			</p>
 		</div>
 	</div>
+</div>
+
+<div class="flex justify-center">
+	<ul class="menu menu-horizontal bg-base-200 rounded-box mt-6">
+		<li>
+			<a
+				class="tooltip"
+				data-tip={Routes.groceries_index.name}
+				href="{Routes.groceries_index.generateUrl({ id: home.id })}"
+			>
+				<Icon src={LuApple} size="2.5em" />
+			</a>
+		</li>
+		<li>
+			<a
+				class="tooltip"
+				data-tip={Routes.list_index.name}
+				href="{Routes.list_index.generateUrl({ id: home.id })}"
+			>
+				<Icon src={FaSolidListCheck} size="2.5em" />
+			</a>
+		</li>
+		<li>
+			<a
+				class="tooltip"
+				data-tip={Routes.store_index.name}
+				href="{Routes.store_index.generateUrl({ id: home.id })}"
+			>
+				<Icon src={RiOthersFridgeLine} size="2.5em" />
+			</a>
+		</li>
+	</ul>
 </div>
