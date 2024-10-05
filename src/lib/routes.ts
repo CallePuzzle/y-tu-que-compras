@@ -32,6 +32,18 @@ const Routes: Routes = {
 	home_index: {
 		name: 'Index de una casa',
 		generateUrl: (params: { id: string }) => `/home/${params.id}`
+	},
+	groceries_index: {
+		name: 'Productos / comida',
+		generateUrl: (params: { id: string }) => `/home/${params.id}/groceries`
+	},
+	list_index: {
+		name: 'Listas de la compra',
+		generateUrl: (params: { id: string }) => `/home/${params.id}/list`
+	},
+	store_index: {
+		name: 'Despensa / nevera',
+		generateUrl: (params: { id: string }) => `/home/${params.id}/store`
 	}
 };
 

@@ -4,7 +4,7 @@
 	import { LuApple } from 'svelte-icons-pack/lu';
 	import { FaSolidListCheck } from 'svelte-icons-pack/fa';
 	import { RiOthersFridgeLine } from 'svelte-icons-pack/ri';
-	import { t } from '$lib/translations';
+	import { Routes } from '$lib/routes';
 
 	let {
 		data
@@ -33,17 +33,29 @@
 <div class="flex justify-center">
 	<ul class="menu menu-horizontal bg-base-200 rounded-box mt-6">
 		<li>
-			<a class="tooltip" data-tip={$t('groceries.name')}>
+			<a
+				class="tooltip"
+				data-tip={Routes.groceries_index.name}
+				href="{Routes.groceries_index.generateUrl({ id: home.id })}"
+			>
 				<Icon src={LuApple} size="2.5em" />
 			</a>
 		</li>
 		<li>
-			<a class="tooltip" data-tip={$t('list.name')}>
+			<a
+				class="tooltip"
+				data-tip={Routes.list_index.name}
+				href="{Routes.list_index.generateUrl({ id: home.id })}"
+			>
 				<Icon src={FaSolidListCheck} size="2.5em" />
 			</a>
 		</li>
 		<li>
-			<a class="tooltip" data-tip={$t('store.name')}>
+			<a
+				class="tooltip"
+				data-tip={Routes.store_index.name}
+				href="{Routes.store_index.generateUrl({ id: home.id })}"
+			>
 				<Icon src={RiOthersFridgeLine} size="2.5em" />
 			</a>
 		</li>
