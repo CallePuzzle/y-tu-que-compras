@@ -29,3 +29,16 @@ Cómo aplicar migraciones:
 npx wrangler d1 migrations apply y-tu-que-compras --local
 npx prisma generate
 ```
+
+### Crear migraciones
+
+```bash
+npx wrangler d1 migrations create y-tu-que-compras migration_name
+npx prisma migrate diff \
+  --from-local-d1 \
+  --to-schema-datamodel ./prisma/schema.prisma \
+  --script \
+  --output migrations/migration_name.sql
+npx wrangler d1 migrations apply y-tu-que-compras --local
+npx prisma generate
+```
