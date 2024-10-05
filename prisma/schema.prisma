@@ -40,3 +40,27 @@ model Home {
   description String
   members User[]
 }
+
+model Grocery {
+  id Int @id @default(autoincrement())
+  name String
+  description String?
+  Price Price[]
+}
+
+model Store {
+  id Int @id @default(autoincrement())
+  name String
+  description String?
+  Price Price[]
+}
+
+model Price {
+  id Int @id @default(autoincrement())
+  price Float
+  date DateTime
+  grocery Grocery @relation(fields: [grocery_id], references: [id])
+  grocery_id Int
+  store Store @relation(fields: [store_id], references: [id])
+  store_id Int
+}

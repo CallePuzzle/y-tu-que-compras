@@ -35,8 +35,8 @@
 		<li>
 			<a
 				class="tooltip"
-				data-tip={Routes.groceries_index.name}
-				href="{Routes.groceries_index.generateUrl({ id: home.id })}"
+				data-tip={Routes.grocery_index.name}
+				href={Routes.grocery_index.generateUrl({ id: home.id })}
 			>
 				<Icon src={LuApple} size="2.5em" />
 			</a>
@@ -45,7 +45,7 @@
 			<a
 				class="tooltip"
 				data-tip={Routes.list_index.name}
-				href="{Routes.list_index.generateUrl({ id: home.id })}"
+				href={Routes.list_index.generateUrl({ id: home.id })}
 			>
 				<Icon src={FaSolidListCheck} size="2.5em" />
 			</a>
@@ -54,7 +54,7 @@
 			<a
 				class="tooltip"
 				data-tip={Routes.store_index.name}
-				href="{Routes.store_index.generateUrl({ id: home.id })}"
+				href={Routes.store_index.generateUrl({ id: home.id })}
 			>
 				<Icon src={RiOthersFridgeLine} size="2.5em" />
 			</a>
