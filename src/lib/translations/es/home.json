@@ -1,5 +1,6 @@
 {
 	"name": "Nombre",
 	"description": "Descripción",
-	"submit": "Guardar"
+	"submit": "Guardar",
+	"notFound": "Esta casa no existe o no eres miembro."
 }

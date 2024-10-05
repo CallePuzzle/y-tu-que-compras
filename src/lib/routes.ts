@@ -28,6 +28,10 @@ const Routes: Routes = {
 	notification_subscribe: {
 		name: 'Subscribe',
 		url: '/notification/subscribe'
+	},
+	home_index: {
+		name: 'Index de una casa',
+		generateUrl: (params: { id: string }) => `/home/${params.id}`
 	}
 };
 
