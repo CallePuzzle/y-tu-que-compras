@@ -1,4 +1,4 @@
-name = "svelte-test"
+name = "y-tu-que-compras"
 account_id = "173bf7921f79923475ce95a48b845583"
 
 main = "./.cloudflare/worker.js"
@@ -11,5 +11,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "svelte-test"
-database_id = "4b1a18d0-ffd4-40a4-87ff-48ebe64e39bb"
+database_name = "y-tu-que-compras"
+database_id = "507cca71-b0e0-4faa-a90f-333df65337b5"
+
+
