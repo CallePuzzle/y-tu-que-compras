@@ -3,11 +3,12 @@ import { initializePrisma } from '$lib/server/db';
 import { error } from '@sveltejs/kit';
 import { t } from '$lib/translations';
 
-import type { Actions, RequestEvent, PageServerLoad, PageServerLoadEvent } from './$types';
-
-export const actions: Actions = {};
+import type { PageServerLoad, PageServerLoadEvent } from './$types';
 
 export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
+	if (!event.locals.user) {
+		return error(404, t.get('home.notFound'));
+	}
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
 	const homeId = (event.params as { slug: string }).slug;
