@@ -7,11 +7,13 @@
 	let {
 		superform,
 		schema,
-		type
+		type,
+		action
 	}: {
 		superform: any;
 		schema: any;
 		type: string;
+		action?: string;
 	} = $props();
 	const form = superForm(superform, {
 		validators: zodClient(schema)
@@ -22,7 +24,7 @@
 	const schemaObj = schema.shape;
 </script>
 
-<form method="POST" class="flex flex-col">
+<form method="POST" class="flex flex-col" {action}>
 	{#each fields as field}
 		<Field {form} name={field}>
 			<Control let:attrs>

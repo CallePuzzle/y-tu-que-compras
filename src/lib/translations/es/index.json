@@ -1,3 +1,5 @@
 {
-    "notLogin": "Para usar esta aplicación, debes iniciar sesión."
+	"notLogin": "Para usar esta aplicación, debes iniciar sesión.",
+	"selectHome": "Selecciona una casa, o crea una nueva.",
+	"close": "Cerrar"
 }
