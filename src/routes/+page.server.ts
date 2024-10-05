@@ -1,6 +1,6 @@
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
-import { homeSchema } from '$lib/schemas/home';
+import { HomeSchema } from '$lib/schemas';
 import { logger } from '$lib/server/logger';
 import { fail } from '@sveltejs/kit';
 import { initializePrisma } from '$lib/server/db';
@@ -10,7 +10,7 @@ import type { Home } from '@prisma/client';
 
 export const actions: Actions = {
 	addHome: async (event) => {
-		const form = await superValidate(event.request, zod(homeSchema));
+		const form = await superValidate(event.request, zod(HomeSchema));
 
 		logger.info(form, 'addHome form');
 
@@ -47,7 +47,7 @@ export const actions: Actions = {
 };
 
 export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
-	const form = await superValidate(zod(homeSchema));
+	const form = await superValidate(zod(HomeSchema));
 
 	let houses: Home[] = [];
 

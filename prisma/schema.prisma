@@ -39,6 +39,7 @@ model Home {
   name String
   description String
   members User[]
+  groceries Grocery[]
 }
 
 model Grocery {
@@ -46,6 +47,8 @@ model Grocery {
   name String
   description String?
   Price Price[]
+  homeId Int
+  home Home @relation(fields: [homeId], references: [id])
 }
 
 model Store {

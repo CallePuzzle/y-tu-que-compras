@@ -13,4 +13,18 @@
 	} = $props();
 
 	const superform = data.form;
+	const groceries = data.groceries;
 </script>
+
+<ul class="list-disc pl-5">
+	{#each groceries as grocery}
+		<li class="mb-2">
+			<div class="card shadow-lg compact bg-base-100">
+				<div class="card-body">
+					<h2 class="card-title">{grocery.name}</h2>
+					<p>{grocery.description}</p>
+				</div>
+			</div>
+		</li>
+	{/each}
+</ul>

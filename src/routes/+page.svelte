@@ -3,7 +3,7 @@
 	import { Icon } from 'svelte-icons-pack';
 	import { AiOutlinePlusSquare } from 'svelte-icons-pack/ai';
 	import Form from '$lib/components/Form.svelte';
-	import { homeSchema } from '$lib/schemas/home';
+	import { HomeSchema } from '$lib/schemas';
 	import { Routes } from '$lib/routes';
 
 	import type { PageData } from './$types';
@@ -48,7 +48,7 @@
 <dialog id="add_home" class="modal">
 	<div class="modal-box">
 		<h3 class="text-lg font-bold">Crea una nueva casa</h3>
-		<Form schema={homeSchema} {superform} type="home" action="?/addHome" />
+		<Form schema={HomeSchema} {superform} type="home" action="?/addHome" />
 		<div class="modal-action">
 			<form method="dialog">
 				<button class="btn">{$t('index.close')}</button>

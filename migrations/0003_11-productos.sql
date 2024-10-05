@@ -2,7 +2,9 @@
 CREATE TABLE "Grocery" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
-    "description" TEXT
+    "description" TEXT,
+    "homeId" INTEGER NOT NULL,
+    CONSTRAINT "Grocery_homeId_fkey" FOREIGN KEY ("homeId") REFERENCES "Home" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateTable
