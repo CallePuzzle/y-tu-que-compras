@@ -15,6 +15,7 @@ model User {
   sessions      Session[]
   subscription  String?
   notifications Notification[]
+  homes         Home[]
 }
 
 model Session {
@@ -31,4 +32,11 @@ model Notification {
   status    String   @default("PENDING")
   createdAt DateTime @default(now())
   users     User[]
+}
+
+model Home {
+  id Int      @id @default(autoincrement())
+  name String
+  description String
+  members User[]
 }
