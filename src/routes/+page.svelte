@@ -4,6 +4,7 @@
 	import { AiOutlinePlusSquare } from 'svelte-icons-pack/ai';
 	import Form from '$lib/components/Form.svelte';
 	import { homeSchema } from '$lib/schemas/home';
+	import { Routes } from '$lib/routes';
 
 	import type { PageData } from './$types';
 
@@ -31,10 +32,12 @@
 			</p>
 			{#each houses as home}
 				<div class="card bg-base-100 shadow-xl my-4">
-					<div class="card-body">
-						<h2 class="card-title">{home.name}</h2>
-						<p>{home.description}</p>
-					</div>
+					<a href={Routes.home_index.generateUrl({ id: home.id })}>
+						<div class="card-body">
+							<h2 class="card-title">{home.name}</h2>
+							<p>{home.description}</p>
+						</div>
+					</a>
 				</div>
 			{/each}
 			<button onclick={showModal}><Icon src={AiOutlinePlusSquare} size="4em" /></button>
