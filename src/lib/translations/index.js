@@ -28,6 +28,21 @@ export const config = {
 			locale: 'es',
 			key: 'profile',
 			loader: async () => (await import('./es/profile.json')).default
+		},
+		{
+			locale: 'es',
+			key: 'groceries',
+			loader: async () => (await import('./es/groceries.json')).default
+		},
+		{
+			locale: 'es',
+			key: 'list',
+			loader: async () => (await import('./es/list.json')).default
+		},
+		{
+			locale: 'es',
+			key: 'store',
+			loader: async () => (await import('./es/store.json')).default
 		}
 	]
 };
