@@ -11,6 +11,11 @@ export const config = {
 	loaders: [
 		{
 			locale: 'es',
+			key: 'index',
+			loader: async () => (await import('./es/index.json')).default
+		},
+		{
+			locale: 'es',
 			key: 'user',
 			loader: async () => (await import('./es/user.json')).default
 		},

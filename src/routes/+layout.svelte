@@ -5,6 +5,7 @@
 	import toast, { Toaster } from 'svelte-french-toast';
 	import { SubscribeUser } from '$lib/notification/subscribe-user';
 	import { Routes } from '$lib/routes';
+	import { t } from '$lib/translations';
 
 	let { children, data } = $props();
 
@@ -38,11 +39,11 @@
 		notificationsCount={data.notificationsCount}
 	/>
 
-	{#if data.isProtectedRoute && !data.userIsLogged}
+	{#if !data.userIsLogged}
 		<div class="alert alert-error">
 			<p>{data.protectedRouteMessage}</p>
 			<p>
-				<a href={Routes.login.url} class="btn btn-accent">{Routes.login.name}</a>
+				<a href={Routes.login.url} class="btn btn-accent">{$t('index.notLogin')}</a>
 			</p>
 		</div>
 	{:else}
