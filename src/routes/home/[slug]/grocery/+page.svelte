@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { Routes } from '$lib/routes';
 	import { onMount } from 'svelte';
 	import { superValidate } from 'sveltekit-superforms';
 	import { zod } from 'sveltekit-superforms/adapters';
 	import { GrocerySchema } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
-	import { t } from '$lib/translations';
+	import { Icon } from 'svelte-icons-pack';
+	import { AiOutlineEdit } from 'svelte-icons-pack/ai';
 
 	import type { PageData } from './$types';
+	import type { Grocery } from '@prisma/client';
 
 	let superform = $state();
 	let superFormReady = $state(false);
@@ -23,17 +24,26 @@
 		superFormReady = true;
 	});
 
-	const groceries = data.groceries;
+	const groceries: Grocery[] = data.groceries;
+	const groceriesForm = data.forms;
 </script>
 
 <ul class="list-disc pl-5">
-	{#each groceries as grocery}
+	{#each groceries as grocery, index}
 		<li class="mb-2">
 			<div class="card shadow-lg compact bg-base-100">
 				<div class="card-body">
 					<h2 class="card-title">{grocery.name}</h2>
 					<p>{grocery.description}</p>
 				</div>
+				<AddEditModal
+					id="grocery-{grocery.id}"
+					title="Edita el producto {grocery.name}"
+					superform={groceriesForm[index]}
+					schema={GrocerySchema}
+					type="grocery"
+					action="?/addGrocery"
+				/>
 			</div>
 		</li>
 	{/each}

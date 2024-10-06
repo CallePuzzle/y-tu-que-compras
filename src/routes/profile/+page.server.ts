@@ -46,7 +46,13 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		const prisma = initializePrisma(db);
 		const user = await UserGetDetail(prisma, event.locals.user.id);
 		if (!user) error(404, 'Not found');
-		form = await superValidate(user, zod(UserSchema));
+		const userData = {
+			id: user.id,
+			name: user.name ?? undefined,
+			picture: user.picture ?? undefined,
+			subscription: user.subscription ?? undefined
+		};
+		form = await superValidate(userData, zod(UserSchema));
 		logger.debug(form, 'form');
 	}
 

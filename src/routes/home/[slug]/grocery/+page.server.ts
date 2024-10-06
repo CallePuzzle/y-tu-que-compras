@@ -49,5 +49,17 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		}
 	});
 
-	return { groceries };
+	// Por cada grocery genera un form usando superValidate
+	const forms = await Promise.all(
+		groceries.map(async (grocery) => {
+			const groceryData = {
+				name: grocery.name ?? undefined,
+				description: grocery.description ?? undefined
+			};
+			return await superValidate(groceryData, zod(GrocerySchema));
+		})
+	);
+	logger.debug(forms, 'forms');
+
+	return { groceries, forms };
 };
