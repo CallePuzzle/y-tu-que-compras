@@ -35,35 +35,52 @@ model Notification {
 }
 
 model Home {
-  id Int      @id @default(autoincrement())
-  name String
+  id          Int       @id @default(autoincrement())
+  name        String
   description String
-  members User[]
-  groceries Grocery[]
+  members     User[]
+  groceries   Grocery[]
 }
 
 model Grocery {
-  id Int @id @default(autoincrement())
-  name String
+  id          Int           @id @default(autoincrement())
+  name        String
   description String?
-  Price Price[]
-  homeId Int
-  home Home @relation(fields: [homeId], references: [id])
+  Price       Price[]
+  homeId      Int
+  home        Home          @relation(fields: [homeId], references: [id])
+  list        GroceryList[]
 }
 
 model Store {
-  id Int @id @default(autoincrement())
-  name String
+  id          Int     @id @default(autoincrement())
+  name        String
   description String?
-  Price Price[]
+  Price       Price[]
 }
 
 model Price {
-  id Int @id @default(autoincrement())
-  price Float
-  date DateTime
-  grocery Grocery @relation(fields: [grocery_id], references: [id])
+  id         Int      @id @default(autoincrement())
+  price      Float
+  date       DateTime
+  grocery    Grocery  @relation(fields: [grocery_id], references: [id])
   grocery_id Int
-  store Store @relation(fields: [store_id], references: [id])
-  store_id Int
+  store      Store    @relation(fields: [store_id], references: [id])
+  store_id   Int
+}
+
+model List {
+  id        Int           @id @default(autoincrement())
+  name      String
+  completed Boolean       @default(false)
+  groceries GroceryList[]
+}
+
+model GroceryList {
+  id        Int     @id @default(autoincrement())
+  quantity  Int     @default(1)
+  groceryId Int
+  grocery   Grocery @relation(fields: [groceryId], references: [id])
+  listId    Int
+  list      List    @relation(fields: [listId], references: [id])
 }
