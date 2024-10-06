@@ -31,8 +31,8 @@ export const config = {
 		},
 		{
 			locale: 'es',
-			key: 'groceries',
-			loader: async () => (await import('./es/groceries.json')).default
+			key: 'grocery',
+			loader: async () => (await import('./es/grocery.json')).default
 		},
 		{
 			locale: 'es',

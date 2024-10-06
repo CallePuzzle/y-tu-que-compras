@@ -22,7 +22,7 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 			}
 		}
 	});
-	logger.debug(home, 'gang');
+	logger.debug(home, 'home');
 	if (!home) {
 		return error(404, t.get('home.notFound'));
 	}

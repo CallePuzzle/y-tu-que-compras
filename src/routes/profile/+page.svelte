@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Routes } from '$lib/routes';
-	import { userSchema } from '$lib/schemas/user';
-	import Form from '$lib/components/Form.svelte';
+	import { UserSchema } from '$lib/schemas';
+	import Form from '$lib/components/forms/Form.svelte';
 	import { t } from '$lib/translations';
 
 	import type { PageData } from './$types';
@@ -31,6 +31,6 @@
 		</div>
 	</div>
 	<div class="container mx-auto px-4">
-		<Form schema={userSchema} {superform} type="user" />
+		<Form schema={UserSchema} {superform} type="user" />
 	</div>
 </div>

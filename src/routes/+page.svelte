@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/translations';
-	import { Icon } from 'svelte-icons-pack';
-	import { AiOutlinePlusSquare } from 'svelte-icons-pack/ai';
-	import Form from '$lib/components/Form.svelte';
-	import { homeSchema } from '$lib/schemas/home';
+	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
+	import { HomeSchema } from '$lib/schemas';
 	import { Routes } from '$lib/routes';
 
 	import type { PageData } from './$types';
@@ -16,11 +14,6 @@
 
 	const superform = data.form;
 	const houses = data.houses;
-
-	function showModal() {
-		const modal = document.getElementById('add_home');
-		modal.showModal();
-	}
 </script>
 
 <div class="hero bg-base-200 min-h-screen">
@@ -40,19 +33,13 @@
 					</a>
 				</div>
 			{/each}
-			<button onclick={showModal}><Icon src={AiOutlinePlusSquare} size="4em" /></button>
+			<AddEditModal
+				title="Crea una nueva casa"
+				{superform}
+				schema={HomeSchema}
+				type="home"
+				action="add"
+			/>
 		</div>
 	</div>
 </div>
-
-<dialog id="add_home" class="modal">
-	<div class="modal-box">
-		<h3 class="text-lg font-bold">Crea una nueva casa</h3>
-		<Form schema={homeSchema} {superform} type="home" action="?/addHome" />
-		<div class="modal-action">
-			<form method="dialog">
-				<button class="btn">{$t('index.close')}</button>
-			</form>
-		</div>
-	</div>
-</dialog>
