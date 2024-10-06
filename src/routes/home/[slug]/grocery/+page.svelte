@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { Routes } from '$lib/routes';
-	import { userSchema } from '$lib/schemas/user';
-	import Form from '$lib/components/Form.svelte';
+	import { GrocerySchema } from '$lib/schemas';
+	import Form from '$lib/components/forms/Form.svelte';
 	import { t } from '$lib/translations';
+	import { Icon } from 'svelte-icons-pack';
+	import { AiOutlinePlusSquare } from 'svelte-icons-pack/ai';
 
 	import type { PageData } from './$types';
 
@@ -14,6 +16,11 @@
 
 	const superform = data.form;
 	const groceries = data.groceries;
+
+	function showModal() {
+		const modal = document.getElementById('add_edit_grocery');
+		modal.showModal();
+	}
 </script>
 
 <ul class="list-disc pl-5">
@@ -28,3 +35,17 @@
 		</li>
 	{/each}
 </ul>
+
+<button onclick={showModal}><Icon src={AiOutlinePlusSquare} size="4em" /></button>
+
+<dialog id="add_edit_grocery" class="modal">
+	<div class="modal-box">
+		<h3 class="text-lg font-bold">Crea una nueva casa</h3>
+		<Form schema={GrocerySchema} {superform} type="grocery" action="?/addHome" />
+		<div class="modal-action">
+			<form method="dialog">
+				<button class="btn">{$t('index.close')}</button>
+			</form>
+		</div>
+	</div>
+</dialog>
