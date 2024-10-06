@@ -37,12 +37,10 @@
 		modal = document.getElementById(id + 'add_edit_' + type);
 	});
 
-	$effect(() => {
-		if (action === 'edit') {
-			icon = AiOutlineEdit;
-		}
-		formAction = '?/' + action + upperFirst(type);
-	});
+	if (action === 'edit') {
+		icon = AiOutlineEdit;
+	}
+	formAction = '?/' + action + upperFirst(type);
 </script>
 
 <button onclick={showModal}><Icon src={icon} size={iconSize} /></button>
