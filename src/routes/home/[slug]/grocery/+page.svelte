@@ -2,10 +2,8 @@
 	import { onMount } from 'svelte';
 	import { superValidate } from 'sveltekit-superforms';
 	import { zod } from 'sveltekit-superforms/adapters';
-	import { GrocerySchema } from '$lib/schemas';
+	import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
-	import { Icon } from 'svelte-icons-pack';
-	import { AiOutlineEdit } from 'svelte-icons-pack/ai';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
@@ -37,12 +35,13 @@
 					<p>{grocery.description}</p>
 				</div>
 				<AddEditModal
-					id="grocery-{grocery.id}"
+					id={String(grocery.id)}
 					title="Edita el producto {grocery.name}"
 					superform={groceriesForm[index]}
-					schema={GrocerySchema}
+					schema={GrocerySchemaWithId}
 					type="grocery"
-					action="?/addGrocery"
+					action="edit"
+					iconSize="2em"
 				/>
 			</div>
 		</li>
@@ -55,6 +54,6 @@
 		{superform}
 		schema={GrocerySchema}
 		type="grocery"
-		action="?/addGrocery"
+		action="add"
 	/>
 {/if}

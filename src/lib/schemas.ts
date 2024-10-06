@@ -30,4 +30,8 @@ const GrocerySchema = z.object({
 	description: z.string().optional()
 });
 
-export { UserSchema, HomeSchema, PriceSchema, StoreSchema, GrocerySchema };
+const GrocerySchemaWithId = GrocerySchema.extend({
+	id: z.number().int()
+});
+
+export { UserSchema, HomeSchema, PriceSchema, StoreSchema, GrocerySchema, GrocerySchemaWithId };

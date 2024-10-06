@@ -38,7 +38,7 @@
 				{superform}
 				schema={HomeSchema}
 				type="home"
-				action="?/addHome"
+				action="add"
 			/>
 		</div>
 	</div>

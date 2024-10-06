@@ -26,22 +26,26 @@
 
 <form method="POST" class="flex flex-col" {action}>
 	{#each fields as field}
-		<Field {form} name={field}>
-			<Control let:attrs>
-				<Label class="flex justify-center flex-col sm:flex-row my-2">
-					<span class="w-full max-w-xs">{$t(type + '.' + field)}</span>
-					<input
-						class="input input-bordered w-full max-w-xs"
-						{...attrs}
-						bind:value={$formData[field]}
-						required={!schemaObj[field].isOptional()}
-						minlength={schemaObj[field].minLength}
-						maxlength={schemaObj[field].maxLength}
-					/>
-				</Label>
-			</Control>
-			<FieldErrors />
-		</Field>
+		{#if field === 'id'}
+			<input type="hidden" name="id" bind:value={$formData.id} />
+		{:else}
+			<Field {form} name={field}>
+				<Control let:attrs>
+					<Label class="flex justify-center flex-col sm:flex-row my-2">
+						<span class="w-full max-w-xs">{$t(type + '.' + field)}</span>
+						<input
+							class="input input-bordered w-full max-w-xs"
+							{...attrs}
+							bind:value={$formData[field]}
+							required={!schemaObj[field].isOptional()}
+							minlength={schemaObj[field].minLength}
+							maxlength={schemaObj[field].maxLength}
+						/>
+					</Label>
+				</Control>
+				<FieldErrors />
+			</Field>
+		{/if}
 	{/each}
 
 	<div class="flex justify-center my-2">
