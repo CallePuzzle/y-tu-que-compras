@@ -11,9 +11,7 @@ import type { Home } from '@prisma/client';
 export const actions: Actions = {
 	addHome: async (event) => {
 		const form = await superValidate(event.request, zod(HomeSchema));
-
 		logger.info(form, 'addHome form');
-
 		if (!form.valid) {
 			logger.debug('form invalid');
 			return fail(400, { form });
@@ -23,13 +21,8 @@ export const actions: Actions = {
 		const prisma = initializePrisma(db);
 		try {
 			let home = await prisma.home.create({
-				data: form.data
-			});
-			home = await prisma.home.update({
-				where: {
-					id: home.id
-				},
 				data: {
+					...form.data,
 					members: {
 						connect: {
 							id: event.locals.user!.id

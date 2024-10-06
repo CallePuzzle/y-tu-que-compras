@@ -26,11 +26,8 @@ const StoreSchema = z.object({
 });
 
 const GrocerySchema = z.object({
-	id: z.number().int(),
 	name: z.string().min(1),
-	description: z.string().optional(),
-	Price: z.array(PriceSchema),
-	homeId: z.number().int()
+	description: z.string().optional()
 });
 
 export { UserSchema, HomeSchema, PriceSchema, StoreSchema, GrocerySchema };

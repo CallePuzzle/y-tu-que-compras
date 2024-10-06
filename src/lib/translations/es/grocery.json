@@ -1,3 +1,5 @@
 {
-	"name": "Productos / comida"
+	"name": "Nombre",
+	"description": "Descripción",
+	"submit": "Guardar"
 }

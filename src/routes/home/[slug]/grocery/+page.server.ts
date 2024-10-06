@@ -1,27 +1,51 @@
-import { error } from '@sveltejs/kit';
 import { fail } from '@sveltejs/kit';
 import { logger } from '$lib/server/logger';
 import { initializePrisma } from '$lib/server/db';
-import { GetDetail as UserGetDetail } from '$lib/user/get-detail';
-import { superValidate, message } from 'sveltekit-superforms';
+import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
-import { userSchema } from '$lib/schemas/user';
+import { GrocerySchema } from '$lib/schemas';
 
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
 import type { Grocery } from '@prisma/client';
 
 export const actions: Actions = {
-	default: async (event) => {}
+	addGrocery: async (event) => {
+		const form = await superValidate(event.request, zod(GrocerySchema));
+		logger.info(form, 'addGrocery form');
+		if (!form.valid) {
+			logger.debug('form invalid');
+			return fail(400, { form });
+		}
+
+		const db = event.platform!.env.DB;
+		const prisma = initializePrisma(db);
+		const homeId = event.params.slug;
+		try {
+			let grocery = await prisma.grocery.create({
+				data: {
+					...form.data,
+					homeId: parseInt(homeId)
+				}
+			});
+			logger.info(grocery, 'grocery created');
+			return form;
+		} catch (error) {
+			logger.error(error);
+			return form;
+		}
+	}
 };
 
 export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 	let groceries: Grocery[] = [];
 
+	const homeId = event.params.slug;
+
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
 	groceries = await prisma.grocery.findMany({
 		where: {
-			homeId: 1
+			homeId: parseInt(homeId)
 		}
 	});
 
