@@ -26,34 +26,37 @@
 	const groceriesForm = data.forms;
 </script>
 
-<ul class="list-disc pl-5">
+<div class="flex flex-col place-items-center">
+	<h2>Listado de productos</h2>
 	{#each groceries as grocery, index}
-		<li class="mb-2">
-			<div class="card shadow-lg compact bg-base-100">
-				<div class="card-body">
-					<h2 class="card-title">{grocery.name}</h2>
+		<div class="card bg-neutral text-neutral-content w-96 my-1">
+			<div class="card-body flex flex-row items-center">
+				<div class="flex flex-col basis-1/2">
+					<h3 class="card-title">{grocery.name}</h3>
 					<p>{grocery.description}</p>
 				</div>
-				<AddEditModal
-					id={String(grocery.id)}
-					title="Edita el producto {grocery.name}"
-					superform={groceriesForm[index]}
-					schema={GrocerySchemaWithId}
-					type="grocery"
-					action="edit"
-					iconSize="2em"
-				/>
+				<div class="card-actions basis-1/2 justify-end">
+					<AddEditModal
+						id={String(grocery.id)}
+						title="Edita el producto {grocery.name}"
+						superform={groceriesForm[index]}
+						schema={GrocerySchemaWithId}
+						type="grocery"
+						action="edit"
+						iconSize="2em"
+					/>
+				</div>
 			</div>
-		</li>
+		</div>
 	{/each}
-</ul>
 
-{#if superFormReady}
-	<AddEditModal
-		title="Crea un nuevo producto"
-		{superform}
-		schema={GrocerySchema}
-		type="grocery"
-		action="add"
-	/>
-{/if}
+	{#if superFormReady}
+		<AddEditModal
+			title="Crea un nuevo producto"
+			{superform}
+			schema={GrocerySchema}
+			type="grocery"
+			action="add"
+		/>
+	{/if}
+</div>
