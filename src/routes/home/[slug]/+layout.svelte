@@ -3,6 +3,8 @@
 	import { LuApple } from 'svelte-icons-pack/lu';
 	import { FaSolidListCheck } from 'svelte-icons-pack/fa';
 	import { RiOthersFridgeLine } from 'svelte-icons-pack/ri';
+	import { AiOutlineHome } from 'svelte-icons-pack/ai';
+	import { BiStore } from 'svelte-icons-pack/bi';
 	import { Routes } from '$lib/routes';
 
 	import type { PageData } from './$types';
@@ -25,6 +27,15 @@
 		<li>
 			<a
 				class="tooltip"
+				data-tip={Routes.home_index.name}
+				href={Routes.home_index.generateUrl({ id: home.id })}
+			>
+				<Icon src={AiOutlineHome} size="2.5em" />
+			</a>
+		</li>
+		<li>
+			<a
+				class="tooltip"
 				data-tip={Routes.grocery_index.name}
 				href={Routes.grocery_index.generateUrl({ id: home.id })}
 			>
@@ -43,10 +54,19 @@
 		<li>
 			<a
 				class="tooltip"
+				data-tip={Routes.fridge_index.name}
+				href={Routes.fridge_index.generateUrl({ id: home.id })}
+			>
+				<Icon src={RiOthersFridgeLine} size="2.5em" />
+			</a>
+		</li>
+		<li>
+			<a
+				class="tooltip"
 				data-tip={Routes.store_index.name}
 				href={Routes.store_index.generateUrl({ id: home.id })}
 			>
-				<Icon src={RiOthersFridgeLine} size="2.5em" />
+				<Icon src={BiStore} size="2.5em" />
 			</a>
 		</li>
 	</ul>
