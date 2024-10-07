@@ -9,6 +9,7 @@ CREATE TABLE "List" (
 CREATE TABLE "GroceryList" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "quantity" INTEGER NOT NULL DEFAULT 1,
+    "completed" BOOLEAN NOT NULL DEFAULT false,
     "groceryId" INTEGER NOT NULL,
     "listId" INTEGER NOT NULL,
     CONSTRAINT "GroceryList_groceryId_fkey" FOREIGN KEY ("groceryId") REFERENCES "Grocery" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
