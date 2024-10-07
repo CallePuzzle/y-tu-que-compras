@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { t } from '$lib/translations';
-	import { Control, Field, FieldErrors, Label } from 'formsnap';
 	import { superForm } from 'sveltekit-superforms';
 	import { zodClient } from 'sveltekit-superforms/adapters';
+	import String from '$lib/components/forms/String.svelte';
+	import Array from '$lib/components/forms/Array.svelte';
+	import { ZodString, ZodArray } from 'zod';
+	import SuperDebug from 'sveltekit-superforms';
 
 	let {
 		superform,
@@ -22,6 +25,7 @@
 	const { form: formData } = form;
 	const fields = schema.keyof().options;
 	const schemaObj = schema.shape;
+	console.log(formData);
 </script>
 
 <form method="POST" class="flex flex-col" {action}>
@@ -29,22 +33,12 @@
 		{#if field === 'id'}
 			<input type="hidden" name="id" bind:value={$formData.id} />
 		{:else}
-			<Field {form} name={field}>
-				<Control let:attrs>
-					<Label class="flex justify-center flex-col sm:flex-row my-2">
-						<span class="w-full max-w-xs">{$t(type + '.' + field)}</span>
-						<input
-							class="input input-bordered w-full max-w-xs"
-							{...attrs}
-							bind:value={$formData[field]}
-							required={!schemaObj[field].isOptional()}
-							minlength={schemaObj[field].minLength}
-							maxlength={schemaObj[field].maxLength}
-						/>
-					</Label>
-				</Control>
-				<FieldErrors />
-			</Field>
+			{#if schemaObj[field] instanceof ZodString}
+				<String {form} {field} {type} {schemaObj} {formData} />
+			{/if}
+			{#if schemaObj[field] instanceof ZodArray}
+				<Array {form} {field} {type} {schemaObj} {formData} />
+			{/if}
 		{/if}
 	{/each}
 
@@ -52,3 +46,5 @@
 		<button class="btn btn-accent">{$t(type + '.submit')}</button>
 	</div>
 </form>
+
+<SuperDebug data={$formData} />
