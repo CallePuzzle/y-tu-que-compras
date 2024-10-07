@@ -27,7 +27,7 @@
 </script>
 
 <div class="flex flex-col place-items-center">
-	<h2>Listado de productos</h2>
+	<h2 class="text-2xl m-2">Listado de productos</h2>
 	{#each groceries as grocery, index}
 		<div class="card bg-neutral text-neutral-content w-96 my-1">
 			<div class="card-body flex flex-row items-center">
