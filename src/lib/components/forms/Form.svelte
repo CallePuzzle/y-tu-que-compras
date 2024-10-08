@@ -20,10 +20,11 @@
 	} = $props();
 	const form = superForm(superform, {
 		validators: zodClient(schema),
-		dataType: 'json'
+		dataType: 'json',
+		delayMs: 100
 	});
 
-	const { form: formData, enhance } = form;
+	const { form: formData, enhance, delayed } = form;
 	const fields = schema.keyof().options;
 	const schemaObj = schema.shape;
 
@@ -36,7 +37,7 @@
 	}
 </script>
 
-<form method="POST" class="flex flex-col" {action}>
+<form method="POST" class="flex flex-col" {action} use:enhance>
 	{#each fields as field}
 		{#if field === 'id'}
 			<input type="hidden" name="id" bind:value={$formData[field]} />
@@ -51,7 +52,11 @@
 	{/each}
 
 	<div class="flex justify-center my-2">
+		{#if $delayed}
+		<span class="loading loading-dots loading-lg"></span>
+		{:else}
 		<button class="btn btn-accent">{$t(type + '.submit')}</button>
+		{/if}
 	</div>
 </form>
 
