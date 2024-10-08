@@ -4,11 +4,15 @@
 	import { zod } from 'sveltekit-superforms/adapters';
 	import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
+	import { z } from 'zod';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
+	import type { SuperValidated } from 'sveltekit-superforms';
 
-	let superform = $state();
+	let superform: SuperValidated<z.infer<typeof GrocerySchema>> = $state({}) as SuperValidated<
+		z.infer<typeof GrocerySchema>
+	>;
 	let superFormReady = $state(false);
 
 	let {

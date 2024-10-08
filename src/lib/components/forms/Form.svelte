@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { t } from '$lib/translations';
-	import { superForm } from 'sveltekit-superforms';
+	import { superForm, type SuperValidated, type Infer } from 'sveltekit-superforms';
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import String from '$lib/components/forms/String.svelte';
 	import Array from '$lib/components/forms/Array.svelte';
-	import { ZodString, ZodArray } from 'zod';
+	import { ZodString, ZodArray, z } from 'zod';
 	import SuperDebug from 'sveltekit-superforms';
 
 	let {
@@ -13,27 +13,35 @@
 		type,
 		action
 	}: {
-		superform: any;
+		superform: SuperValidated<Infer<any>>;
 		schema: any;
 		type: string;
 		action?: string;
 	} = $props();
 	const form = superForm(superform, {
-		validators: zodClient(schema)
+		validators: zodClient(schema),
+		dataType: 'json'
 	});
 
-	const { form: formData } = form;
+	const { form: formData, enhance } = form;
 	const fields = schema.keyof().options;
 	const schemaObj = schema.shape;
-	console.log(formData);
+
+	function isString(field: any) {
+		// https://zod.dev/?id=optionals
+		if (field.unwrap) {
+			return field.unwrap() instanceof ZodString;
+		}
+		return field instanceof ZodString;
+	}
 </script>
 
 <form method="POST" class="flex flex-col" {action}>
 	{#each fields as field}
 		{#if field === 'id'}
-			<input type="hidden" name="id" bind:value={$formData.id} />
+			<input type="hidden" name="id" bind:value={$formData[field]} />
 		{:else}
-			{#if schemaObj[field] instanceof ZodString}
+			{#if isString(schemaObj[field])}
 				<String {form} {field} {type} {schemaObj} {formData} />
 			{/if}
 			{#if schemaObj[field] instanceof ZodArray}

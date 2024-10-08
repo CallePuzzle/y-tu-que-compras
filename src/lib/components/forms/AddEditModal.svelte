@@ -6,6 +6,7 @@
 	import { AiOutlinePlusSquare } from 'svelte-icons-pack/ai';
 	import { AiOutlineEdit } from 'svelte-icons-pack/ai';
 	import { upperFirst } from 'lodash-es';
+	import { type SuperValidated, type Infer } from 'sveltekit-superforms';
 
 	type Action = 'add' | 'edit';
 	let modal: HTMLElement | null = null;
@@ -23,7 +24,7 @@
 	}: {
 		id?: string;
 		title: string;
-		superform: any;
+		superform: SuperValidated<Infer<any>>;
 		schema: any;
 		type: string;
 		action?: Action;

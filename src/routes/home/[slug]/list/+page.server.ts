@@ -10,8 +10,9 @@ import type { Grocery } from '@prisma/client';
 
 export const actions: Actions = {
 	addList: async (event) => {
-		const form = await superValidate(event.request, zod(ListSchema));
-		logger.info(form, 'addList form');
+		logger.debug(event, 'addList event');
+		const form = await superValidate(event, zod(ListSchema));
+		logger.info(form.data, 'addList form');
 	}
 };
 
