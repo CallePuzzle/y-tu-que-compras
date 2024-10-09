@@ -4,7 +4,6 @@
 	import { zod } from 'sveltekit-superforms/adapters';
 	import { ListSchema } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
-	import Combobox from '$lib/components/forms/Combobox.svelte';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
@@ -31,7 +30,5 @@
 		schema={ListSchema}
 		type="list"
 		action="add"
-	>
-		<Combobox />
-	</AddEditModal>
+	></AddEditModal>
 {/if}

@@ -7,6 +7,7 @@
 	import { ZodString, ZodArray, z } from 'zod';
 	import SuperDebug from 'sveltekit-superforms';
 	import { toast } from 'svelte-sonner';
+	import Combobox from '$lib/components/forms/Combobox.svelte';
 	import type { Snippet } from 'svelte';
 
 	let {
@@ -59,7 +60,7 @@
 			<input type="hidden" name="id" bind:value={$formData[field]} />
 		{:else}
 			{#if isString(schemaObj[field])}
-				<String {form} {field} {type} {schemaObj} {formData} />
+				<Combobox {form} {field} {type} {schemaObj} {formData} />
 			{/if}
 			{#if schemaObj[field] instanceof ZodArray}
 				<Array {form} {field} {type} {schemaObj} {formData} />
