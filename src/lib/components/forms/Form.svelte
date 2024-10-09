@@ -9,12 +9,14 @@
 	import { toast } from 'svelte-sonner';
 
 	let {
+		id = '',
 		superform,
 		schema,
 		type,
 		action,
 		onshowCallback = () => {}
 	}: {
+		id?: string;
 		superform: SuperValidated<Infer<any>>;
 		schema: any;
 		type: string;
@@ -22,6 +24,7 @@
 		onshowCallback: () => void;
 	} = $props();
 	const form = superForm(superform, {
+		id: id + '-' + type,
 		validators: zodClient(schema),
 		dataType: 'json',
 		delayMs: 100,

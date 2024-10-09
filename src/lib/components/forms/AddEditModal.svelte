@@ -56,7 +56,7 @@
 <dialog id="{id}add_edit_{type}" class="modal">
 	<div class="modal-box">
 		<h3 class="text-lg font-bold">{title}</h3>
-		<Form {schema} {superform} {type} action={formAction} {onshowCallback} />
+		<Form {id} {schema} {superform} {type} action={formAction} {onshowCallback} />
 		<div class="modal-action">
 			<form method="dialog">
 				<button class="btn">{$t('index.close')}</button>
