@@ -11,19 +11,18 @@
 	} from 'formsnap';
 	import type { SuperForm } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
+	import type { Snippet } from 'svelte';
 
 	let {
 		form,
 		field,
-		type,
-		schemaObj,
-		formData
+		formData = $bindable(),
+		children
 	}: {
 		form: SuperForm<any, any>;
 		field: string;
-		type: string;
-		schemaObj: any;
 		formData: SuperFormData<any>;
+		children?: Snippet;
 	} = $props();
 
 	function removeByIndex(index: number) {
@@ -41,7 +40,11 @@
 		<ElementField {form} name={field[i]}>
 			<Control let:attrs>
 				<Label class="sr-only">URL {i + 1}</Label>
-				<input type="string" {...attrs} bind:value={$formData[field][i]} />
+				{#if children}
+					{@render children()}
+				{:else}
+					<input type="string" {...attrs} bind:value={$formData[field][i]} />
+				{/if}
 				<button type="button" onclick={() => removeByIndex(i)}> Remove URL </button>
 			</Control>
 			<Description class="sr-only">

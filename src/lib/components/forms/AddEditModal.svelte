@@ -23,6 +23,7 @@
 		type,
 		action,
 		iconSize = '4em',
+		excludeFields = [],
 		children,
 		form = $bindable(),
 		formData = $bindable()
@@ -34,6 +35,7 @@
 		type: string;
 		action?: Action;
 		iconSize?: string;
+		excludeFields?: string[];
 		children?: Snippet;
 		form?: SuperForm<any, any>;
 		formData?: SuperFormData<any>;
@@ -69,6 +71,7 @@
 			{schema}
 			{superform}
 			{type}
+			{excludeFields}
 			action={formAction}
 			{onshowCallback}
 			bind:form

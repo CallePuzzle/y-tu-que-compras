@@ -5,6 +5,7 @@
 	import { ListSchema } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
 	import Combobox from '$lib/components/forms/Combobox.svelte';
+	import Array from '$lib/components/forms/Array.svelte';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
@@ -14,6 +15,7 @@
 	let superFormReady = $state(false);
 	let form = $state() as SuperForm<any, any>;
 	let formData = $state() as SuperFormData<any>;
+	let formDataField = $state() as SuperFormData<any>;
 
 	let {
 		data
@@ -34,9 +36,12 @@
 		schema={ListSchema}
 		type="list"
 		action="add"
+		excludeFields={['groceries']}
 		bind:form
 		bind:formData
 	>
-		<Combobox {form} field="name" {formData} />
+		<Array {form} field="groceries" bind:formData>
+			<Combobox {form} field="groceries" formData={formData["groceries"]} />
+		</Array>
 	</AddEditModal>
 {/if}
