@@ -6,6 +6,7 @@
 	import Array from '$lib/components/forms/Array.svelte';
 	import { ZodString, ZodArray, z } from 'zod';
 	import SuperDebug from 'sveltekit-superforms';
+	import { toast } from 'svelte-sonner';
 
 	let {
 		superform,
@@ -24,7 +25,11 @@
 		validators: zodClient(schema),
 		dataType: 'json',
 		delayMs: 100,
-		onUpdate: ({ form }: { form: any }) => {
+		onUpdated: ({ form }: { form: any }) => {
+			if (form.message) {
+				if (form.posted && form.valid) toast.success(form.message);
+				else toast.error(form.message);
+			}
 			onshowCallback();
 		}
 	});
