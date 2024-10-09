@@ -43,6 +43,7 @@
 		}
 	});
 	const { value } = formFieldProxy(form, field);
+    const portal = null
 </script>
 
 <Field {form} name={field}>
@@ -54,7 +55,7 @@
 				bind:touchedInput
 				selected={selectedValue}
 				open={isComboxboxOpen}
-				portal="null"
+				{portal}
 				onSelectedChange={(valueChange: any) => {
 					selectedValue = value;
 					$value = valueChange.value;
