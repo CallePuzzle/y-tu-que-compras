@@ -16,15 +16,11 @@
 		inputValue = $bindable(''),
 		form,
 		field,
-		type,
-		schemaObj,
 		formData
 	}: {
 		inputValue?: string;
 		form: SuperForm<any, any>;
 		field: string;
-		type: string;
-		schemaObj: any;
 		formData: SuperFormData<any>;
 	} = $props();
 
@@ -46,7 +42,7 @@
 			isComboxboxOpen = false;
 		}
 	});
-	const { value, errors } = formFieldProxy(form, field);
+	const { value } = formFieldProxy(form, field);
 </script>
 
 <Field {form} name={field}>
@@ -59,7 +55,7 @@
 				selected={selectedValue}
 				open={isComboxboxOpen}
 				portal="null"
-				onSelectedChange={(valueChange) => {
+				onSelectedChange={(valueChange: any) => {
 					selectedValue = value;
 					$value = valueChange.value;
 				}}

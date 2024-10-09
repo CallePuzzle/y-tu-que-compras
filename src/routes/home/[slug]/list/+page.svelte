@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { superValidate } from 'sveltekit-superforms';
+	import { superValidate, type SuperForm } from 'sveltekit-superforms';
 	import { zod } from 'sveltekit-superforms/adapters';
 	import { ListSchema } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
+	import Combobox from '$lib/components/forms/Combobox.svelte';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
+	import type { SuperFormData } from 'sveltekit-superforms/client';
 
 	let superform = $state();
 	let superFormReady = $state(false);
+	let form = $state() as SuperForm<any, any>;
+	let formData = $state() as SuperFormData<any>;
 
 	let {
 		data
@@ -30,5 +34,9 @@
 		schema={ListSchema}
 		type="list"
 		action="add"
-	></AddEditModal>
+		bind:form
+		bind:formData
+	>
+		<Combobox {form} field="name" {formData} />
+	</AddEditModal>
 {/if}

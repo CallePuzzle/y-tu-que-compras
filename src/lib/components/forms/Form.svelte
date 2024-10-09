@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { t } from '$lib/translations';
-	import { superForm, type SuperValidated, type Infer } from 'sveltekit-superforms';
+	import { superForm, type SuperValidated, type Infer, type SuperForm } from 'sveltekit-superforms';
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import String from '$lib/components/forms/String.svelte';
 	import Array from '$lib/components/forms/Array.svelte';
 	import { ZodString, ZodArray, z } from 'zod';
 	import SuperDebug from 'sveltekit-superforms';
 	import { toast } from 'svelte-sonner';
-	import Combobox from '$lib/components/forms/Combobox.svelte';
 	import type { Snippet } from 'svelte';
+	import type { SuperFormData } from 'sveltekit-superforms/client';
 
 	let {
 		id = '',
@@ -17,7 +17,10 @@
 		type,
 		action,
 		onshowCallback = () => {},
-		children
+		children,
+		// variables que mandamos al padre para poder meter más campos en el formulario
+		form = $bindable(),
+		formData = $bindable()
 	}: {
 		id?: string;
 		superform: SuperValidated<Infer<any>>;
@@ -26,8 +29,10 @@
 		action?: string;
 		onshowCallback: () => void;
 		children?: Snippet;
+		form?: SuperForm<any, any>;
+		formData?: SuperFormData<any>;
 	} = $props();
-	const form = superForm(superform, {
+	form = superForm(superform, {
 		id: id + '-' + type,
 		validators: zodClient(schema),
 		dataType: 'json',
@@ -41,7 +46,8 @@
 		}
 	});
 
-	const { form: formData, enhance, delayed } = form;
+	const { enhance, delayed } = form;
+	formData = form.form;
 	const fields = schema.keyof().options;
 	const schemaObj = schema.shape;
 
@@ -60,7 +66,7 @@
 			<input type="hidden" name="id" bind:value={$formData[field]} />
 		{:else}
 			{#if isString(schemaObj[field])}
-				<Combobox {form} {field} {type} {schemaObj} {formData} />
+				<String {form} {field} {type} {schemaObj} {formData} />
 			{/if}
 			{#if schemaObj[field] instanceof ZodArray}
 				<Array {form} {field} {type} {schemaObj} {formData} />
