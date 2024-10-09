@@ -18,15 +18,18 @@
 		schema: any;
 		type: string;
 		action?: string;
-		onshowCallback: (arg: any) => void;
+		onshowCallback: () => void;
 	} = $props();
 	const form = superForm(superform, {
 		validators: zodClient(schema),
 		dataType: 'json',
-		delayMs: 100
+		delayMs: 100,
+		onUpdate: ({ form }: { form: any }) => {
+			onshowCallback();
+		}
 	});
 
-	const { form: formData, enhance, delayed, message } = form;
+	const { form: formData, enhance, delayed } = form;
 	const fields = schema.keyof().options;
 	const schemaObj = schema.shape;
 
@@ -39,30 +42,26 @@
 	}
 </script>
 
-{#if $message}
-	<div role="alert" class="alert alert-success" use:onshowCallback>{$message}</div>
-{:else}
-	<form method="POST" class="flex flex-col" {action} use:enhance>
-		{#each fields as field}
-			{#if field === 'id'}
-				<input type="hidden" name="id" bind:value={$formData[field]} />
-			{:else}
-				{#if isString(schemaObj[field])}
-					<String {form} {field} {type} {schemaObj} {formData} />
-				{/if}
-				{#if schemaObj[field] instanceof ZodArray}
-					<Array {form} {field} {type} {schemaObj} {formData} />
-				{/if}
+<form method="POST" class="flex flex-col" {action} use:enhance>
+	{#each fields as field}
+		{#if field === 'id'}
+			<input type="hidden" name="id" bind:value={$formData[field]} />
+		{:else}
+			{#if isString(schemaObj[field])}
+				<String {form} {field} {type} {schemaObj} {formData} />
 			{/if}
-		{/each}
+			{#if schemaObj[field] instanceof ZodArray}
+				<Array {form} {field} {type} {schemaObj} {formData} />
+			{/if}
+		{/if}
+	{/each}
 
-		<div class="flex justify-center my-2">
-			{#if $delayed}
-				<span class="loading loading-dots loading-lg"></span>
-			{:else}
-				<button class="btn btn-accent">{$t(type + '.submit')}</button>
-			{/if}
-		</div>
-	</form>
-{/if}
+	<div class="flex justify-center my-2">
+		{#if $delayed}
+			<span class="loading loading-dots loading-lg"></span>
+		{:else}
+			<button class="btn btn-accent">{$t(type + '.submit')}</button>
+		{/if}
+	</div>
+</form>
 <SuperDebug data={$formData} />
