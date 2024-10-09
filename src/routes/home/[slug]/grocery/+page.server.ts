@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { logger } from '$lib/server/logger';
 import { initializePrisma } from '$lib/server/db';
-import { superValidate } from 'sveltekit-superforms';
+import { superValidate, message } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
 
@@ -28,10 +28,10 @@ export const actions: Actions = {
 				}
 			});
 			logger.info(grocery, 'grocery created');
-			return form;
+			return message(form, 'Form posted successfully!');
 		} catch (error) {
 			logger.error(error);
-			return form;
+			return message(form, 'Error updating profile');
 		}
 	},
 	editGrocery: async (event) => {
@@ -56,10 +56,10 @@ export const actions: Actions = {
 				}
 			});
 			logger.info(grocery, 'grocery updated');
-			return form;
+			return message(form, 'Form posted successfully!');
 		} catch (error) {
 			logger.error(error);
-			return form;
+			return message(form, 'Error updating profile');
 		}
 	}
 };

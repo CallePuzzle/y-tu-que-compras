@@ -25,14 +25,11 @@
 		superform = await superValidate(zod(GrocerySchema));
 		superFormReady = true;
 	});
-
-	const groceries: Grocery[] = data.groceries;
-	const groceriesForm = data.forms;
 </script>
 
 <div class="flex flex-col place-items-center">
 	<h2 class="text-2xl m-2">Listado de productos</h2>
-	{#each groceries as grocery, index}
+	{#each data.groceries as grocery, index}
 		<div class="card bg-neutral text-neutral-content w-96 my-1">
 			<div class="card-body flex flex-row items-center">
 				<div class="flex flex-col basis-1/2">
@@ -43,7 +40,7 @@
 					<AddEditModal
 						id={String(grocery.id)}
 						title="Edita el producto {grocery.name}"
-						superform={groceriesForm[index]}
+						superform={data.forms[index]}
 						schema={GrocerySchemaWithId}
 						type="grocery"
 						action="edit"
