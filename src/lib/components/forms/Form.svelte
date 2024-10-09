@@ -7,6 +7,7 @@
 	import { ZodString, ZodArray, z } from 'zod';
 	import SuperDebug from 'sveltekit-superforms';
 	import { toast } from 'svelte-sonner';
+	import type { Snippet } from 'svelte';
 
 	let {
 		id = '',
@@ -14,7 +15,8 @@
 		schema,
 		type,
 		action,
-		onshowCallback = () => {}
+		onshowCallback = () => {},
+		children
 	}: {
 		id?: string;
 		superform: SuperValidated<Infer<any>>;
@@ -22,6 +24,7 @@
 		type: string;
 		action?: string;
 		onshowCallback: () => void;
+		children?: Snippet;
 	} = $props();
 	const form = superForm(superform, {
 		id: id + '-' + type,
@@ -63,6 +66,10 @@
 			{/if}
 		{/if}
 	{/each}
+
+	{#if children}
+		{@render children()}
+	{/if}
 
 	<div class="flex justify-center my-2">
 		{#if $delayed}

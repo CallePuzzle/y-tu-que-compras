@@ -24,6 +24,7 @@
 		"@types/eslint": "^9.6.0",
 		"@types/lodash-es": "^4.17.12",
 		"autoprefixer": "^10.4.20",
+		"bits-ui": "^0.21.16",
 		"daisyui": "^4.12.10",
 		"eslint": "^9.0.0",
 		"eslint-config-prettier": "^9.1.0",

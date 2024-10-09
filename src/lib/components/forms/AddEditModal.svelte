@@ -7,6 +7,7 @@
 	import { AiOutlineEdit } from 'svelte-icons-pack/ai';
 	import { upperFirst } from 'lodash-es';
 	import { type SuperValidated, type Infer } from 'sveltekit-superforms';
+	import type { Snippet } from 'svelte';
 
 	type Action = 'add' | 'edit';
 	let modal: HTMLElement | null = null;
@@ -20,7 +21,8 @@
 		schema,
 		type,
 		action,
-		iconSize = '4em'
+		iconSize = '4em',
+		children
 	}: {
 		id?: string;
 		title: string;
@@ -29,6 +31,7 @@
 		type: string;
 		action?: Action;
 		iconSize?: string;
+		children?: Snippet;
 	} = $props();
 
 	function showModal() {
@@ -56,7 +59,11 @@
 <dialog id="{id}add_edit_{type}" class="modal">
 	<div class="modal-box">
 		<h3 class="text-lg font-bold">{title}</h3>
-		<Form {id} {schema} {superform} {type} action={formAction} {onshowCallback} />
+		<Form {id} {schema} {superform} {type} action={formAction} {onshowCallback}>
+			{#if children}
+				{@render children()}
+			{/if}
+		</Form>
 		<div class="modal-action">
 			<form method="dialog">
 				<button class="btn">{$t('index.close')}</button>
