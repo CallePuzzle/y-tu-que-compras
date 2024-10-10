@@ -6,7 +6,7 @@ import { zod } from 'sveltekit-superforms/adapters';
 import { ListSchema, GrocerySchemaWithId } from '$lib/schemas';
 
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
-import type { Grocery } from '@prisma/client';
+import type { List, Grocery } from '@prisma/client';
 
 export const actions: Actions = {
 	addList: async (event) => {
@@ -16,4 +16,31 @@ export const actions: Actions = {
 	}
 };
 
-export const load: PageServerLoad = async (event: PageServerLoadEvent) => {};
+export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
+	let lists: List[] = [];
+	let _groceries: Grocery[] = [];
+
+	const homeId = event.params.slug;
+
+	const db = event.platform!.env.DB;
+	const prisma = initializePrisma(db);
+	lists = await prisma.list.findMany({
+		where: {
+			homeId: parseInt(homeId)
+		}
+	});
+	_groceries = await prisma.grocery.findMany({
+		where: {
+			homeId: parseInt(homeId)
+		}
+	});
+	// convert groceries to array of value label where value is id and label is name
+	const groceries = _groceries.map((grocery) => {
+		return {
+			value: grocery.id,
+			label: grocery.name
+		};
+	});
+
+	return { lists, groceries };
+};

@@ -5,7 +5,6 @@
 	import String from '$lib/components/forms/String.svelte';
 	import ArrayInput from '$lib/components/forms/ArrayInput.svelte';
 	import { ZodString, ZodArray, z } from 'zod';
-	import SuperDebug from 'sveltekit-superforms';
 	import { toast } from 'svelte-sonner';
 	import type { Snippet } from 'svelte';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
@@ -89,4 +88,3 @@
 		{/if}
 	</div>
 </form>
-<SuperDebug data={$formData} />

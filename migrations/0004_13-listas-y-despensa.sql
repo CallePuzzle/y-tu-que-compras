@@ -2,7 +2,9 @@
 CREATE TABLE "List" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
-    "completed" BOOLEAN NOT NULL DEFAULT false
+    "completed" BOOLEAN NOT NULL DEFAULT false,
+    "homeId" INTEGER NOT NULL,
+    CONSTRAINT "List_homeId_fkey" FOREIGN KEY ("homeId") REFERENCES "Home" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateTable

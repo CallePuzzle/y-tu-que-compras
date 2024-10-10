@@ -1,16 +1,14 @@
+<script module>
+	export interface ComboxObject {
+		value: string;
+		label: string;
+	}
+</script>
+
 <script lang="ts">
 	import { Combobox } from 'bits-ui';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
-	import { Control, Field, FieldErrors, Label } from 'formsnap';
-
-	const fruits = [
-		{ value: 'mango', label: 'Mango' },
-		{ value: 'watermelon', label: 'Watermelon' },
-		{ value: 'apple', label: 'Apple' },
-		{ value: 'pineapple', label: 'Pineapple' },
-		{ value: 'orange', label: 'Orange' }
-	];
 
 	let {
 		inputValueLabel = $bindable(''),
@@ -18,7 +16,7 @@
 		form,
 		field,
 		formData,
-		multiple = false,
+		inputArray,
 		i = 0
 	}: {
 		inputValueLabel?: string;
@@ -26,11 +24,11 @@
 		form: SuperForm<any, any>;
 		field: string;
 		formData: SuperFormData<any>;
-		multiple?: boolean;
+		inputArray: ComboxObject[];
 		i?: number;
 	} = $props();
 
-	let filteredFruits = $state([] as typeof fruits);
+	let filtered = $state([] as typeof inputArray);
 	let touchedInput = $state(false);
 	let isComboxboxOpen = $state(false);
 	let showFullList = $state(false);
@@ -39,12 +37,12 @@
 	$effect(() => {
 		showFullList = false;
 		if (inputValueLabel || (inputValueLabel && touchedInput)) {
-			filteredFruits = fruits.filter((pn) =>
+			filtered = inputArray.filter((pn) =>
 				pn.value.toLowerCase().includes(inputValueLabel.toLowerCase())
 			);
 			isComboxboxOpen = true;
 		} else {
-			filteredFruits = fruits;
+			filtered = inputArray;
 			isComboxboxOpen = false;
 		}
 	});
@@ -53,7 +51,7 @@
 </script>
 
 <Combobox.Root
-	items={showFullList ? fruits : filteredFruits}
+	items={showFullList ? inputArray : filtered}
 	bind:inputValueLabel
 	bind:touchedInput
 	selected={selectedValue}
@@ -69,9 +67,9 @@
 	<Combobox.Label />
 
 	<Combobox.Content>
-		{#each filteredFruits as fruit (fruit.value)}
-			<Combobox.Item value={fruit.value} label={fruit.label}>
-				{fruit.label}
+		{#each filtered as item (item.value)}
+			<Combobox.Item value={item.value} label={item.label}>
+				{item.label}
 				<Combobox.ItemIndicator class="ml-auto" asChild={false}></Combobox.ItemIndicator>
 			</Combobox.Item>
 		{:else}

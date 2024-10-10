@@ -14,7 +14,6 @@
 	let superFormReady = $state(false);
 	let form = $state() as SuperForm<any, any>;
 	let formData = $state() as SuperFormData<any>;
-	let formDataField = $state() as SuperFormData<any>;
 
 	let {
 		data
@@ -39,6 +38,7 @@
 		bind:form
 		bind:formData
 	>
-		<ArrayCombobox {form} field="groceries" {formData}></ArrayCombobox>
+		<ArrayCombobox {form} field="groceries" type="list" {formData} comboxArray={data.groceries}
+		></ArrayCombobox>
 	</AddEditModal>
 {/if}
