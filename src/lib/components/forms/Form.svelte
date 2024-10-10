@@ -89,4 +89,3 @@
 		{/if}
 	</div>
 </form>
-<SuperDebug data={$formData} />

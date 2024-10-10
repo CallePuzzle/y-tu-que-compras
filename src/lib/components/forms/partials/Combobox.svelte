@@ -66,9 +66,15 @@
 	<Combobox.Input class="input input-bordered w-full max-w-xs" />
 	<Combobox.Label />
 
-	<Combobox.Content>
+	<Combobox.Content
+		class="bg-primary-content w-full rounded-xl border border-muted px-1 py-3 shadow-popover outline-none"
+	>
 		{#each filtered as item (item.value)}
-			<Combobox.Item value={item.value} label={item.label}>
+			<Combobox.Item
+				class="flex h-10 w-full select-none items-center rounded-button py-3 pl-5 pr-1.5 text-sm capitalize outline-none transition-all duration-75 data-[highlighted]:bg-muted"
+				value={item.value}
+				label={item.label}
+			>
 				{item.label}
 				<Combobox.ItemIndicator class="ml-auto" asChild={false}></Combobox.ItemIndicator>
 			</Combobox.Item>
