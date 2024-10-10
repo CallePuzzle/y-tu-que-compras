@@ -1,7 +1,10 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { t } from '$lib/translations';
 	import { Fieldset, Legend, ElementField, Control, Label, FieldErrors } from 'formsnap';
 	import Combobox from '$lib/components/forms/partials/Combobox.svelte';
+	import { Icon } from 'svelte-icons-pack';
+	import { FaSolidDeleteLeft } from 'svelte-icons-pack/fa';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
 	import type { ComboxObject } from '$lib/components/forms/partials/Combobox.svelte';
@@ -35,26 +38,41 @@
 		comboboxInputValue = [...comboboxInputValue, ''];
 		$formData[field] = [...$formData[field], ''];
 	}
+
+	onMount(() => {
+		// Añadimos una lista vacía para que se pueda añadir un nuevo elemento
+		add();
+	});
 </script>
 
-<Fieldset {form} name={field}>
-	<Legend>{$t(type + '.' + field)}</Legend>
+<Fieldset {form} name={field} class="grid grid-cols-2">
+	<div>
+		<Legend>{$t(type + '.' + field)}</Legend>
+	</div>
 	{#each $formData[field] as _, i}
-		<ElementField {form} name={field[i]}>
-			<Control let:attrs>
-				<Label class="sr-only">{$t(type + '.' + field)} {i + 1}</Label>
-				<Combobox
-					{form}
-					{field}
-					{formData}
-					{i}
-					bind:inputValue={comboboxInputValue[i]}
-					inputArray={comboxArray}
-				/>
-				<button type="button" onclick={() => removeByIndex(i)}> Borrar </button>
-			</Control>
-		</ElementField>
+		<div class="flex {i > 0 ? 'col-start-2' : ''}">
+			<ElementField {form} name={field[i]}>
+				<Control let:attrs>
+					<Label class="sr-only">{$t(type + '.' + field)} {i + 1}</Label>
+					<Combobox
+						{form}
+						{field}
+						{formData}
+						{i}
+						bind:inputValue={comboboxInputValue[i]}
+						inputArray={comboxArray}
+					/>
+					<button type="button" onclick={() => removeByIndex(i)}
+						><Icon src={FaSolidDeleteLeft} /></button
+					>
+				</Control>
+			</ElementField>
+		</div>
 	{/each}
-	<FieldErrors />
-	<button type="button" onclick={add}>Añadir</button>
+	<div>
+		<FieldErrors />
+	</div>
+	<div>
+		<button type="button" onclick={add}>Añadir</button>
+	</div>
 </Fieldset>

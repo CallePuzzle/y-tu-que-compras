@@ -63,7 +63,7 @@
 		inputValue = valueChange.value;
 	}}
 >
-	<Combobox.Input />
+	<Combobox.Input class="input input-bordered w-full max-w-xs" />
 	<Combobox.Label />
 
 	<Combobox.Content>

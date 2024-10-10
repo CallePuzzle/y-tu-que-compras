@@ -27,18 +27,21 @@
 	});
 </script>
 
-{#if superFormReady}
-	<AddEditModal
-		title="Crea una nueva lista"
-		{superform}
-		schema={ListSchema}
-		type="list"
-		action="add"
-		excludeFields={['groceries']}
-		bind:form
-		bind:formData
-	>
-		<ArrayCombobox {form} field="groceries" type="list" {formData} comboxArray={data.groceries}
-		></ArrayCombobox>
-	</AddEditModal>
-{/if}
+<div class="flex flex-col place-items-center">
+	<h2 class="text-2xl m-2">Listas de la compra</h2>
+	{#if superFormReady}
+		<AddEditModal
+			title="Crea una nueva lista"
+			{superform}
+			schema={ListSchema}
+			type="list"
+			action="add"
+			excludeFields={['groceries']}
+			bind:form
+			bind:formData
+		>
+			<ArrayCombobox {form} field="groceries" type="list" {formData} comboxArray={data.groceries}
+			></ArrayCombobox>
+		</AddEditModal>
+	{/if}
+</div>

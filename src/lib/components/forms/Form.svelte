@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { Snippet } from 'svelte';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
+	import SuperDebug from 'sveltekit-superforms';
 
 	let {
 		id = '',
@@ -88,3 +89,4 @@
 		{/if}
 	</div>
 </form>
+<SuperDebug data={$formData} />
