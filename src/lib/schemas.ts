@@ -36,7 +36,7 @@ export { GroceryListSchema };
 const ListSchema = z.object({
 	name: z.string(),
 	completed: z.boolean().default(false),
-	groceries: z.array(z.string())
+	groceries: z.array(z.number().int())
 });
 
 export { ListSchema };
