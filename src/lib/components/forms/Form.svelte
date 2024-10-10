@@ -44,8 +44,7 @@
 				if (form.posted && form.valid) toast.success(form.message);
 				else toast.error(form.message);
 			}
-			if (form.valid && form.posted)
-				onshowCallback();
+			if (form.valid && form.posted) onshowCallback();
 		}
 	});
 
