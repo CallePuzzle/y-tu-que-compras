@@ -13,28 +13,34 @@
 	];
 
 	let {
+		inputValueLabel = $bindable(''),
 		inputValue = $bindable(''),
 		form,
 		field,
-		formData
+		formData,
+		multiple = false,
+		i = 0
 	}: {
+		inputValueLabel?: string;
 		inputValue?: string;
 		form: SuperForm<any, any>;
 		field: string;
 		formData: SuperFormData<any>;
+		multiple?: boolean;
+		i?: number;
 	} = $props();
 
 	let filteredFruits = $state([] as typeof fruits);
 	let touchedInput = $state(false);
 	let isComboxboxOpen = $state(false);
 	let showFullList = $state(false);
-	let selectedValue = $state($formData[field]);
+	let selectedValue = $state($formData[field][i]);
 
 	$effect(() => {
 		showFullList = false;
-		if (inputValue || (inputValue && touchedInput)) {
+		if (inputValueLabel || (inputValueLabel && touchedInput)) {
 			filteredFruits = fruits.filter((pn) =>
-				pn.value.toLowerCase().includes(inputValue.toLowerCase())
+				pn.value.toLowerCase().includes(inputValueLabel.toLowerCase())
 			);
 			isComboxboxOpen = true;
 		} else {
@@ -42,13 +48,13 @@
 			isComboxboxOpen = false;
 		}
 	});
-	const { value } = formFieldProxy(form, field);
+	const { value } = formFieldProxy(form, field[i]);
 	const portal = null;
 </script>
 
 <Combobox.Root
 	items={showFullList ? fruits : filteredFruits}
-	bind:inputValue
+	bind:inputValueLabel
 	bind:touchedInput
 	selected={selectedValue}
 	open={isComboxboxOpen}
@@ -56,6 +62,7 @@
 	onSelectedChange={(valueChange: any) => {
 		selectedValue = value;
 		$value = valueChange.value;
+		inputValue = valueChange.value;
 	}}
 >
 	<Combobox.Input />

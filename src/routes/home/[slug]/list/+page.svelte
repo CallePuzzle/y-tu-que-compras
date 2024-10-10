@@ -40,8 +40,6 @@
 		bind:form
 		bind:formData
 	>
-		<Array {form} field="groceries" bind:formData>
-			<Combobox {form} field="groceries" formData={formData["groceries"]} />
-		</Array>
+		<Array {form} field="groceries" {formData}></Array>
 	</AddEditModal>
 {/if}
