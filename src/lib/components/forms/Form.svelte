@@ -3,7 +3,7 @@
 	import { superForm, type SuperValidated, type Infer, type SuperForm } from 'sveltekit-superforms';
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import String from '$lib/components/forms/String.svelte';
-	import Array from '$lib/components/forms/Array.svelte';
+	import ArrayInput from '$lib/components/forms/ArrayInput.svelte';
 	import { ZodString, ZodArray, z } from 'zod';
 	import SuperDebug from 'sveltekit-superforms';
 	import { toast } from 'svelte-sonner';
@@ -72,7 +72,7 @@
 				<String {form} {field} {type} {schemaObj} {formData} />
 			{/if}
 			{#if schemaObj[field] instanceof ZodArray}
-				<Array {form} {field} {formData} />
+				<ArrayInput {form} {field} {formData} />
 			{/if}
 		{/if}
 	{/each}

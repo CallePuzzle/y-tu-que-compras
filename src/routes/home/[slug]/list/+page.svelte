@@ -4,8 +4,7 @@
 	import { zod } from 'sveltekit-superforms/adapters';
 	import { ListSchema } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
-	import Combobox from '$lib/components/forms/Combobox.svelte';
-	import Array from '$lib/components/forms/Array.svelte';
+	import ArrayCombobox from '$lib/components/forms/ArrayCombobox.svelte';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
@@ -40,6 +39,6 @@
 		bind:form
 		bind:formData
 	>
-		<Array {form} field="groceries" {formData}></Array>
+		<ArrayCombobox {form} field="groceries" {formData}></ArrayCombobox>
 	</AddEditModal>
 {/if}

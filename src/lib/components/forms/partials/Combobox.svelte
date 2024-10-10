@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Combobox from '$lib/components/forms/partials/Combobox.svelte';
+	import { Combobox } from 'bits-ui';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
 	import { Control, Field, FieldErrors, Label } from 'formsnap';
@@ -52,11 +52,31 @@
 	const portal = null;
 </script>
 
-<Field {form} name={field}>
-	<Control let:attrs>
-		<Label class="flex justify-center flex-col sm:flex-row my-2">
-			<Combobox {form} {field} {formData} {i} bind:inputValue bind:inputValueLabel />
-		</Label>
-	</Control>
-	<FieldErrors />
-</Field>
+<Combobox.Root
+	items={showFullList ? fruits : filteredFruits}
+	bind:inputValueLabel
+	bind:touchedInput
+	selected={selectedValue}
+	open={isComboxboxOpen}
+	{portal}
+	onSelectedChange={(valueChange: any) => {
+		selectedValue = value;
+		$value = valueChange.value;
+		inputValue = valueChange.value;
+	}}
+>
+	<Combobox.Input />
+	<Combobox.Label />
+
+	<Combobox.Content>
+		{#each filteredFruits as fruit (fruit.value)}
+			<Combobox.Item value={fruit.value} label={fruit.label}>
+				{fruit.label}
+				<Combobox.ItemIndicator class="ml-auto" asChild={false}></Combobox.ItemIndicator>
+			</Combobox.Item>
+		{:else}
+			<span class="block px-5 py-2 text-sm text-muted-foreground"> No results found </span>
+		{/each}
+	</Combobox.Content>
+	<Combobox.HiddenInput name="array" />
+</Combobox.Root>

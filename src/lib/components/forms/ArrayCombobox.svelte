@@ -9,7 +9,7 @@
 		FieldErrors,
 		Description
 	} from 'formsnap';
-	import Combobox from '$lib/components/forms/Combobox.svelte';
+	import Combobox from '$lib/components/forms/partials/Combobox.svelte';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
 	import type { Snippet } from 'svelte';
@@ -17,13 +17,11 @@
 	let {
 		form,
 		field,
-		formData,
-		children
+		formData
 	}: {
 		form: SuperForm<any, any>;
 		field: string;
 		formData: SuperFormData<any>;
-		children?: Snippet;
 	} = $props();
 
 	function removeByIndex(index: number) {
