@@ -2,6 +2,7 @@
 	export interface ComboxObject {
 		value: string;
 		label: string;
+		filterValue?: string;
 	}
 </script>
 
@@ -37,9 +38,12 @@
 	$effect(() => {
 		showFullList = false;
 		if (inputValueLabel || (inputValueLabel && touchedInput)) {
-			filtered = inputArray.filter((pn) =>
-				pn.value.toLowerCase().includes(inputValueLabel.toLowerCase())
-			);
+			filtered = inputArray.filter((pn) => {
+				if (pn.filterValue) {
+					return pn.filterValue.toLowerCase().includes(inputValueLabel.toLowerCase());
+				}
+				return pn.value.toLowerCase().includes(inputValueLabel.toLowerCase());
+			});
 			isComboxboxOpen = true;
 		} else {
 			filtered = inputArray;
@@ -52,7 +56,7 @@
 
 <Combobox.Root
 	items={showFullList ? inputArray : filtered}
-	bind:inputValueLabel
+	bind:inputValue={inputValueLabel}
 	bind:touchedInput
 	selected={selectedValue}
 	open={isComboxboxOpen}

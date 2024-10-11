@@ -23,7 +23,7 @@
 		comboxArray: ComboxObject[];
 	} = $props();
 
-	let comboboxInputValue = $state([]);
+	let comboboxInputValue: string[] = $state([]);
 	const { value } = formFieldProxy(form, field);
 	$effect(() => {
 		$value = comboboxInputValue;

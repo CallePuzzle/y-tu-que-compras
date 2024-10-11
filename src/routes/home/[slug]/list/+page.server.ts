@@ -77,7 +77,8 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 	const groceries = _groceries.map((grocery) => {
 		return {
 			value: grocery.id,
-			label: grocery.name
+			label: grocery.name,
+			filterValue: grocery.name.toLowerCase()
 		};
 	});
 

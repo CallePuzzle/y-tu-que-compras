@@ -72,7 +72,7 @@
 				<String {form} {field} {type} {schemaObj} {formData} />
 			{/if}
 			{#if schemaObj[field] instanceof ZodArray}
-				<ArrayInput {form} {field} {formData} />
+				<ArrayInput {form} {field} {type} {formData} />
 			{/if}
 		{/if}
 	{/each}
@@ -89,3 +89,4 @@
 		{/if}
 	</div>
 </form>
+<!-- <SuperDebug data={$formData} />  -->
