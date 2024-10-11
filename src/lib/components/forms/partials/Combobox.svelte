@@ -35,14 +35,25 @@
 	let showFullList = $state(false);
 	let selectedValue = $state($formData[field][i]);
 
+	function normalizeContains(comboboxObjectValue: string, inputValueLabel: string): boolean {
+		const collator = new Intl.Collator('es', { sensitivity: 'base', usage: 'search' });
+		for (let i = 0; i <= comboboxObjectValue.length - inputValueLabel.length; i++) {
+			const substring = comboboxObjectValue.slice(i, i + inputValueLabel.length);
+			if (collator.compare(substring, inputValueLabel) === 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	$effect(() => {
 		showFullList = false;
 		if (inputValueLabel || (inputValueLabel && touchedInput)) {
 			filtered = inputArray.filter((pn) => {
 				if (pn.filterValue) {
-					return pn.filterValue.toLowerCase().includes(inputValueLabel.toLowerCase());
+					return normalizeContains(pn.filterValue.toLowerCase(), inputValueLabel.toLowerCase());
 				}
-				return pn.value.toLowerCase().includes(inputValueLabel.toLowerCase());
+				return normalizeContains(pn.value.toLowerCase(), inputValueLabel.toLowerCase());
 			});
 			isComboxboxOpen = true;
 		} else {

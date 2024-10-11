@@ -78,7 +78,7 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		return {
 			value: grocery.id,
 			label: grocery.name,
-			filterValue: grocery.name.toLowerCase()
+			filterValue: grocery.name
 		};
 	});
 
