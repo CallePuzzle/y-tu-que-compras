@@ -4,11 +4,15 @@
 	import { zod } from 'sveltekit-superforms/adapters';
 	import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
+	import { z } from 'zod';
 
 	import type { PageData } from './$types';
 	import type { Grocery } from '@prisma/client';
+	import type { SuperValidated } from 'sveltekit-superforms';
 
-	let superform = $state();
+	let superform: SuperValidated<z.infer<typeof GrocerySchema>> = $state({}) as SuperValidated<
+		z.infer<typeof GrocerySchema>
+	>;
 	let superFormReady = $state(false);
 
 	let {
@@ -21,39 +25,39 @@
 		superform = await superValidate(zod(GrocerySchema));
 		superFormReady = true;
 	});
-
-	const groceries: Grocery[] = data.groceries;
-	const groceriesForm = data.forms;
 </script>
 
-<ul class="list-disc pl-5">
-	{#each groceries as grocery, index}
-		<li class="mb-2">
-			<div class="card shadow-lg compact bg-base-100">
-				<div class="card-body">
-					<h2 class="card-title">{grocery.name}</h2>
+<div class="flex flex-col place-items-center">
+	<h2 class="text-2xl m-2">Listado de productos</h2>
+	{#each data.groceries as grocery, index}
+		<div class="card bg-neutral text-neutral-content w-96 my-1">
+			<div class="card-body flex flex-row items-center">
+				<div class="flex flex-col basis-1/2">
+					<h3 class="card-title">{grocery.name}</h3>
 					<p>{grocery.description}</p>
 				</div>
-				<AddEditModal
-					id={String(grocery.id)}
-					title="Edita el producto {grocery.name}"
-					superform={groceriesForm[index]}
-					schema={GrocerySchemaWithId}
-					type="grocery"
-					action="edit"
-					iconSize="2em"
-				/>
+				<div class="card-actions basis-1/2 justify-end">
+					<AddEditModal
+						id={String(grocery.id)}
+						title="Edita el producto {grocery.name}"
+						superform={data.forms[index]}
+						schema={GrocerySchemaWithId}
+						type="grocery"
+						action="edit"
+						iconSize="2em"
+					/>
+				</div>
 			</div>
-		</li>
+		</div>
 	{/each}
-</ul>
 
-{#if superFormReady}
-	<AddEditModal
-		title="Crea un nuevo producto"
-		{superform}
-		schema={GrocerySchema}
-		type="grocery"
-		action="add"
-	/>
-{/if}
+	{#if superFormReady}
+		<AddEditModal
+			title="Crea un nuevo producto"
+			{superform}
+			schema={GrocerySchema}
+			type="grocery"
+			action="add"
+		/>
+	{/if}
+</div>

@@ -6,6 +6,9 @@
 	import { AiOutlinePlusSquare } from 'svelte-icons-pack/ai';
 	import { AiOutlineEdit } from 'svelte-icons-pack/ai';
 	import { upperFirst } from 'lodash-es';
+	import { type SuperValidated, type Infer, type SuperForm } from 'sveltekit-superforms';
+	import type { Snippet } from 'svelte';
+	import type { SuperFormData } from 'sveltekit-superforms/client';
 
 	type Action = 'add' | 'edit';
 	let modal: HTMLElement | null = null;
@@ -19,15 +22,23 @@
 		schema,
 		type,
 		action,
-		iconSize = '4em'
+		iconSize = '4em',
+		excludeFields = [],
+		children,
+		form = $bindable(),
+		formData = $bindable()
 	}: {
 		id?: string;
 		title: string;
-		superform: any;
+		superform: SuperValidated<Infer<any>>;
 		schema: any;
 		type: string;
 		action?: Action;
 		iconSize?: string;
+		excludeFields?: string[];
+		children?: Snippet;
+		form?: SuperForm<any, any>;
+		formData?: SuperFormData<any>;
 	} = $props();
 
 	function showModal() {
@@ -41,6 +52,13 @@
 		icon = AiOutlineEdit;
 	}
 	formAction = '?/' + action + upperFirst(type);
+
+	function onshowCallback() {
+		console.log('onshowCallback');
+		setTimeout(() => {
+			modal.close();
+		}, 1000);
+	}
 </script>
 
 <button onclick={showModal}><Icon src={icon} size={iconSize} /></button>
@@ -48,7 +66,21 @@
 <dialog id="{id}add_edit_{type}" class="modal">
 	<div class="modal-box">
 		<h3 class="text-lg font-bold">{title}</h3>
-		<Form {schema} {superform} {type} action={formAction} />
+		<Form
+			{id}
+			{schema}
+			{superform}
+			{type}
+			{excludeFields}
+			action={formAction}
+			{onshowCallback}
+			bind:form
+			bind:formData
+		>
+			{#if children}
+				{@render children()}
+			{/if}
+		</Form>
 		<div class="modal-action">
 			<form method="dialog">
 				<button class="btn">{$t('index.close')}</button>

@@ -30,7 +30,7 @@ const Routes: Routes = {
 		url: '/notification/subscribe'
 	},
 	home_index: {
-		name: 'Index de una casa',
+		name: 'Casa',
 		generateUrl: (params: { id: string }) => `/home/${params.id}`
 	},
 	grocery_index: {
@@ -41,8 +41,12 @@ const Routes: Routes = {
 		name: 'Listas de la compra',
 		generateUrl: (params: { id: string }) => `/home/${params.id}/list`
 	},
-	store_index: {
+	fridge_index: {
 		name: 'Despensa / nevera',
+		generateUrl: (params: { id: string }) => `/home/${params.id}/fridge`
+	},
+	store_index: {
+		name: 'Tiendas',
 		generateUrl: (params: { id: string }) => `/home/${params.id}/store`
 	}
 };

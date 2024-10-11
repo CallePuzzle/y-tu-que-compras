@@ -1,4 +1,4 @@
-import { superValidate } from 'sveltekit-superforms';
+import { superValidate, message } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { HomeSchema } from '$lib/schemas';
 import { logger } from '$lib/server/logger';
@@ -31,10 +31,10 @@ export const actions: Actions = {
 				}
 			});
 			logger.info(home, 'home created');
-			return form;
+			return message(form, 'Form posted successfully!');
 		} catch (error) {
 			logger.error(error);
-			return form;
+			return message(form, 'Error updating profile');
 		}
 	}
 };

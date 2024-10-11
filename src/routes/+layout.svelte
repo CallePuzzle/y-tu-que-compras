@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import Nav from '$lib/components/layout/Nav.svelte';
-	import toast, { Toaster } from 'svelte-french-toast';
+	import { Toaster, toast } from 'svelte-sonner';
 	import { SubscribeUser } from '$lib/notification/subscribe-user';
 	import { Routes } from '$lib/routes';
 	import { t } from '$lib/translations';
@@ -16,21 +16,21 @@
 			await SubscribeUser(data.userIsLogged, data.user?.id as string, reg, data.JWKpublicKey);
 		}
 
-		if (data.notifications && data.path !== Routes.notification_my.url) {
-			if (data.notificationsCount == 1) {
-				toast('Tienes una notificación sin leer', {
-					icon: '🔔'
-				});
-			} else if (data.notificationsCount > 1) {
-				toast(`Tienes ${data.notificationsCount} notificaciones sin leer`, {
-					icon: '🔔'
-				});
-			}
-		}
+		//if (data.notifications && data.path !== Routes.notification_my.url) {
+		//	if (data.notificationsCount == 1) {
+		//		toast('Tienes una notificación sin leer', {
+		//			icon: '🔔'
+		//		});
+		//	} else if (data.notificationsCount > 1) {
+		//		toast(`Tienes ${data.notificationsCount} notificaciones sin leer`, {
+		//			icon: '🔔'
+		//		});
+		//	}
+		//}
 	});
 </script>
 
-<Toaster />
+<Toaster position="top-center" richColors />
 
 <div class="h-screen main-div">
 	<Nav

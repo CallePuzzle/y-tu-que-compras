@@ -3,6 +3,7 @@
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
 	import { HomeSchema } from '$lib/schemas';
 	import { Routes } from '$lib/routes';
+	import Form from '$lib/components/forms/Form.svelte';
 
 	import type { PageData } from './$types';
 
@@ -13,7 +14,6 @@
 	} = $props();
 
 	const superform = data.form;
-	const houses = data.houses;
 </script>
 
 <div class="hero bg-base-200 min-h-screen">
@@ -23,7 +23,7 @@
 			<p class="py-6">
 				{$t('index.selectHome')}
 			</p>
-			{#each houses as home}
+			{#each data.houses as home}
 				<div class="card bg-base-100 shadow-xl my-4">
 					<a href={Routes.home_index.generateUrl({ id: home.id })}>
 						<div class="card-body">

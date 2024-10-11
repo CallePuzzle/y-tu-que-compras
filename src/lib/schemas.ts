@@ -5,25 +5,14 @@ const UserSchema = z.object({
 	picture: z.string().url()
 });
 
+export { UserSchema };
+
 const HomeSchema = z.object({
 	name: z.string().min(3),
 	description: z.string().min(3)
 });
 
-const PriceSchema = z.object({
-	id: z.number().int(),
-	price: z.number().min(0),
-	date: z.date(),
-	grocery_id: z.number().int(),
-	store_id: z.number().int()
-});
-
-const StoreSchema = z.object({
-	id: z.number().int(),
-	name: z.string().min(1),
-	description: z.string().optional(),
-	Price: z.array(PriceSchema)
-});
+export { HomeSchema };
 
 const GrocerySchema = z.object({
 	name: z.string().min(1),
@@ -34,4 +23,20 @@ const GrocerySchemaWithId = GrocerySchema.extend({
 	id: z.number().int()
 });
 
-export { UserSchema, HomeSchema, PriceSchema, StoreSchema, GrocerySchema, GrocerySchemaWithId };
+export { GrocerySchema, GrocerySchemaWithId };
+
+const GroceryListSchema = z.object({
+	quantity: z.number().int().default(1),
+	completed: z.boolean().default(false),
+	groceryId: z.number().int()
+});
+
+export { GroceryListSchema };
+
+const ListSchema = z.object({
+	name: z.string(),
+	completed: z.boolean().default(false),
+	groceries: z.array(z.number().int())
+});
+
+export { ListSchema };

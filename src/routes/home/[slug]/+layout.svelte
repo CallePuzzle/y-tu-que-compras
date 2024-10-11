@@ -3,6 +3,8 @@
 	import { LuApple } from 'svelte-icons-pack/lu';
 	import { FaSolidListCheck } from 'svelte-icons-pack/fa';
 	import { RiOthersFridgeLine } from 'svelte-icons-pack/ri';
+	import { AiOutlineHome } from 'svelte-icons-pack/ai';
+	import { BiStore } from 'svelte-icons-pack/bi';
 	import { Routes } from '$lib/routes';
 
 	import type { PageData } from './$types';
@@ -18,10 +20,34 @@
 	const home = data.home;
 </script>
 
+<div class="hero bg-base-200">
+	<div class="hero-content flex-col lg:flex-row">
+		<img
+			src="https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp"
+			class="max-w-sm rounded-lg shadow-2xl"
+		/>
+		<div>
+			<h1 class="text-5xl font-bold">{home.name}</h1>
+			<p class="py-6">
+				{home.description}
+			</p>
+		</div>
+	</div>
+</div>
+
 {@render children()}
 
 <div class="flex justify-center">
 	<ul class="menu menu-horizontal bg-base-200 rounded-box mt-6">
+		<li>
+			<a
+				class="tooltip"
+				data-tip={Routes.home_index.name}
+				href={Routes.home_index.generateUrl({ id: home.id })}
+			>
+				<Icon src={AiOutlineHome} size="2.5em" />
+			</a>
+		</li>
 		<li>
 			<a
 				class="tooltip"
@@ -43,10 +69,19 @@
 		<li>
 			<a
 				class="tooltip"
+				data-tip={Routes.fridge_index.name}
+				href={Routes.fridge_index.generateUrl({ id: home.id })}
+			>
+				<Icon src={RiOthersFridgeLine} size="2.5em" />
+			</a>
+		</li>
+		<li>
+			<a
+				class="tooltip"
 				data-tip={Routes.store_index.name}
 				href={Routes.store_index.generateUrl({ id: home.id })}
 			>
-				<Icon src={RiOthersFridgeLine} size="2.5em" />
+				<Icon src={BiStore} size="2.5em" />
 			</a>
 		</li>
 	</ul>
