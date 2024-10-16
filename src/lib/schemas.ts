@@ -34,9 +34,11 @@ const GroceryListSchema = z.object({
 export { GroceryListSchema };
 
 const ListSchema = z.object({
-	name: z.string(),
-	completed: z.boolean().default(false),
-	groceries: z.array(z.number().int())
+	name: z.string()
 });
 
-export { ListSchema };
+const ListSchemaWithId = ListSchema.extend({
+	id: z.number().int()
+});
+
+export { ListSchema, ListSchemaWithId };

@@ -1,4 +1,3 @@
-import { logger } from '$lib/server/logger';
 import { initializePrisma } from '$lib/server/db';
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
@@ -50,15 +49,14 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 
 	const forms = await Promise.all(
 		groceries.map(async (grocery) => {
-			const groceryData = {
+			const formData = {
 				id: grocery.id,
 				name: grocery.name ?? undefined,
 				description: grocery.description ?? undefined
 			};
-			return await superValidate(groceryData, zod(GrocerySchemaWithId));
+			return await superValidate(formData, zod(GrocerySchemaWithId));
 		})
 	);
-	logger.debug(forms, 'forms');
 
 	return { groceries, forms };
 };
