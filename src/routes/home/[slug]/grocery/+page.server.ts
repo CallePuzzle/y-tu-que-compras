@@ -1,66 +1,37 @@
-import { fail } from '@sveltejs/kit';
 import { logger } from '$lib/server/logger';
 import { initializePrisma } from '$lib/server/db';
-import { superValidate, message } from 'sveltekit-superforms';
+import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
+import { add, edit } from '$lib/components/list-of';
 
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
 import type { Grocery } from '@prisma/client';
 
 export const actions: Actions = {
 	addGrocery: async (event) => {
-		const form = await superValidate(event.request, zod(GrocerySchema));
-		logger.info(form, 'addGrocery form');
-		if (!form.valid) {
-			logger.debug('form invalid');
-			return fail(400, { form });
-		}
-
 		const db = event.platform!.env.DB;
 		const prisma = initializePrisma(db);
-		const homeId = event.params.slug;
-		try {
-			const grocery = await prisma.grocery.create({
-				data: {
-					...form.data,
-					homeId: parseInt(homeId)
-				}
-			});
-			logger.info(grocery, 'grocery created');
-			return message(form, 'Form posted successfully!');
-		} catch (error) {
-			logger.error(error);
-			return message(form, 'Error updating profile');
-		}
+		const prismaObject = prisma.grocery;
+		return await add(
+			event.request,
+			prismaObject,
+			GrocerySchema,
+			'Grocery',
+			parseInt(event.params.slug)
+		);
 	},
 	editGrocery: async (event) => {
-		const form = await superValidate(event.request, zod(GrocerySchemaWithId));
-		logger.info(form, 'editGrocery form');
-		if (!form.valid) {
-			logger.debug('form invalid');
-			return fail(400, { form });
-		}
-		const { id } = form.data;
 		const db = event.platform!.env.DB;
 		const prisma = initializePrisma(db);
-		const homeId = event.params.slug;
-		try {
-			const grocery = await prisma.grocery.update({
-				where: {
-					id: id
-				},
-				data: {
-					...form.data,
-					homeId: parseInt(homeId)
-				}
-			});
-			logger.info(grocery, 'grocery updated');
-			return message(form, 'Form posted successfully!');
-		} catch (error) {
-			logger.error(error);
-			return message(form, 'Error updating profile');
-		}
+		const prismaObject = prisma.grocery;
+		return await edit(
+			event.request,
+			prismaObject,
+			GrocerySchemaWithId,
+			'Grocery',
+			parseInt(event.params.slug)
+		);
 	}
 };
 
