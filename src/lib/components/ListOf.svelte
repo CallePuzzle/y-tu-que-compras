@@ -5,6 +5,7 @@
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
 
 	import { type SuperValidated, type Infer } from 'sveltekit-superforms';
+	import type { Snippet } from 'svelte';
 
 	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
 	let superFormReady = $state(false);
@@ -15,7 +16,8 @@
 		forms,
 		type,
 		schema,
-		schemaWithId
+		schemaWithId,
+		card
 	}: {
 		h2title: string;
 		items: any[];
@@ -23,6 +25,7 @@
 		type: string;
 		schema: any;
 		schemaWithId: any;
+		card?: Snippet<[any]>;
 	} = $props();
 
 	onMount(async () => {
@@ -36,10 +39,14 @@
 	{#each items as item, index}
 		<div class="card bg-neutral text-neutral-content w-96 my-1">
 			<div class="card-body flex flex-row items-center">
-				<div class="flex flex-col basis-1/2">
-					<h3 class="card-title">{item.name}</h3>
-					<p>{item.description}</p>
-				</div>
+				{#if card}
+					{@render card(item)}
+				{:else}
+					<div class="flex flex-col basis-1/2">
+						<h3 class="card-title">{item.name}</h3>
+					</div>
+				{/if}
+
 				<div class="card-actions basis-1/2 justify-end">
 					<AddEditModal
 						id={String(item.id)}

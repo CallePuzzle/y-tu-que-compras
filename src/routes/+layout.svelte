@@ -7,7 +7,10 @@
 	import { Routes } from '$lib/routes';
 	import { t } from '$lib/translations';
 
-	let { children, data } = $props();
+	import type { PageData } from './$types';
+	import type { Snippet } from 'svelte';
+
+	let { children, data }: { children: Snippet; data: PageData } = $props();
 
 	onMount(async () => {
 		await Notification.requestPermission();

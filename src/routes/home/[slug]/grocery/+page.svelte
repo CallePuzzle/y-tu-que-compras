@@ -17,4 +17,11 @@
 	type="grocery"
 	schema={GrocerySchema}
 	schemaWithId={GrocerySchemaWithId}
-/>
+>
+	{#snippet card(item)}
+		<div class="flex flex-col basis-1/2">
+			<h3 class="card-title">{item.name}</h3>
+			<p>{item.description}</p>
+		</div>
+	{/snippet}
+</ListOf>
