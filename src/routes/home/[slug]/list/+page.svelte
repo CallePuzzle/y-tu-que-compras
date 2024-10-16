@@ -7,13 +7,9 @@
 	import ArrayCombobox from '$lib/components/forms/ArrayCombobox.svelte';
 
 	import type { PageData } from './$types';
-	import type { Grocery } from '@prisma/client';
-	import type { SuperFormData } from 'sveltekit-superforms/client';
 
 	let superform = $state();
 	let superFormReady = $state(false);
-	let form = $state() as SuperForm<any, any>;
-	let formData = $state() as SuperFormData<any>;
 
 	let {
 		data
@@ -54,11 +50,16 @@
 			type="list"
 			action="add"
 			excludeFields={['groceries']}
-			bind:form
-			bind:formData
 		>
-			<ArrayCombobox {form} field="groceries" type="list" {formData} comboxArray={data.groceries}
-			></ArrayCombobox>
+			{#snippet extraFields(form, formData)}
+				<ArrayCombobox
+					{form}
+					field="groceries"
+					type="list"
+					{formData}
+					comboxArray={data.groceries}
+				/>
+			{/snippet}
 		</AddEditModal>
 	{/if}
 </div>

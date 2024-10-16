@@ -18,10 +18,7 @@
 		action,
 		excludeFields = [],
 		onshowCallback = () => {},
-		children,
-		// variables que mandamos al padre para poder meter más campos en el formulario
-		form = $bindable(),
-		formData = $bindable()
+		extraFields
 	}: {
 		id?: string;
 		superform: SuperValidated<Infer<any>>;
@@ -30,11 +27,9 @@
 		action?: string;
 		excludeFields?: string[];
 		onshowCallback: () => void;
-		children?: Snippet;
-		form?: SuperForm<any, any>;
-		formData?: SuperFormData<any>;
+		extraFields?: Snippet<[SuperForm<any, any>, SuperFormData<any>]>;
 	} = $props();
-	form = superForm(superform, {
+	const form = superForm(superform, {
 		id: id + '-' + type,
 		validators: zodClient(schema),
 		dataType: 'json',
@@ -48,8 +43,7 @@
 		}
 	});
 
-	const { enhance, delayed } = form;
-	formData = form.form;
+	const { form: formData, enhance, delayed } = form;
 	let fields = schema.keyof().options;
 	fields = fields.filter((field: string) => !excludeFields.includes(field));
 	const schemaObj = schema.shape;
@@ -77,8 +71,8 @@
 		{/if}
 	{/each}
 
-	{#if children}
-		{@render children()}
+	{#if extraFields}
+		{@render extraFields(form, formData)}
 	{/if}
 
 	<div class="flex justify-center my-2">
