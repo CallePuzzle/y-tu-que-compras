@@ -12,7 +12,13 @@ export const actions: Actions = {
 		const db = event.platform!.env.DB;
 		const prisma = initializePrisma(db);
 		const prismaObject = prisma.list;
-		return await add(event.request, prismaObject, ListSchema, 'List', parseInt(event.params.homeId));
+		return await add(
+			event.request,
+			prismaObject,
+			ListSchema,
+			'List',
+			parseInt(event.params.homeId)
+		);
 	},
 	editList: async (event) => {
 		const db = event.platform!.env.DB;
