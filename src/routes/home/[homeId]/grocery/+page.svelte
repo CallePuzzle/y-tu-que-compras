@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
 	import ListOf from '$lib/components/ListOf.svelte';
+
 	import type { PageData } from './$types';
 
 	let {

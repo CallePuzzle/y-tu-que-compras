@@ -1,55 +1,62 @@
 import { initializePrisma } from '$lib/server/db';
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
-import { ListSchema, ListSchemaWithId } from '$lib/schemas';
+import { GrocerySchema, GrocerySchemaWithId } from '$lib/schemas';
 import { add, edit } from '$lib/components/list-of';
 
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
-import type { List } from '@prisma/client';
+import type { Grocery } from '@prisma/client';
 
 export const actions: Actions = {
-	addList: async (event) => {
+	addGrocery: async (event) => {
 		const db = event.platform!.env.DB;
 		const prisma = initializePrisma(db);
-		const prismaObject = prisma.list;
-		return await add(event.request, prismaObject, ListSchema, 'List', parseInt(event.params.slug));
+		const prismaObject = prisma.grocery;
+		return await add(
+			event.request,
+			prismaObject,
+			GrocerySchema,
+			'Grocery',
+			parseInt(event.params.homeId)
+		);
 	},
-	editList: async (event) => {
+	editGrocery: async (event) => {
 		const db = event.platform!.env.DB;
 		const prisma = initializePrisma(db);
-		const prismaObject = prisma.list;
+		const prismaObject = prisma.grocery;
 		return await edit(
 			event.request,
 			prismaObject,
-			ListSchemaWithId,
-			'List',
-			parseInt(event.params.slug)
+			GrocerySchemaWithId,
+			'Grocery',
+			parseInt(event.params.homeId)
 		);
 	}
 };
 
 export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
-	let lists: List[] = [];
+	let groceries: Grocery[] = [];
 
-	const homeId = event.params.slug;
+	const homeId = event.params.homeId;
 
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
-	lists = await prisma.list.findMany({
+	groceries = await prisma.grocery.findMany({
 		where: {
 			homeId: parseInt(homeId)
 		}
 	});
 
 	const forms = await Promise.all(
-		lists.map(async (list) => {
+		groceries.map(async (grocery) => {
 			const formData = {
-				id: list.id,
-				name: list.name ?? undefined
+				id: grocery.id,
+				name: grocery.name ?? undefined,
+				description: grocery.description ?? undefined
 			};
-			return await superValidate(formData, zod(ListSchemaWithId));
+			return await superValidate(formData, zod(GrocerySchemaWithId));
 		})
 	);
 
-	return { lists, forms };
+	return { groceries, forms };
 };
