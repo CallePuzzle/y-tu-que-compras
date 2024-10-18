@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { GroceryList, Grocery } from '@prisma/client';
 
 const UserSchema = z.object({
 	name: z.string().min(3),
@@ -48,3 +49,9 @@ const IdSchema = z.object({
 });
 
 export { IdSchema };
+
+type GroceryListExtended = GroceryList & {
+	grocery: Grocery;
+};
+
+export type { GroceryListExtended };
