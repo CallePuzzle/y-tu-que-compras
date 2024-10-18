@@ -18,7 +18,7 @@
 		field,
 		formData,
 		inputArray,
-		i = 0
+		i = undefined
 	}: {
 		inputValueLabel?: string;
 		inputValue?: string;
@@ -33,7 +33,7 @@
 	let touchedInput = $state(false);
 	let isComboxboxOpen = $state(false);
 	let showFullList = $state(false);
-	let selectedValue = $state($formData[field][i]);
+	let selectedValue = $state($formData[field]);
 
 	function normalizeContains(comboboxObjectValue: string, inputValueLabel: string): boolean {
 		const collator = new Intl.Collator('es', { sensitivity: 'base', usage: 'search' });
@@ -61,7 +61,7 @@
 			isComboxboxOpen = false;
 		}
 	});
-	const { value } = formFieldProxy(form, field[i]);
+	const { value } = formFieldProxy(form, field);
 	const portal = null;
 </script>
 

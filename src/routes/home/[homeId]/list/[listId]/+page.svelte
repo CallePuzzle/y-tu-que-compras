@@ -1,15 +1,26 @@
 <script lang="ts">
-	import { ListSchema, ListSchemaWithId } from '$lib/schemas';
-	import ListOf from '$lib/components/ListOf.svelte';
-	import { Routes } from '$lib/routes';
+	import { onMount } from 'svelte';
+	import { superValidate, type SuperValidated, type Infer } from 'sveltekit-superforms';
+	import { zod } from 'sveltekit-superforms/adapters';
+	import Combobox from '$lib/components/forms/Combobox.svelte';
+	import { IdSchema } from '$lib/schemas';
 
 	import type { PageData } from './$types';
+	import Form from '$lib/components/forms/Form.svelte';
+
+	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
+	let superFormReady = $state(false);
 
 	let {
 		data
 	}: {
 		data: PageData;
 	} = $props();
+
+	onMount(async () => {
+		superform = await superValidate(zod(IdSchema));
+		superFormReady = true;
+	});
 </script>
 
 <div class="flex flex-col place-items-center">
@@ -23,4 +34,17 @@
 			</div>
 		</div>
 	{/each}
+	{#if superFormReady}
+		<Form
+			{superform}
+			schema={IdSchema}
+			type="list"
+			action="?/addGroceryToList"
+			excludeFields={['id']}
+		>
+			{#snippet extraFields(form, formData)}
+				<Combobox {form} field="id" {formData} comboxArray={data.groceries} />
+			{/snippet}
+		</Form>
+	{/if}
 </div>

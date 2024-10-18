@@ -42,3 +42,9 @@ const ListSchemaWithId = ListSchema.extend({
 });
 
 export { ListSchema, ListSchemaWithId };
+
+const IdSchema = z.object({
+	id: z.number().int()
+});
+
+export { IdSchema };

@@ -26,7 +26,7 @@
 		type: string;
 		action?: string;
 		excludeFields?: string[];
-		onshowCallback: () => void;
+		onshowCallback?: () => void;
 		extraFields?: Snippet<[SuperForm<any, any>, SuperFormData<any>]>;
 	} = $props();
 	const form = superForm(superform, {
@@ -83,4 +83,4 @@
 		{/if}
 	</div>
 </form>
-<!-- <SuperDebug data={$formData} />  -->
+<SuperDebug data={$formData} />

@@ -3,6 +3,7 @@
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
 	import { Control, Field, FieldErrors, Label } from 'formsnap';
+	import type { ComboxObject } from '$lib/components/forms/partials/Combobox.svelte';
 
 	const fruits = [
 		{ value: 'mango', label: 'Mango' },
@@ -18,7 +19,7 @@
 		form,
 		field,
 		formData,
-		multiple = false,
+		comboxArray,
 		i = 0
 	}: {
 		inputValueLabel?: string;
@@ -26,7 +27,7 @@
 		form: SuperForm<any, any>;
 		field: string;
 		formData: SuperFormData<any>;
-		multiple?: boolean;
+		comboxArray: ComboxObject[];
 		i?: number;
 	} = $props();
 
@@ -55,7 +56,7 @@
 <Field {form} name={field}>
 	<Control let:attrs>
 		<Label class="flex justify-center flex-col sm:flex-row my-2">
-			<Combobox {form} {field} {formData} {i} bind:inputValue bind:inputValueLabel />
+			<Combobox {form} {field} {formData} {i} bind:inputValue inputArray={comboxArray} />
 		</Label>
 	</Control>
 	<FieldErrors />
