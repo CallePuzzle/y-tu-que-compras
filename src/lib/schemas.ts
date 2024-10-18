@@ -48,7 +48,11 @@ const IdSchema = z.object({
 	id: z.number().int()
 });
 
-export { IdSchema };
+const CompletedSchemaWithId = IdSchema.extend({
+	completed: z.boolean()
+});
+
+export { IdSchema, CompletedSchemaWithId };
 
 type GroceryListExtended = GroceryList & {
 	grocery: Grocery;

@@ -3,13 +3,18 @@
 	import { superValidate, type SuperValidated, type Infer } from 'sveltekit-superforms';
 	import { zod } from 'sveltekit-superforms/adapters';
 	import Combobox from '$lib/components/forms/Combobox.svelte';
-	import { IdSchema } from '$lib/schemas';
+	import { IdSchema, CompletedSchemaWithId } from '$lib/schemas';
+	import Check from '$lib/components/list/Check.svelte';
+	import { z } from 'zod';
 
 	import type { PageData } from './$types';
 	import Form from '$lib/components/forms/Form.svelte';
 	import type { GroceryListExtended } from '$lib/schemas';
 
 	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
+	let superformCheck: SuperValidated<z.infer<typeof CompletedSchemaWithId>> = $state(
+		{}
+	) as SuperValidated<z.infer<typeof CompletedSchemaWithId>>;
 	let superFormReady = $state(false);
 	let completedGroceries = $state([] as GroceryListExtended[]);
 	let todoGroceries = $state([] as GroceryListExtended[]);
@@ -22,6 +27,7 @@
 
 	onMount(async () => {
 		superform = await superValidate(zod(IdSchema));
+		superformCheck = await superValidate(zod(CompletedSchemaWithId));
 		superFormReady = true;
 	});
 
@@ -34,17 +40,13 @@
 <div class="flex flex-col place-items-center">
 	<h2 class="text-2xl m-2">{data.list.name}</h2>
 	{#each todoGroceries as item, index}
-		<div class="card bg-neutral text-neutral-content w-96 my-1">
-			<div class="card-body flex flex-row items-center">
-				<div class="flex flex-col basis-1/2">
-					<h3 class="card-title">
-						<input type="checkbox" name="todo{index}" class="checkbox" checked={item.completed} />
-						<button class="checkbox checked"></button>
-						{item.grocery.name}
-					</h3>
-				</div>
-			</div>
-		</div>
+		<Check
+			id={item.id}
+			name={item.grocery.name}
+			completed={item.completed}
+			superform={superformCheck}
+			superFormReady
+		/>
 	{/each}
 	{#each completedGroceries as item, index}
 		<div class="card bg-neutral text-neutral-content w-96 my-1">
@@ -57,6 +59,7 @@
 							class="checkbox"
 							checked={item.completed}
 						/>
+						<button class="checkbox checked"></button>
 						{item.grocery.name}
 					</h3>
 				</div>
