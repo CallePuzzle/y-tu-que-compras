@@ -3,13 +3,11 @@
 	import { superValidate, type SuperValidated, type Infer } from 'sveltekit-superforms';
 	import { zod } from 'sveltekit-superforms/adapters';
 	import Combobox from '$lib/components/forms/Combobox.svelte';
-	import { IdSchema, CompletedSchemaWithId } from '$lib/schemas';
+	import { IdSchema } from '$lib/schemas';
 	import Check from '$lib/components/list/Check.svelte';
-	import { z } from 'zod';
 
 	import type { PageData } from './$types';
 	import Form from '$lib/components/forms/Form.svelte';
-	import type { GroceryListExtended } from '$lib/schemas';
 
 	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
 	let superFormReady = $state(false);
@@ -28,31 +26,21 @@
 
 <div class="flex flex-col place-items-center">
 	<h2 class="text-2xl m-2">{data.list.name}</h2>
-	{#each data.todoGroceries as item, index}
+	{#each data.todoGroceries as item}
 		<Check
 			id={item.id}
 			name={item.grocery.name}
 			completed={item.completed}
-			superform={data.todoForms[index]}
+			superform={data.todoForms[item.id]}
 		/>
 	{/each}
-	{#each data.completedGroceries as item, index}
-		<div class="card bg-neutral text-neutral-content w-96 my-1">
-			<div class="card-body flex flex-row items-center">
-				<div class="flex flex-col basis-1/2">
-					<h3 class="card-title">
-						<input
-							type="checkbox"
-							name="completed{index}"
-							class="checkbox"
-							checked={item.completed}
-						/>
-						<button class="checkbox checked"></button>
-						{item.grocery.name}
-					</h3>
-				</div>
-			</div>
-		</div>
+	{#each data.completedGroceries as item}
+		<Check
+			id={item.id}
+			name={item.grocery.name}
+			completed={item.completed}
+			superform={data.completedForms[item.id]}
+		/>
 	{/each}
 	{#if superFormReady}
 		<Form
@@ -68,22 +56,3 @@
 		</Form>
 	{/if}
 </div>
-
-<style>
-	.checked {
-		background-repeat: no-repeat;
-		animation: checkmark var(--animation-input, 0.2s) ease-out;
-		background-color: var(--chkbg);
-		background-image: linear-gradient(-45deg, transparent 65%, var(--chkbg) 65.99%),
-			linear-gradient(45deg, transparent 75%, var(--chkbg) 75.99%),
-			linear-gradient(-45deg, var(--chkbg) 40%, transparent 40.99%),
-			linear-gradient(
-				45deg,
-				var(--chkbg) 30%,
-				var(--chkfg) 30.99%,
-				var(--chkfg) 40%,
-				transparent 40.99%
-			),
-			linear-gradient(-45deg, var(--chkfg) 50%, var(--chkbg) 50.99%);
-	}
-</style>

@@ -1,7 +1,8 @@
 import { error } from '@sveltejs/kit';
 import { initializePrisma } from '$lib/server/db';
-import { message, superValidate } from 'sveltekit-superforms';
+import { message, superValidate, type SuperValidated } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
+import { z } from 'zod';
 import { ListSchema, ListSchemaWithId } from '$lib/schemas';
 import { add, edit } from '$lib/components/list-of';
 import { IdSchema, CompletedSchemaWithId } from '$lib/schemas';
@@ -118,24 +119,28 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		(grocery) => !grocery.completed
 	) as GroceryListExtended[];
 
-	const completedForms = await Promise.all(
-		completedGroceries.map(async (grocery) => {
-			const formData = {
-				id: grocery.id,
-				completed: grocery.completed
-			};
-			return await superValidate(formData, zod(CompletedSchemaWithId));
-		})
-	);
-	const todoForms = await Promise.all(
-		todoGroceries.map(async (grocery) => {
-			const formData = {
-				id: grocery.id,
-				completed: grocery.completed
-			};
-			return await superValidate(formData, zod(CompletedSchemaWithId));
-		})
-	);
+	const completedForms = await getForm(completedGroceries);
+
+	const todoForms = await getForm(todoGroceries);
 
 	return { list, groceries, completedGroceries, todoGroceries, completedForms, todoForms };
 };
+
+async function getForm(
+	groceryList: GroceryListExtended[]
+): Promise<Record<string, SuperValidated<z.infer<typeof CompletedSchemaWithId>>>> {
+	const form = await Promise.all(
+		groceryList.map(async (grocery) => {
+			const formData = {
+				id: grocery.id,
+				completed: grocery.completed
+			};
+			return await superValidate(formData, zod(CompletedSchemaWithId));
+		})
+	);
+	let ret: Record<string, SuperValidated<z.infer<typeof CompletedSchemaWithId>>> = {};
+	for (let list of form) {
+		ret[list.data.id] = list;
+	}
+	return ret;
+}
