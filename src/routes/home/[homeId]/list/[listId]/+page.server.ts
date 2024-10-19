@@ -59,13 +59,6 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		where: {
 			id: parseInt(listId),
 			homeId: parseInt(homeId)
-		},
-		include: {
-			groceries: {
-				include: {
-					grocery: true
-				}
-			}
 		}
 	});
 	logger.debug(list, 'list');
@@ -74,6 +67,20 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 			message: 'Not found'
 		});
 	}
+
+	const groceryList = await prisma.groceryList.findMany({
+		where: {
+			listId: parseInt(listId)
+		},
+		include: {
+			grocery: true
+		},
+		orderBy: {
+			grocery: {
+				name: 'asc'
+			}
+		}
+	});
 
 	let _groceries: Grocery[] = [];
 	_groceries = await prisma.grocery.findMany({
@@ -89,5 +96,5 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		} as ComboxObject;
 	});
 
-	return { list, groceries };
+	return { list, groceryList, groceries };
 };

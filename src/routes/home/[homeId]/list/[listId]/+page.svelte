@@ -19,11 +19,15 @@
 		data: PageData;
 	} = $props();
 
-	let groceryList = $state(data.list.groceries as GroceryListExtended[]);
+	let groceryList = $state(data.groceryList as GroceryListExtended[]);
 
 	onMount(async () => {
 		superform = await superValidate(zod(IdSchema));
 		superFormReady = true;
+	});
+
+	$effect(() => {
+		groceryList = data.groceryList as GroceryListExtended[];
 	});
 </script>
 
