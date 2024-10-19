@@ -4,12 +4,13 @@ import { message, superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { ListSchema, ListSchemaWithId } from '$lib/schemas';
 import { add, edit } from '$lib/components/list-of';
-import { IdSchema } from '$lib/schemas';
+import { IdSchema, CompletedSchemaWithId } from '$lib/schemas';
 
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
 import type { Grocery } from '@prisma/client';
 import { logger } from '$lib/server/logger';
 import type { ComboxObject } from '$lib/components/forms/partials/Combobox.svelte';
+import type { GroceryListExtended } from '$lib/schemas';
 
 export const actions: Actions = {
 	addGroceryToList: async (event) => {
@@ -45,6 +46,29 @@ export const actions: Actions = {
 			logger.error(error);
 			return message(form, 'Error adding grocery to list');
 		}
+	},
+	toggleCheck: async (event) => {
+		const form = await superValidate(event.request, zod(CompletedSchemaWithId));
+		logger.info(form, 'toggleCheck');
+
+		const db = event.platform!.env.DB;
+		const prisma = initializePrisma(db);
+
+		try {
+			const groceryList = await prisma.groceryList.update({
+				where: {
+					id: form.data.id
+				},
+				data: {
+					completed: !form.data.completed
+				}
+			});
+			logger.info('groceryList with id ' + form.data.id + ' updated');
+			return message(form, 'Grocery updated successfully!');
+		} catch (error) {
+			logger.error(error);
+			return message(form, 'Error updating grocery');
+		}
 	}
 };
 
@@ -72,6 +96,7 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 			message: 'Not found'
 		});
 	}
+
 	let _groceries: Grocery[] = [];
 	_groceries = await prisma.grocery.findMany({
 		where: {
@@ -85,5 +110,32 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 			filterValue: grocery.name
 		} as ComboxObject;
 	});
-	return { list, groceries };
+
+	const completedGroceries = list.groceries.filter(
+		(grocery) => grocery.completed
+	) as GroceryListExtended[];
+	const todoGroceries = list.groceries.filter(
+		(grocery) => !grocery.completed
+	) as GroceryListExtended[];
+
+	const completedForms = await Promise.all(
+		completedGroceries.map(async (grocery) => {
+			const formData = {
+				id: grocery.id,
+				completed: grocery.completed
+			};
+			return await superValidate(formData, zod(CompletedSchemaWithId));
+		})
+	);
+	const todoForms = await Promise.all(
+		todoGroceries.map(async (grocery) => {
+			const formData = {
+				id: grocery.id,
+				completed: grocery.completed
+			};
+			return await superValidate(formData, zod(CompletedSchemaWithId));
+		})
+	);
+
+	return { list, groceries, completedGroceries, todoGroceries, completedForms, todoForms };
 };

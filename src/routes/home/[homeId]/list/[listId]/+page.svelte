@@ -12,12 +12,7 @@
 	import type { GroceryListExtended } from '$lib/schemas';
 
 	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
-	let superformCheck: SuperValidated<z.infer<typeof CompletedSchemaWithId>> = $state(
-		{}
-	) as SuperValidated<z.infer<typeof CompletedSchemaWithId>>;
 	let superFormReady = $state(false);
-	let completedGroceries = $state([] as GroceryListExtended[]);
-	let todoGroceries = $state([] as GroceryListExtended[]);
 
 	let {
 		data
@@ -27,28 +22,21 @@
 
 	onMount(async () => {
 		superform = await superValidate(zod(IdSchema));
-		superformCheck = await superValidate(zod(CompletedSchemaWithId));
 		superFormReady = true;
-	});
-
-	$effect(() => {
-		completedGroceries = data.list.groceries.filter((grocery) => grocery.completed);
-		todoGroceries = data.list.groceries.filter((grocery) => !grocery.completed);
 	});
 </script>
 
 <div class="flex flex-col place-items-center">
 	<h2 class="text-2xl m-2">{data.list.name}</h2>
-	{#each todoGroceries as item, index}
+	{#each data.todoGroceries as item, index}
 		<Check
 			id={item.id}
 			name={item.grocery.name}
 			completed={item.completed}
-			superform={superformCheck}
-			superFormReady
+			superform={data.todoForms[index]}
 		/>
 	{/each}
-	{#each completedGroceries as item, index}
+	{#each data.completedGroceries as item, index}
 		<div class="card bg-neutral text-neutral-content w-96 my-1">
 			<div class="card-body flex flex-row items-center">
 				<div class="flex flex-col basis-1/2">
