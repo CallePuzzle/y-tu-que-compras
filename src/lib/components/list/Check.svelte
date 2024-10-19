@@ -1,44 +1,50 @@
 <script lang="ts">
-	import { CompletedSchemaWithId } from '$lib/schemas';
-	import { superForm, type SuperValidated } from 'sveltekit-superforms';
-	import { z } from 'zod';
-	import { zodClient } from 'sveltekit-superforms/adapters';
+	import type { GroceryListExtended } from '$lib/schemas';
+
+	let loading = $state(false);
 
 	let {
-		id,
-		name,
-		completed,
-		superform
+		groceryList = $bindable()
 	}: {
-		id: number;
-		name: string;
-		completed: boolean;
-		superform: SuperValidated<z.infer<typeof CompletedSchemaWithId>>;
+		groceryList: GroceryListExtended;
 	} = $props();
 
-	const form = superForm(superform, {
-		id: id + '-todocheck',
-		validators: zodClient(CompletedSchemaWithId),
-		dataType: 'json',
-		delayMs: 100
-	});
-	const { form: formData, enhance, delayed } = form;
+	async function toggleCheck() {
+		try {
+			loading = true;
+			const response = await fetch(
+				`/api/toggle-check?id=${groceryList.id}&completed=${groceryList.completed}`,
+				{
+					method: 'GET'
+				}
+			);
+			if (!response.ok) {
+				throw new Error('Network response was not ok');
+			}
+			const result = await response.json();
+			groceryList = result.groceryList;
+			loading = false;
+		} catch (error) {
+			console.error('Error toggling check:', error);
+			loading = false;
+		}
+	}
 </script>
 
 <div class="card bg-neutral text-neutral-content w-96 my-1">
 	<div class="card-body flex flex-row items-center">
 		<div class="flex flex-col basis-1/2">
 			<h3 class="card-title">
-				<form method="POST" action="?/toggleCheck" use:enhance>
-					<input type="hidden" name="id" bind:value={$formData.id} />
-					<input type="hidden" name="completed" bind:value={$formData.completed} />
-					{#if $delayed}
-						<span class="loading loading-dots loading-lg"></span>
-					{:else}
-						<button type="submit" class="checkbox {completed ? 'checked' : ''}"></button>
-					{/if}
-				</form>
-				{name}
+				{#if loading}
+					<span class="loading loading-dots loading-lg"></span>
+				{:else}
+					<button
+						onclick={toggleCheck}
+						class="checkbox {groceryList.completed ? 'checked' : ''}"
+						aria-label="Toggle Check"
+					></button>
+				{/if}
+				{groceryList.grocery.name}
 			</h3>
 		</div>
 	</div>

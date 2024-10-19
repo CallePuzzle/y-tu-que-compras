@@ -47,29 +47,6 @@ export const actions: Actions = {
 			logger.error(error);
 			return message(form, 'Error adding grocery to list');
 		}
-	},
-	toggleCheck: async (event) => {
-		const form = await superValidate(event.request, zod(CompletedSchemaWithId));
-		logger.info(form, 'toggleCheck');
-
-		const db = event.platform!.env.DB;
-		const prisma = initializePrisma(db);
-
-		try {
-			const groceryList = await prisma.groceryList.update({
-				where: {
-					id: form.data.id
-				},
-				data: {
-					completed: !form.data.completed
-				}
-			});
-			logger.info('groceryList with id ' + form.data.id + ' updated');
-			return message(form, 'Grocery updated successfully!');
-		} catch (error) {
-			logger.error(error);
-			return message(form, 'Error updating grocery');
-		}
 	}
 };
 
@@ -112,35 +89,5 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		} as ComboxObject;
 	});
 
-	const completedGroceries = list.groceries.filter(
-		(grocery) => grocery.completed
-	) as GroceryListExtended[];
-	const todoGroceries = list.groceries.filter(
-		(grocery) => !grocery.completed
-	) as GroceryListExtended[];
-
-	const completedForms = await getForm(completedGroceries);
-
-	const todoForms = await getForm(todoGroceries);
-
-	return { list, groceries, completedGroceries, todoGroceries, completedForms, todoForms };
+	return { list, groceries };
 };
-
-async function getForm(
-	groceryList: GroceryListExtended[]
-): Promise<Record<string, SuperValidated<z.infer<typeof CompletedSchemaWithId>>>> {
-	const form = await Promise.all(
-		groceryList.map(async (grocery) => {
-			const formData = {
-				id: grocery.id,
-				completed: grocery.completed
-			};
-			return await superValidate(formData, zod(CompletedSchemaWithId));
-		})
-	);
-	let ret: Record<string, SuperValidated<z.infer<typeof CompletedSchemaWithId>>> = {};
-	for (let list of form) {
-		ret[list.data.id] = list;
-	}
-	return ret;
-}

@@ -8,9 +8,13 @@
 
 	import type { PageData } from './$types';
 	import Form from '$lib/components/forms/Form.svelte';
+	import type { GroceryListExtended } from '$lib/schemas';
 
 	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
 	let superFormReady = $state(false);
+
+	let completedGroceries = $state([] as GroceryListExtended[]);
+	let todoGroceries = $state([] as GroceryListExtended[]);
 
 	let {
 		data
@@ -22,25 +26,19 @@
 		superform = await superValidate(zod(IdSchema));
 		superFormReady = true;
 	});
+	$effect(() => {
+		completedGroceries = data.list.groceries.filter((grocery) => grocery.completed);
+		todoGroceries = data.list.groceries.filter((grocery) => !grocery.completed);
+	});
 </script>
 
 <div class="flex flex-col place-items-center">
 	<h2 class="text-2xl m-2">{data.list.name}</h2>
-	{#each data.todoGroceries as item}
-		<Check
-			id={item.id}
-			name={item.grocery.name}
-			completed={item.completed}
-			superform={data.todoForms[item.id]}
-		/>
+	{#each todoGroceries as item, index}
+		<Check bind:groceryList={todoGroceries[index]} />
 	{/each}
-	{#each data.completedGroceries as item}
-		<Check
-			id={item.id}
-			name={item.grocery.name}
-			completed={item.completed}
-			superform={data.completedForms[item.id]}
-		/>
+	{#each completedGroceries as item, index}
+		<Check groceryList={completedGroceries[index]} />
 	{/each}
 	{#if superFormReady}
 		<Form
