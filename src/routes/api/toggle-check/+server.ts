@@ -14,7 +14,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
 
-    const completed = groceryListCompleted === 'true' ? false : true;
+	const completed = groceryListCompleted === 'true' ? false : true;
 
 	try {
 		const groceryList = await prisma.groceryList.update({

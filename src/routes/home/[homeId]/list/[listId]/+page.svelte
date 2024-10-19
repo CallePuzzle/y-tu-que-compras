@@ -13,32 +13,31 @@
 	let superform: SuperValidated<Infer<any>> = $state({}) as SuperValidated<Infer<any>>;
 	let superFormReady = $state(false);
 
-	let completedGroceries = $state([] as GroceryListExtended[]);
-	let todoGroceries = $state([] as GroceryListExtended[]);
-
 	let {
 		data
 	}: {
 		data: PageData;
 	} = $props();
 
+	let groceryList = $state(data.list.groceries as GroceryListExtended[]);
+
 	onMount(async () => {
 		superform = await superValidate(zod(IdSchema));
 		superFormReady = true;
-	});
-	$effect(() => {
-		completedGroceries = data.list.groceries.filter((grocery) => grocery.completed);
-		todoGroceries = data.list.groceries.filter((grocery) => !grocery.completed);
 	});
 </script>
 
 <div class="flex flex-col place-items-center">
 	<h2 class="text-2xl m-2">{data.list.name}</h2>
-	{#each todoGroceries as item, index}
-		<Check bind:groceryList={todoGroceries[index]} />
+	{#each groceryList as item, index}
+		{#if !item.completed}
+			<Check bind:groceryList={groceryList[index]} />
+		{/if}
 	{/each}
-	{#each completedGroceries as item, index}
-		<Check groceryList={completedGroceries[index]} />
+	{#each groceryList as item, index}
+		{#if item.completed}
+			<Check bind:groceryList={groceryList[index]} />
+		{/if}
 	{/each}
 	{#if superFormReady}
 		<Form
