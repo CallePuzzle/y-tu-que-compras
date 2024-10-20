@@ -11,7 +11,7 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 	}
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
-	const homeId = (event.params as { slug: string }).slug;
+	const homeId = event.params.homeId;
 	const home = await prisma.home.findUnique({
 		where: {
 			id: parseInt(homeId),

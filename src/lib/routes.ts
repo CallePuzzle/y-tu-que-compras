@@ -41,6 +41,11 @@ const Routes: Routes = {
 		name: 'Listas de la compra',
 		generateUrl: (params: { id: string }) => `/home/${params.id}/list`
 	},
+	list_detail: {
+		name: 'Detalle de la lista',
+		generateUrl: (params: { homeId: string; id: string }) =>
+			`/home/${params.homeId}/list/${params.id}`
+	},
 	fridge_index: {
 		name: 'Despensa / nevera',
 		generateUrl: (params: { id: string }) => `/home/${params.id}/fridge`

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { GroceryList, Grocery } from '@prisma/client';
 
 const UserSchema = z.object({
 	name: z.string().min(3),
@@ -34,9 +35,27 @@ const GroceryListSchema = z.object({
 export { GroceryListSchema };
 
 const ListSchema = z.object({
-	name: z.string(),
-	completed: z.boolean().default(false),
-	groceries: z.array(z.number().int())
+	name: z.string()
 });
 
-export { ListSchema };
+const ListSchemaWithId = ListSchema.extend({
+	id: z.number().int()
+});
+
+export { ListSchema, ListSchemaWithId };
+
+const IdSchema = z.object({
+	id: z.number().int()
+});
+
+const CompletedSchemaWithId = IdSchema.extend({
+	completed: z.boolean()
+});
+
+export { IdSchema, CompletedSchemaWithId };
+
+type GroceryListExtended = GroceryList & {
+	grocery: Grocery;
+};
+
+export type { GroceryListExtended };

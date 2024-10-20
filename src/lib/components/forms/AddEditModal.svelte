@@ -24,9 +24,7 @@
 		action,
 		iconSize = '4em',
 		excludeFields = [],
-		children,
-		form = $bindable(),
-		formData = $bindable()
+		extraFields
 	}: {
 		id?: string;
 		title: string;
@@ -36,9 +34,7 @@
 		action?: Action;
 		iconSize?: string;
 		excludeFields?: string[];
-		children?: Snippet;
-		form?: SuperForm<any, any>;
-		formData?: SuperFormData<any>;
+		extraFields?: Snippet<[SuperForm<any, any>, SuperFormData<any>]>;
 	} = $props();
 
 	function showModal() {
@@ -74,13 +70,8 @@
 			{excludeFields}
 			action={formAction}
 			{onshowCallback}
-			bind:form
-			bind:formData
-		>
-			{#if children}
-				{@render children()}
-			{/if}
-		</Form>
+			{extraFields}
+		></Form>
 		<div class="modal-action">
 			<form method="dialog">
 				<button class="btn">{$t('index.close')}</button>
