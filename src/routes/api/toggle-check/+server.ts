@@ -1,6 +1,5 @@
 import { logger } from '$lib/server/logger';
-import { json } from '@sveltejs/kit';
-import { error } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
 import { initializePrisma } from '$lib/server/db';
 
 import type { RequestEvent } from '@sveltejs/kit';
@@ -14,7 +13,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
 
-	const completed = groceryListCompleted === 'true' ? false : true;
+	const completed = groceryListCompleted !== 'true';
 
 	try {
 		const groceryList = await prisma.groceryList.update({

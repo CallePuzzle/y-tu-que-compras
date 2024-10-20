@@ -1,17 +1,13 @@
 import { error } from '@sveltejs/kit';
 import { initializePrisma } from '$lib/server/db';
-import { message, superValidate, type SuperValidated } from 'sveltekit-superforms';
+import { message, superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
-import { z } from 'zod';
-import { ListSchema, ListSchemaWithId } from '$lib/schemas';
-import { add, edit } from '$lib/components/list-of';
-import { IdSchema, CompletedSchemaWithId } from '$lib/schemas';
+import { IdSchema } from '$lib/schemas';
 
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
 import type { Grocery } from '@prisma/client';
 import { logger } from '$lib/server/logger';
 import type { ComboxObject } from '$lib/components/forms/partials/Combobox.svelte';
-import type { GroceryListExtended } from '$lib/schemas';
 
 export const actions: Actions = {
 	addGroceryToList: async (event) => {
@@ -24,7 +20,7 @@ export const actions: Actions = {
 		const prisma = initializePrisma(db);
 
 		try {
-			const list = await prisma.list.update({
+			await prisma.list.update({
 				where: {
 					id: parseInt(listId),
 					homeId: parseInt(homeId)
