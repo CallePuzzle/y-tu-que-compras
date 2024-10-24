@@ -609,7 +609,7 @@
   resolved "https://registry.yarnpkg.com/@iarna/toml/-/toml-2.2.5.tgz#b32366c89b43c6f8cefbdefac778b9c828e3ba8c"
   integrity sha512-trnsAYxU3xnS1gPHPyU961coFyLkh4gAD/0zQ5mymY4yOZ+CYvsPqUbOFSw0aDM4y0tV7tiFxL/1XfXPNC6IPg==
 
-"@internationalized/date@^3.5.0", "@internationalized/date@^3.5.1":
+"@internationalized/date@^3.5.0":
   version "3.5.6"
   resolved "https://registry.yarnpkg.com/@internationalized/date/-/date-3.5.6.tgz#0833c2fa75efb3573f4e3bf10e3895f1019e87dd"
   integrity sha512-jLxQjefH9VI5P9UQuqB6qNKnvFt1Ky1TPIzHGsIlCi7sZZoMR8SdYbBGRvM0y+Jtb+ez4ieBzmiAUcpmPYpyOw==
@@ -673,10 +673,18 @@
   resolved "https://registry.yarnpkg.com/@lucia-auth/adapter-sqlite/-/adapter-sqlite-3.0.2.tgz#c7105f61875ac72869bdb07a2c9ccc90a6fcf1da"
   integrity sha512-UlXpF+2UoFEdm1AsriJii5BOARwqko6SX29rQ8T8Za7rnjj9KLXLaRVQUgBhGmggAyvzCtguJ2+XOZDsfWm6Sw==
 
-"@melt-ui/svelte@0.76.2":
-  version "0.76.2"
-  resolved "https://registry.yarnpkg.com/@melt-ui/svelte/-/svelte-0.76.2.tgz#9d6a578695ac257e34710fdeff3c8a40c8c25f31"
-  integrity sha512-7SbOa11tXUS95T3fReL+dwDs5FyJtCEqrqG3inRziDws346SYLsxOQ6HmX+4BkIsQh1R8U3XNa+EMmdMt38lMA==
+"@melt-ui/pp@^0.3.2":
+  version "0.3.2"
+  resolved "https://registry.yarnpkg.com/@melt-ui/pp/-/pp-0.3.2.tgz#6d10177d8ebea2183ec39b94662b88eabfc2cad3"
+  integrity sha512-xKkPvaIAFinklLXcQOpwZ8YSpqAFxykjWf8Y/fSJQwsixV/0rcFs07hJ49hJjPy5vItvw5Qa0uOjzFUbXzBypQ==
+  dependencies:
+    estree-walker "^3.0.3"
+    magic-string "^0.30.5"
+
+"@melt-ui/svelte@^0.84.0":
+  version "0.84.0"
+  resolved "https://registry.yarnpkg.com/@melt-ui/svelte/-/svelte-0.84.0.tgz#1e4c2a0651a7da86da6b64abd13892e010c2561b"
+  integrity sha512-KZHu/I2MRmvRE5fIHSbGTZRlbfcu2uV6cit+1kTYKr4isuDy/T2+e4OngKYxNTvyB+zA5tp7BXUOMkoKrpqkCw==
   dependencies:
     "@floating-ui/core" "^1.3.1"
     "@floating-ui/dom" "^1.4.5"
@@ -1555,15 +1563,6 @@ binary-extensions@^2.0.0:
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/binary-extensions/-/binary-extensions-2.3.0.tgz#f6e14a97858d327252200242d4ccfe522c445522"
   integrity sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==
-
-bits-ui@^0.21.16:
-  version "0.21.16"
-  resolved "https://registry.yarnpkg.com/bits-ui/-/bits-ui-0.21.16.tgz#cec1a93d79b25555e89747999630af93fab6b6e1"
-  integrity sha512-XFZ7/bK7j/K+5iktxX/ZpmoFHjYjpPzP5EOO/4bWiaFg5TG1iMcfjDhlBTQnJxD6BoVoHuqeZPHZvaTgF4Iv3Q==
-  dependencies:
-    "@internationalized/date" "^3.5.1"
-    "@melt-ui/svelte" "0.76.2"
-    nanoid "^5.0.5"
 
 blake3-wasm@^2.1.5:
   version "2.1.5"
