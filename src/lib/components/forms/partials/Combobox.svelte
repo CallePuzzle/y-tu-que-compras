@@ -7,7 +7,7 @@
 </script>
 
 <script lang="ts">
-	import { Combobox } from 'bits-ui';
+	//import { Combobox } from 'bits-ui';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
 
@@ -65,6 +65,7 @@
 	const portal = null;
 </script>
 
+<!-- 
 <Combobox.Root
 	items={showFullList ? inputArray : filtered}
 	bind:inputValue={inputValueLabel}
@@ -98,4 +99,4 @@
 		{/each}
 	</Combobox.Content>
 	<Combobox.HiddenInput name="array" />
-</Combobox.Root>
+</Combobox.Root> -->
