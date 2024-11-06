@@ -10,18 +10,19 @@
 	import { fly } from 'svelte/transition';
 	import { Control, Field, FieldErrors, Label } from 'formsnap';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
-	import type { SuperFormData } from 'sveltekit-superforms/client';
 
 	let {
 		form,
 		field,
-		formData,
-		inputArray
+		inputArray,
+		title,
+		placeholder
 	}: {
 		form: SuperForm<any, any>;
 		field: string;
-		formData: SuperFormData<any>;
 		inputArray: InputValue[];
+		title: string;
+		placeholder: string;
 	} = $props();
 
 	const toOption = (input: InputValue): ComboboxOptionProps<InputValue> => ({
@@ -61,15 +62,15 @@
 			<div class="flex flex-col gap-1">
 				<!-- svelte-ignore a11y-label-has-associated-control - $label contains the 'for' attribute -->
 				<label use:melt={$label}>
-					<span class="text-sm font-medium text-magnum-900">Choose your favorite manga:</span>
+					<span class="text-sm font-medium text-magnum-900">{title}:</span>
 				</label>
 
 				<div class="relative">
 					<input
 						use:melt={$input}
-						class="flex h-10 items-center justify-between rounded-lg bg-white
-            px-3 pr-12 text-black"
-						placeholder="Best book ever"
+						class="input input-bordered flex h-10 items-center justify-between rounded-lg
+            px-3 pr-12"
+						{placeholder}
 					/>
 					<div class="absolute right-2 top-1/2 z-10 -translate-y-1/2 text-magnum-900">
 						<!-- {#if $open}
@@ -88,7 +89,7 @@
 				>
 					<!-- svelte-ignore a11y-no-noninteractive-tabindex -->
 					<div
-						class="flex max-h-full flex-col gap-0 overflow-y-auto bg-white px-2 py-2 text-black"
+						class="flex max-h-full flex-col gap-0 overflow-y-auto bg-base-content px-2 py-2 text-black"
 						tabindex="0"
 					>
 						{#each filteredInputArray as item, index (index)}
