@@ -75,19 +75,22 @@
 		forceVisible: true
 	});
 
-	$: if (!$open) {
-		$inputValue = $selected?.label ?? '';
-	}
+	let filteredMangas = $state(mangas);
 
-	$: filteredMangas = $touchedInput
-		? mangas.filter(({ title, author }) => {
-				const normalizedInput = $inputValue.toLowerCase();
-				return (
-					title.toLowerCase().includes(normalizedInput) ||
-					author.toLowerCase().includes(normalizedInput)
-				);
-			})
-		: mangas;
+	$effect(() => {
+		if (!$open) {
+			$inputValue = $selected?.label ?? '';
+		}
+		filteredMangas = $touchedInput
+			? mangas.filter(({ title, author }) => {
+					const normalizedInput = $inputValue.toLowerCase();
+					return (
+						title.toLowerCase().includes(normalizedInput) ||
+						author.toLowerCase().includes(normalizedInput)
+					);
+				})
+			: mangas;
+	});
 </script>
 
 <div class="flex flex-col gap-1">

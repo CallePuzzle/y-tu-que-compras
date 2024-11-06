@@ -52,7 +52,7 @@
 			excludeFields={['id']}
 		>
 			{#snippet extraFields(form, formData)}
-				<Combobox {form} field="id" {formData} comboxArray={data.groceries} />
+				<Combobox {form} field="id" {formData} inputArray={data.groceries} />
 			{/snippet}
 		</Form>
 	{/if}

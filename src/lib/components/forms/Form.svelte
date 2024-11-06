@@ -83,4 +83,4 @@
 		{/if}
 	</div>
 </form>
-<!-- <SuperDebug data={$formData} /> -->
+<SuperDebug data={$formData} />
