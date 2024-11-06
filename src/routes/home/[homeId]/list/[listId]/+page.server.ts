@@ -7,7 +7,7 @@ import { IdSchema } from '$lib/schemas';
 import type { PageServerLoad, PageServerLoadEvent, Actions } from './$types';
 import type { Grocery } from '@prisma/client';
 import { logger } from '$lib/server/logger';
-import type { ComboxObject } from '$lib/components/forms/partials/Combobox.svelte';
+import type { InputValue } from '$lib/components/forms/Combobox.svelte';
 
 export const actions: Actions = {
 	addGroceryToList: async (event) => {
@@ -87,9 +87,8 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 	const groceries = _groceries.map((grocery) => {
 		return {
 			value: grocery.id as unknown as string,
-			label: grocery.name,
-			filterValue: grocery.name
-		} as ComboxObject;
+			label: grocery.name
+		} as InputValue;
 	});
 
 	return { list, groceryList, groceries };

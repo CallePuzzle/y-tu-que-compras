@@ -1,62 +1,118 @@
-<script lang="ts">
-	import Combobox from '$lib/components/forms/partials/Combobox.svelte';
-	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
-	import type { SuperFormData } from 'sveltekit-superforms/client';
-	import { Control, Field, FieldErrors, Label } from 'formsnap';
-	import type { ComboxObject } from '$lib/components/forms/partials/Combobox.svelte';
+<script module lang="ts">
+	export type InputValue = {
+		value: string;
+		label: string;
+	};
+</script>
 
-	const fruits = [
-		{ value: 'mango', label: 'Mango' },
-		{ value: 'watermelon', label: 'Watermelon' },
-		{ value: 'apple', label: 'Apple' },
-		{ value: 'pineapple', label: 'Pineapple' },
-		{ value: 'orange', label: 'Orange' }
-	];
+<script lang="ts">
+	import { createCombobox, melt, type ComboboxOptionProps } from '@melt-ui/svelte';
+	import { fly } from 'svelte/transition';
+	import { Control, Field, FieldErrors, Label } from 'formsnap';
+	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 
 	let {
-		inputValueLabel = $bindable(''),
-		inputValue = $bindable(''),
 		form,
 		field,
-		formData,
-		comboxArray,
-		i = 0
+		inputArray,
+		title,
+		placeholder
 	}: {
-		inputValueLabel?: string;
-		inputValue?: string;
 		form: SuperForm<any, any>;
 		field: string;
-		formData: SuperFormData<any>;
-		comboxArray: ComboxObject[];
-		i?: number;
+		inputArray: InputValue[];
+		title: string;
+		placeholder: string;
 	} = $props();
 
-	let filteredFruits = $state([] as typeof fruits);
-	let touchedInput = $state(false);
-	let isComboxboxOpen = $state(false);
-	let showFullList = $state(false);
-	let selectedValue = $state($formData[field][i]);
+	const toOption = (input: InputValue): ComboboxOptionProps<InputValue> => ({
+		value: input,
+		label: input.label
+	});
+
+	const {
+		elements: { menu, input, option, label },
+		states: { open, inputValue, touchedInput, selected },
+		helpers: { isSelected }
+	} = createCombobox<InputValue>({
+		forceVisible: true
+	});
+
+	let filteredInputArray = $state(inputArray);
 
 	$effect(() => {
-		showFullList = false;
-		if (inputValueLabel || (inputValueLabel && touchedInput)) {
-			filteredFruits = fruits.filter((pn) =>
-				pn.value.toLowerCase().includes(inputValueLabel.toLowerCase())
-			);
-			isComboxboxOpen = true;
-		} else {
-			filteredFruits = fruits;
-			isComboxboxOpen = false;
+		if (!$open) {
+			$inputValue = $selected?.label ?? '';
+			$value = $selected?.value.value ?? '';
 		}
+		filteredInputArray = $touchedInput
+			? inputArray.filter(({ value, label }) => {
+					const normalizedInput = $inputValue.toLowerCase();
+					return label.toLowerCase().includes(normalizedInput);
+				})
+			: inputArray;
 	});
-	const { value } = formFieldProxy(form, field[i]);
-	const portal = null;
+	const { value } = formFieldProxy(form, field);
+	$inspect($value);
 </script>
 
 <Field {form} name={field}>
 	<Control let:attrs>
 		<Label class="flex justify-center flex-col sm:flex-row my-2">
-			<Combobox {form} {field} {formData} {i} bind:inputValue inputArray={comboxArray} />
+			<div class="flex flex-col gap-1">
+				<!-- svelte-ignore a11y-label-has-associated-control - $label contains the 'for' attribute -->
+				<label use:melt={$label}>
+					<span class="text-sm font-medium text-magnum-900">{title}:</span>
+				</label>
+
+				<div class="relative">
+					<input
+						use:melt={$input}
+						class="input input-bordered flex h-10 items-center justify-between rounded-lg
+            px-3 pr-12"
+						{placeholder}
+					/>
+					<div class="absolute right-2 top-1/2 z-10 -translate-y-1/2 text-magnum-900">
+						<!-- {#if $open}
+				icono chevron-up
+			{:else}
+				icon chevron-down
+			{/if} -->
+					</div>
+				</div>
+			</div>
+			{#if $open}
+				<ul
+					class=" z-10 flex max-h-[300px] flex-col overflow-hidden rounded-lg"
+					use:melt={$menu}
+					transition:fly={{ duration: 150, y: -5 }}
+				>
+					<!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+					<div
+						class="flex max-h-full flex-col gap-0 overflow-y-auto bg-base-content px-2 py-2 text-black"
+						tabindex="0"
+					>
+						{#each filteredInputArray as item, index (index)}
+							<li
+								use:melt={$option(toOption(item))}
+								class="relative cursor-pointer scroll-my-2 rounded-md py-2 pl-4 pr-4
+          hover:bg-magnum-100
+          data-[highlighted]:bg-magnum-200 data-[highlighted]:text-magnum-900
+            data-[disabled]:opacity-50"
+							>
+								{#if $isSelected(item)}
+									<div class="check absolute left-2 top-1/2 z-10 text-magnum-900">icon check</div>
+								{/if}
+								<div class="pl-4">
+									<span class="font-medium">{item.label}</span>
+								</div>
+							</li>
+						{:else}
+							<li class="relative cursor-pointer rounded-md py-1 pl-8 pr-4">No results found</li>
+						{/each}
+					</div>
+				</ul>
+			{/if}
 		</Label>
 	</Control>
 	<FieldErrors />
