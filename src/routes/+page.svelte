@@ -3,7 +3,6 @@
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
 	import { HomeSchema } from '$lib/schemas';
 	import { Routes } from '$lib/routes';
-	import Form from '$lib/components/forms/Form.svelte';
 
 	import type { PageData } from './$types';
 

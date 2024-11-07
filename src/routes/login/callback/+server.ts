@@ -23,9 +23,9 @@ export async function GET(event: RequestEvent): Promise<Response> {
 
 	try {
 		const tokens = await auth0.validateAuthorizationCode(code);
-		const response = await fetch(AUTH0_DOMAIN + '/userinfo', {
+		const response = await fetch('https://' + AUTH0_DOMAIN + '/userinfo', {
 			headers: {
-				Authorization: `Bearer ${tokens.accessToken}`
+				Authorization: `Bearer ${tokens.data.access_token}`
 			}
 		});
 		const user = await response.json();
@@ -75,7 +75,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 			})
 		});
 	} catch (e) {
-		//logger.error(e, 'error in login callback');
+		logger.error(e, 'error in login callback');
 		if (e instanceof OAuth2RequestError && e.message === 'bad_verification_code') {
 			// invalid code
 			return new Response(null, {

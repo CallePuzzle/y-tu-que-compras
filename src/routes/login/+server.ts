@@ -6,9 +6,9 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 export async function GET(event: RequestEvent): Promise<Response> {
 	const state = generateState();
-	const url = await auth0.createAuthorizationURL(state, {
-		scopes: ['profile', 'email']
-	});
+	const scopes = ['openid', 'profile'];
+
+	const url = await auth0.createAuthorizationURL(state, scopes);
 
 	event.cookies.set('auth0_oauth_state', state, {
 		path: '/',
