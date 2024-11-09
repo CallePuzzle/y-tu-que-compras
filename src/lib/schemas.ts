@@ -11,7 +11,7 @@ export { UserSchema };
 const HomeSchema = z.object({
 	name: z.string().min(3),
 	description: z.string().min(3),
-	icon: z.string()
+	icon: z.enum(['Salmon', 'Tuna', 'Trout'])
 });
 
 export { HomeSchema };

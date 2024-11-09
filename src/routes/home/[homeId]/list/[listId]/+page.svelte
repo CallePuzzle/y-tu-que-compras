@@ -55,9 +55,9 @@
 				<Combobox
 					{form}
 					field="id"
-					inputArray={data.groceries}
+					type="grocery"
+					valueArray={data.groceries}
 					placeholder="Plátano"
-					title="Añade un producto a la lista"
 				/>
 			{/snippet}
 		</Form>

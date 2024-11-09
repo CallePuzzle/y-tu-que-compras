@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+	import { t } from '$lib/translations';
 	import { createCombobox, melt, type ComboboxOptionProps } from '@melt-ui/svelte';
 	import { fly } from 'svelte/transition';
 	import { Control, Field, FieldErrors, Label } from 'formsnap';
@@ -14,16 +15,26 @@
 	let {
 		form,
 		field,
-		inputArray,
-		title,
-		placeholder
+		type,
+		placeholder,
+		valueArray = [],
+		stringArray = []
 	}: {
 		form: SuperForm<any, any>;
 		field: string;
-		inputArray: InputValue[];
-		title: string;
+		type: string;
 		placeholder: string;
+		valueArray: InputValue[];
+		stringArray: string[];
 	} = $props();
+
+	let inputArray = $derived.by(() => {
+		if (stringArray.length > 0) {
+			return stringArray.map((value) => ({ value, label: value }));
+		}
+		return valueArray;
+	}) as InputValue[];
+	let filteredInputArray = $state([]) as InputValue[];
 
 	const toOption = (input: InputValue): ComboboxOptionProps<InputValue> => ({
 		value: input,
@@ -35,10 +46,9 @@
 		states: { open, inputValue, touchedInput, selected },
 		helpers: { isSelected }
 	} = createCombobox<InputValue>({
-		forceVisible: true
+		forceVisible: true,
+		portal: '#combobox-menu'
 	});
-
-	let filteredInputArray = $state(inputArray);
 
 	$effect(() => {
 		if (!$open) {
@@ -53,7 +63,7 @@
 			: inputArray;
 	});
 	const { value } = formFieldProxy(form, field);
-	$inspect($value);
+	$inspect(inputArray, stringArray, filteredInputArray);
 </script>
 
 <Field {form} name={field}>
@@ -62,7 +72,7 @@
 			<div class="flex flex-col gap-1">
 				<!-- svelte-ignore a11y-label-has-associated-control - $label contains the 'for' attribute -->
 				<label use:melt={$label}>
-					<span class="text-sm font-medium text-magnum-900">{title}:</span>
+					<span class="text-sm font-medium text-magnum-900">{$t(type + '.' + field)}</span>
 				</label>
 
 				<div class="relative">
@@ -81,6 +91,7 @@
 					</div>
 				</div>
 			</div>
+			<div id="combobox-menu"></div>
 			{#if $open}
 				<ul
 					class=" z-10 flex max-h-[300px] flex-col overflow-hidden rounded-lg"
