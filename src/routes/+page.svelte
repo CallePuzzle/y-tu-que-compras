@@ -28,7 +28,7 @@
 					<a href={Routes.home_index.generateUrl({ id: home.id })}>
 						<div class="card-body flex flex-row">
 							<div class="basis-1/2">
-								<IconComponent icon={home.icon} size="2.5em" />
+								<IconComponent icon={home.icon} />
 							</div>
 							<div class="basis-1/2">
 								<h2 class="card-title">{home.name}</h2>
