@@ -62,8 +62,8 @@
 				})
 			: inputArray;
 	});
+
 	const { value } = formFieldProxy(form, field);
-	$inspect(inputArray, stringArray, filteredInputArray);
 </script>
 
 <Field {form} name={field}>
