@@ -1,37 +1,17 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { t } from '$lib/translations';
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
 	import { HomeSchema } from '$lib/schemas';
 	import { Routes } from '$lib/routes';
-	import { Icon } from 'svelte-icons-pack';
+	import IconComponent from '$lib/components/layout/IconComponent.svelte';
 
 	import type { PageData } from './$types';
-	import type { IconType } from 'svelte-icons-pack';
-	import type { Home } from '@prisma/client';
 
 	let {
 		data
 	}: {
 		data: PageData;
 	} = $props();
-
-	let iconComponent: IconType[] = $state([]);
-
-	async function loadIcons(houses: Home[]) {
-		for (const house of houses) {
-			try {
-				const icon = (await import(`svelte-icons-pack/ai`))[house.icon] as IconType;
-				iconComponent.push(icon);
-			} catch (error) {
-				console.error('Error loading icon:', error);
-			}
-		}
-	}
-
-	onMount(async () => {
-		loadIcons(data.houses);
-	});
 
 	const superform = data.form;
 </script>
@@ -48,9 +28,7 @@
 					<a href={Routes.home_index.generateUrl({ id: home.id })}>
 						<div class="card-body flex flex-row">
 							<div class="basis-1/2">
-								{#if iconComponent[index]}
-									<Icon src={iconComponent[index]} size="2.5em" />
-								{/if}
+								<IconComponent icon={home.icon} size="2.5em" />
 							</div>
 							<div class="basis-1/2">
 								<h2 class="card-title">{home.name}</h2>
