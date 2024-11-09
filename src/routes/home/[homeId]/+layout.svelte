@@ -6,6 +6,7 @@
 	import { AiOutlineHome } from 'svelte-icons-pack/ai';
 	import { BiStore } from 'svelte-icons-pack/bi';
 	import { Routes } from '$lib/routes';
+	import IconComponent from '$lib/components/layout/IconComponent.svelte';
 
 	import type { PageData } from './$types';
 
@@ -22,10 +23,7 @@
 
 <div class="hero bg-base-200">
 	<div class="hero-content flex-col lg:flex-row">
-		<img
-			src="https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp"
-			class="max-w-sm rounded-lg shadow-2xl"
-		/>
+		<IconComponent icon={home.icon} size="4em" />
 		<div>
 			<h1 class="text-5xl font-bold">{home.name}</h1>
 			<p class="py-6">

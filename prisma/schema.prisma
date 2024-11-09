@@ -38,6 +38,7 @@ model Home {
   id          Int       @id @default(autoincrement())
   name        String
   description String
+  icon        String
   members     User[]
   groceries   Grocery[]
   lists       List[]

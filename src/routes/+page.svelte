@@ -3,7 +3,7 @@
 	import AddEditModal from '$lib/components/forms/AddEditModal.svelte';
 	import { HomeSchema } from '$lib/schemas';
 	import { Routes } from '$lib/routes';
-	import Form from '$lib/components/forms/Form.svelte';
+	import IconComponent from '$lib/components/layout/IconComponent.svelte';
 
 	import type { PageData } from './$types';
 
@@ -23,12 +23,17 @@
 			<p class="py-6">
 				{$t('index.selectHome')}
 			</p>
-			{#each data.houses as home}
+			{#each data.houses as home, index}
 				<div class="card bg-base-100 shadow-xl my-4">
 					<a href={Routes.home_index.generateUrl({ id: home.id })}>
-						<div class="card-body">
-							<h2 class="card-title">{home.name}</h2>
-							<p>{home.description}</p>
+						<div class="card-body flex flex-row">
+							<div class="basis-1/2">
+								<IconComponent icon={home.icon} />
+							</div>
+							<div class="basis-1/2">
+								<h2 class="card-title">{home.name}</h2>
+								<p class="flex">{home.description}</p>
+							</div>
 						</div>
 					</a>
 				</div>

@@ -4,11 +4,12 @@
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import String from '$lib/components/forms/String.svelte';
 	import ArrayInput from '$lib/components/forms/ArrayInput.svelte';
-	import { ZodString, ZodArray, z } from 'zod';
+	import { ZodString, ZodArray, ZodEnum } from 'zod';
 	import { toast } from 'svelte-sonner';
 	import type { Snippet } from 'svelte';
 	import type { SuperFormData } from 'sveltekit-superforms/client';
 	import SuperDebug from 'sveltekit-superforms';
+	import Combobox from '$lib/components/forms/Combobox.svelte';
 
 	let {
 		id = '',
@@ -44,8 +45,7 @@
 	});
 
 	const { form: formData, enhance, delayed } = form;
-	let fields = schema.keyof().options;
-	fields = fields.filter((field: string) => !excludeFields.includes(field));
+	const fields = schema.keyof().options.filter((field: string) => !excludeFields.includes(field));
 	const schemaObj = schema.shape;
 
 	function isString(field: any) {
@@ -67,6 +67,9 @@
 			{/if}
 			{#if schemaObj[field] instanceof ZodArray}
 				<ArrayInput {form} {field} {type} {formData} />
+			{/if}
+			{#if schemaObj[field] instanceof ZodEnum}
+				<Combobox {form} {field} {type} stringArray={schemaObj[field].options} placeholder="" />
 			{/if}
 		{/if}
 	{/each}
