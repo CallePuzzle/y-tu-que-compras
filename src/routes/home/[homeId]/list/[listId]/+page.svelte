@@ -59,7 +59,7 @@
 					field="id"
 					type="grocery"
 					valueArray={data.groceries}
-					placeholder="Plátano"
+					placeholder="ej: plátanos"
 				/>
 			{/snippet}
 		</Form>

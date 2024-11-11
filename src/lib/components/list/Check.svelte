@@ -44,7 +44,7 @@
 						aria-label="Toggle Check"
 					></button>
 				{/if}
-				{groceryList.grocery.name}
+				<button onclick={toggleCheck} aria-label="Toggle Check">{groceryList.grocery.name}</button>
 			</h3>
 		</div>
 	</div>
