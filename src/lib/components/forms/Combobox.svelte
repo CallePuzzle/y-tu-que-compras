@@ -11,7 +11,7 @@
 	import { fly } from 'svelte/transition';
 	import { Control, Field, FieldErrors, Label } from 'formsnap';
 	import { Icon } from 'svelte-icons-pack';
-	import { AiOutlineUp, AiOutlineDown } from 'svelte-icons-pack/ai';
+	import { AiOutlineUp, AiOutlineDown, AiOutlineCheck } from 'svelte-icons-pack/ai';
 	import { type SuperForm, formFieldProxy } from 'sveltekit-superforms';
 
 	let {
@@ -32,7 +32,7 @@
 
 	let inputArray = $derived.by(() => {
 		if (stringArray.length > 0) {
-			return stringArray.map((value) => ({ value, label: value }));
+			return stringArray.map((value) => ({ value, label: $t(type + '.' + value) }));
 		}
 		return valueArray;
 	}) as InputValue[];
@@ -91,7 +91,6 @@
 			>
 				<div
 					class="flex max-h-full flex-col gap-0 overflow-y-auto bg-base-content px-2 py-2 text-black"
-					tabindex="0"
 				>
 					{#each filteredInputArray as item, index (index)}
 						<li
@@ -102,7 +101,9 @@
             data-[disabled]:opacity-50"
 						>
 							{#if $isSelected(item)}
-								<div class="check absolute left-2 top-1/2 z-10 text-magnum-900">icon check</div>
+								<div class="check absolute z-10 text-magnum-900">
+									<Icon src={AiOutlineCheck} size="1.5em" />
+								</div>
 							{/if}
 							<div class="pl-4">
 								<span class="font-medium">{item.label}</span>

@@ -3,5 +3,8 @@
 	"description": "Descripción",
 	"submit": "Guardar",
 	"icon": "Icono",
-	"notFound": "Esta casa no existe o no eres miembro."
+	"notFound": "Esta casa no existe o no eres miembro.",
+	"AiOutlineHome": "Casa",
+	"LuCaravan": "Caravana",
+	"LuTractor": "Tractor"
 }
