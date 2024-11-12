@@ -14,7 +14,7 @@
 	<div class="flex gap-2">
 		<div class="name">
 			<a href={Routes.home.url} class="btn btn-ghost text-xl flex" data-sveltekit-reload>
-				<span>¿Y tú que compras?</span>
+				<span>¿Y tú qué compras?</span>
 			</a>
 		</div>
 		{#if userIsLogged}
