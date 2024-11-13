@@ -30,6 +30,10 @@
 	$effect(() => {
 		groceryList = data.groceryList as GroceryListExtended[];
 	});
+
+	let thereAreCompletedGroceries = $derived.by(() => {
+		return groceryList.some((item) => item.completed);
+	});
 </script>
 
 <div class="flex flex-col place-items-center">
@@ -39,7 +43,7 @@
 			<GroceryDetail bind:groceryList={groceryList[index]} />
 		{/if}
 	{/each}
-	{#if data.thereAreCompletedGroceries}
+	{#if thereAreCompletedGroceries}
 		<h3 class="text-xl m-2">{$t('list.completed')}</h3>
 	{/if}
 	{#each groceryList as item, index}

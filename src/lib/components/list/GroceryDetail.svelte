@@ -1,7 +1,5 @@
 <script lang="ts">
 	import type { GroceryListExtended } from '$lib/schemas';
-	import type { HTMLInputAttributes } from 'svelte/elements';
-	import type { H } from 'vitest/dist/chunks/environment.LoooBwUu.js';
 
 	let loading = $state(false);
 
@@ -10,7 +8,7 @@
 	}: {
 		groceryList: GroceryListExtended;
 	} = $props();
-	console.log(groceryList);
+
 	async function toggleCheck() {
 		try {
 			loading = true;
@@ -31,7 +29,7 @@
 			loading = false;
 		}
 	}
-	async function updateQuantity(event: InputEvent) {
+	async function updateQuantity(event: Event) {
 		const target = event.target as HTMLInputElement;
 		if (!target) return;
 		try {
@@ -53,8 +51,8 @@
 			loading = false;
 		}
 	}
-	async function updateUnit(event: InputEvent) {
-		const target = event.target as HTMLInputElement;
+	async function updateUnit(event: Event) {
+		const target = event.target;
 		if (!target) return;
 		try {
 			loading = true;
