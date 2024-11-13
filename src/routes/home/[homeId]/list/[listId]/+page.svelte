@@ -5,7 +5,7 @@
 	import { zod } from 'sveltekit-superforms/adapters';
 	import Combobox from '$lib/components/forms/Combobox.svelte';
 	import { IdSchema } from '$lib/schemas';
-	import Check from '$lib/components/list/Check.svelte';
+	import GroceryDetail from '$lib/components/list/GroceryDetail.svelte';
 
 	import type { PageData } from './$types';
 	import Form from '$lib/components/forms/Form.svelte';
@@ -36,13 +36,15 @@
 	<h2 class="text-2xl m-2">{data.list.name}</h2>
 	{#each groceryList as item, index}
 		{#if !item.completed}
-			<Check bind:groceryList={groceryList[index]} />
+			<GroceryDetail bind:groceryList={groceryList[index]} />
 		{/if}
 	{/each}
-	<h3 class="text-xl m-2">{$t('list.completed')}</h3>
+	{#if data.thereAreCompletedGroceries}
+		<h3 class="text-xl m-2">{$t('list.completed')}</h3>
+	{/if}
 	{#each groceryList as item, index}
 		{#if item.completed}
-			<Check bind:groceryList={groceryList[index]} />
+			<GroceryDetail bind:groceryList={groceryList[index]} />
 		{/if}
 	{/each}
 	{#if superFormReady}

@@ -13,7 +13,7 @@
 </script>
 
 <ListOf
-	h2title="Listado de productos"
+	h2title="Listas de la compra"
 	items={data.lists}
 	forms={data.forms}
 	type="list"

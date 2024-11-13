@@ -78,6 +78,8 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		}
 	});
 
+	const thereAreCompletedGroceries = groceryList.some((grocery) => grocery.completed);
+
 	let _groceries: Grocery[] = [];
 	_groceries = await prisma.grocery.findMany({
 		where: {
@@ -91,5 +93,5 @@ export const load: PageServerLoad = async (event: PageServerLoadEvent) => {
 		} as InputValue;
 	});
 
-	return { list, groceryList, groceries };
+	return { list, groceryList, thereAreCompletedGroceries, groceries };
 };
