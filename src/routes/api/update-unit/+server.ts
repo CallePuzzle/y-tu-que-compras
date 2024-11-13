@@ -6,14 +6,12 @@ import type { RequestEvent } from '@sveltejs/kit';
 
 export async function GET(event: RequestEvent): Promise<Response> {
 	const groceryListId = event.url.searchParams.get('id');
-	const groceryListCompleted = event.url.searchParams.get('completed');
+	const unit = event.url.searchParams.get('unit');
 
-	logger.debug({ groceryListId, groceryListCompleted }, 'toggleCheck');
+	logger.debug({ groceryListId, unit }, 'updateUnit');
 
 	const db = event.platform!.env.DB;
 	const prisma = initializePrisma(db);
-
-	const completed = groceryListCompleted !== 'true';
 
 	try {
 		const groceryList = await prisma.groceryList.update({
@@ -21,7 +19,7 @@ export async function GET(event: RequestEvent): Promise<Response> {
 				id: parseInt(groceryListId as string)
 			},
 			data: {
-				completed: completed
+				unit: unit as string
 			},
 			include: {
 				grocery: true
