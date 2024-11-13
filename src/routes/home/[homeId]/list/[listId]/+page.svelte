@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { t } from '$lib/translations';
 	import { superValidate, type SuperValidated, type Infer } from 'sveltekit-superforms';
 	import { zod } from 'sveltekit-superforms/adapters';
 	import Combobox from '$lib/components/forms/Combobox.svelte';
@@ -38,6 +39,7 @@
 			<Check bind:groceryList={groceryList[index]} />
 		{/if}
 	{/each}
+	<h3 class="text-xl m-2">{$t('list.completed')}</h3>
 	{#each groceryList as item, index}
 		{#if item.completed}
 			<Check bind:groceryList={groceryList[index]} />
@@ -57,7 +59,7 @@
 					field="id"
 					type="grocery"
 					valueArray={data.groceries}
-					placeholder="Plátano"
+					placeholder="ej: plátanos"
 				/>
 			{/snippet}
 		</Form>

@@ -1,4 +1,5 @@
 {
+	"id": "Producto",
 	"name": "Nombre",
 	"description": "Descripción",
 	"submit": "Guardar"

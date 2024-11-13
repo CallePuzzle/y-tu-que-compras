@@ -1,4 +1,6 @@
 {
 	"name": "Lista de la compra",
-	"groceries": "Productos"
+	"groceries": "Productos",
+	"completed": "Completado",
+	"submit": "Añadir producto"
 }
