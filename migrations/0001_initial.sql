@@ -71,6 +71,7 @@ CREATE TABLE "List" (
 CREATE TABLE "GroceryList" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "quantity" INTEGER NOT NULL DEFAULT 1,
+    "unit" TEXT NOT NULL,
     "completed" BOOLEAN NOT NULL DEFAULT false,
     "groceryId" INTEGER NOT NULL,
     "listId" INTEGER NOT NULL,

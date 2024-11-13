@@ -83,6 +83,7 @@ model List {
 model GroceryList {
   id        Int     @id @default(autoincrement())
   quantity  Int     @default(1)
+  unit      String
   completed Boolean @default(false)
   groceryId Int
   grocery   Grocery @relation(fields: [groceryId], references: [id])
