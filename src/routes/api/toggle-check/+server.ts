@@ -31,6 +31,6 @@ export async function GET(event: RequestEvent): Promise<Response> {
 		return json({ groceryList });
 	} catch (e) {
 		logger.error(e);
-		error(500, e.message);
+		error(500, (e as Error).message);
 	}
 }
