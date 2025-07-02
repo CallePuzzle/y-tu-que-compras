@@ -43,6 +43,7 @@
 		"vitest": "^3.2.3"
 	},
 	"dependencies": {
-		"@inlang/paraglide-js": "^2.0.0"
+		"@inlang/paraglide-js": "^2.0.0",
+		"storybook-svelte": "^0.0.2"
 	}
 }
