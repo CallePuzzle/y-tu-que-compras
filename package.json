@@ -48,6 +48,7 @@
 		"@libsql/client": "^0.15.9",
 		"@prisma/adapter-libsql": "^6.11.0",
 		"@prisma/client": "^6.11.0",
-		"storybook-svelte": "^0.0.2"
+		"better-auth": "^1.2.12",
+		"storybook-svelte": "link:storybook-svelte"
 	}
 }
