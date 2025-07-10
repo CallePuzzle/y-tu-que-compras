@@ -36,3 +36,7 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+turso dev --db-file dev.db
+bunx prisma generate
+turso db shell http://127.0.0.1:8080 < prisma/migrations/0001_initial.sql
