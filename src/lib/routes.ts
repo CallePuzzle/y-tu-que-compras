@@ -2,17 +2,23 @@ import { m } from './paraglide/messages.js';
 import { routes as coreRoutes, type Routes } from 'storybook-svelte';
 
 const myRoutes: Routes = {
-	home_index: {
-		name: 'Casa',
-		url: (id: string) => `/home/${id}`,
+	home_list: {
+		name: m.routes_home_list(),
+		url: '/home/',
 		isProtected: true,
 		showInMenu: true
 	},
+	home_index: {
+		name: m.routes_home_index(),
+		url: (id: string) => `/home/${id}`,
+		isProtected: true,
+		showInMenu: false
+	},
 	grocery_index: {
-		name: 'Grocery',
+		name: m.routes_grocery_index(),
 		url: (id: string) => `/home/${id}/grocery`,
 		isProtected: true,
-		showInMenu: true
+		showInMenu: false
 	}
 };
 
