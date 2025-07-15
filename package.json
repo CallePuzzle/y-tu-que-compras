@@ -46,8 +46,7 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.2.0",
-		"@libsql/client": "^0.15.9",
-		"@prisma/adapter-libsql": "^6.11.1",
+		"@prisma/adapter-pg": "^6.11.1",
 		"@prisma/client": "^6.11.1",
 		"better-auth": "^1.2.12",
 		"storybook-svelte": "link:storybook-svelte"
