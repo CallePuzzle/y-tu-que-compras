@@ -1,0 +1,7 @@
+/* Hoja única de la librería: trae Tailwind, daisyUI y el @source que hace que
+   Tailwind escanee los componentes instalados. No añadir @import "tailwindcss"
+   ni @plugin "daisyui" a mano: ya están dentro. */
+@import '@callepuzzle/svelte-ui/styles.css';
+
+/* Ficheros propios de la app. */
+@source './';

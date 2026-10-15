@@ -59,6 +59,9 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
+		"@callepuzzle/core": "^1.0.0",
+		"@callepuzzle/svelte-ui": "^1.0.0",
+		"@lucide/svelte": "^1.57.0",
 		"@prisma/adapter-pg": "^7.10.0",
 		"@prisma/client": "^7.10.0",
 		"pg": "^8.23.1"
@@ -66,5 +69,10 @@
 	"allowScripts": {
 		"prisma@7.10.0": true,
 		"@prisma/engines@7.10.0": true
+	},
+	"overrides": {
+		"formsnap": {
+			"svelte-toolbelt": "^0.10.6"
+		}
 	}
 }

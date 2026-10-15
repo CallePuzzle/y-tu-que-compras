@@ -13,6 +13,13 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit()
 	],
+	ssr: {
+		// El barrel de `@callepuzzle/svelte-ui` arrastra formsnap y
+		// sveltekit-superforms, que importan los módulos virtuales `$app/*`.
+		// Vite 8 los externaliza en SSR y Node no sabe resolver `$app`: hay
+		// que bundlarlos.
+		noExternal: ['@callepuzzle/svelte-ui', '@callepuzzle/core', 'formsnap', 'sveltekit-superforms']
+	},
 	test: {
 		expect: { requireAssertions: true },
 		projects: [
