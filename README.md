@@ -1,46 +1,33 @@
-# sv
+# y-tu-que-compras
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Aplicación SvelteKit 2 + Svelte 5. Gestor de paquetes: [bun](https://bun.sh).
 
-## Creating a project
+## Requisitos
 
-If you're seeing this, you've probably already done this step. Congrats!
+Versiones fijadas en `.tool-versions` (asdf): node y bun.
 
 ```sh
-# create a new project
-npx sv create my-app
+asdf install
 ```
 
-To recreate this project with the same configuration:
+La autenticación contra GitHub Packages (`@callepuzzle/*`) se resuelve con `NPM_TOKEN`
+desde el `.npmrc` (ver `.env.example`). Sin token, `bun install` falla con 401.
+
+## Instalación
 
 ```sh
-# recreate this project
-npx sv@1.1.1 create --template minimal --types ts --add prettier eslint vitest="usages:unit,component" playwright="demo:no" tailwindcss="plugins:none" paraglide="languageTags:en,es+demo:no" --no-download-check --install npm .
-```
-
-## Adding features
-
-Add features to your project with `sv add`:
-
-```sh
-npx sv add
-```
-
-For example, to add Tailwind CSS:
-
-```sh
-npx sv add tailwindcss
+bun install
 ```
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Once you've created a project and installed dependencies, start a development server:
 
 ```sh
-npm run dev
+bun run dev
 
 # or start the server and open the app in a new browser tab
-npm run dev -- --open
+bun run dev -- --open
 ```
 
 ## Building
@@ -48,9 +35,17 @@ npm run dev -- --open
 To create a production version of your app:
 
 ```sh
-npm run build
+bun run build
 ```
 
-You can preview the production build with `npm run preview`.
+You can preview the production build with `bun run preview`.
+
+## Comprobaciones
+
+```sh
+bun run lint   # prettier + eslint
+bun run check  # svelte-check
+bun run test   # unit + e2e
+```
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
