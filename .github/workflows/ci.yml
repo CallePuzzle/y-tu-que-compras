@@ -12,10 +12,13 @@ concurrency:
 # Solo lectura: el CI no escribe en el repo ni publica.
 permissions:
   contents: read
+  packages: read
 
 env:
   # `@callepuzzle/*` se resuelven contra GitHub Packages (ver .npmrc).
-  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+  # GITHUB_TOKEN basta porque los paquetes tienen este repo añadido
+  # en "Manage Actions access" de su configuración.
+  NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   quality:
