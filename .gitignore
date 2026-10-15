@@ -29,3 +29,6 @@ project.inlang/cache/
 
 # Prisma client generado
 /src/lib/generated/
+
+# Codegraph
+.codegraph/
