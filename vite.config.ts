@@ -1,38 +1,42 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
-import { svelteTesting } from '@testing-library/svelte/vite';
+import { defineConfig } from 'vitest/config';
+import { playwright } from '@vitest/browser-playwright';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
-// import path from 'path';
 
 export default defineConfig({
 	plugins: [
-		tailwindcss(),
-		sveltekit(),
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide'
-		})
+		}),
+		tailwindcss(),
+		sveltekit()
 	],
-	// resolve: {
-	// 	alias: {
-	// 		'storybook-svelte': path.resolve(__dirname, 'node_modules/storybook-svelte/src/lib')
-	// 	}
-	// },
+	ssr: {
+		// El barrel de `@callepuzzle/svelte-ui` arrastra formsnap y
+		// sveltekit-superforms, que importan los módulos virtuales `$app/*`.
+		// Vite 8 los externaliza en SSR y Node no sabe resolver `$app`: hay
+		// que bundlarlos.
+		noExternal: ['@callepuzzle/svelte-ui', '@callepuzzle/core', 'formsnap', 'sveltekit-superforms']
+	},
 	test: {
+		expect: { requireAssertions: true },
 		projects: [
 			{
 				extends: './vite.config.ts',
-				plugins: [svelteTesting()],
 				test: {
 					name: 'client',
-					environment: 'jsdom',
-					clearMocks: true,
+					browser: {
+						enabled: true,
+						provider: playwright(),
+						instances: [{ browser: 'chromium', headless: true }]
+					},
 					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
-					exclude: ['src/lib/server/**'],
-					setupFiles: ['./vitest-setup-client.ts']
+					exclude: ['src/lib/server/**']
 				}
 			},
+
 			{
 				extends: './vite.config.ts',
 				test: {

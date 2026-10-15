@@ -4,3 +4,9 @@ pnpm-lock.yaml
 yarn.lock
 bun.lock
 bun.lockb
+
+# Miscellaneous
+/static/
+
+# Paraglide / inlang (postinstall regenera project.inlang; solo settings.json se versiona)
+project.inlang/

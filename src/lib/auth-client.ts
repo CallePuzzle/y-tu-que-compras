@@ -1,10 +1,8 @@
-import { createAuthClient } from 'better-auth/svelte';
-import { magicLinkClient, organizationClient, adminClient } from 'better-auth/client/plugins';
+import { createCallepuzzleAuthClient } from '@callepuzzle/auth/client';
 
-export const authClient = createAuthClient({
-	plugins: [magicLinkClient(), organizationClient(), adminClient()]
-});
+// Factoria: se instancia una sola vez aqui, sin plugins de momento. Cuando
+// entren los plugins de login (p. ej. emailOTPClient) anadelos tambien al
+// servidor para mantener el tipado de $Infer.Session en sincria.
+export const authClient = createCallepuzzleAuthClient();
 
-export const { signIn, signUp, useSession } = authClient;
-
-export const session = useSession();
+export type AuthClient = typeof authClient;

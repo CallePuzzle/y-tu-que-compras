@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Solo lectura: el CI no escribe en el repo ni publica.
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # `@callepuzzle/*` se resuelven contra GitHub Packages (ver .npmrc).
+  # GITHUB_TOKEN basta porque los paquetes tienen este repo añadido
+  # en "Manage Actions access" de su configuración.
+  NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  quality:
+    name: lint + check + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # El token no se queda en .git/config al alcance de dependencias y herramientas.
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      # Caché de paquetes de bun: evita re-descargar el registry en cada run.
+      - name: Restaurar caché de bun
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      # Los tests de componentes corren en navegador real (vitest browser mode).
+      - name: Instalar Chromium para vitest browser mode
+        run: bunx playwright install --with-deps chromium
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Check
+        run: bun run check
+
+      - name: Test unit
+        run: bun run test:unit -- --run
+
+      - name: Build
+        run: bun run build

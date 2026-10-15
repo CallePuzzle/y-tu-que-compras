@@ -1,5 +1,16 @@
 {
-	"routes_home_list": "Home list",
-	"routes_home_index": "Home",
-	"routes_grocery_index": "Products / Food"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"app_brand": "What are you buying?",
+	"app_tagline": "Manage your supermarket and market shopping",
+	"app_footer": "What are you buying? Your shopping list, for the supermarket and the market.",
+
+	"routes_home": "Home",
+
+	"ui_back": "Back",
+	"ui_open_sidebar": "Open the menu",
+	"ui_close_sidebar": "Close the menu",
+	"ui_main_nav": "Main navigation",
+	"ui_side_nav": "Side navigation",
+	"ui_bottom_nav": "Bottom navigation"
 }

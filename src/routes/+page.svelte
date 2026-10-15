@@ -1,24 +1,17 @@
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<script lang="ts">
+	import { m } from '#lib/paraglide/messages.js';
+</script>
 
-<div class="bg-base-100 border-base-300 collapse border">
-	<input type="radio" name="my-accordion-1" checked="checked" />
-	<div class="collapse-title font-semibold">How do I create an account?</div>
-	<div class="collapse-content text-sm">
-		Click the "Sign Up" button in the top right corner and follow the registration process.
+<svelte:head>
+	<title>{m.app_brand()}</title>
+	<meta name="description" content={m.app_tagline()} />
+</svelte:head>
+
+<section class="hero bg-base-200 rounded-box min-h-[50vh]">
+	<div class="hero-content text-center">
+		<div class="max-w-md">
+			<h1 class="text-5xl font-bold">{m.app_brand()}</h1>
+			<p class="py-6">{m.app_tagline()}</p>
+		</div>
 	</div>
-</div>
-<div class="bg-base-100 border-base-300 collapse border">
-	<input type="radio" name="my-accordion-1" />
-	<div class="collapse-title font-semibold">I forgot my password. What should I do?</div>
-	<div class="collapse-content text-sm">
-		Click on "Forgot Password" on the login page and follow the instructions sent to your email.
-	</div>
-</div>
-<div class="bg-base-100 border-base-300 collapse border">
-	<input type="radio" name="my-accordion-1" />
-	<div class="collapse-title font-semibold">How do I update my profile information?</div>
-	<div class="collapse-content text-sm">
-		Go to "My Account" settings and select "Edit Profile" to make changes.
-	</div>
-</div>
+</section>

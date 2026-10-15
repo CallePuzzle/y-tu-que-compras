@@ -1,25 +1,18 @@
-import { m } from './paraglide/messages.js';
-import { routes as coreRoutes, type Routes } from 'storybook-svelte';
+import type { RouteId } from '$app/types';
+import type { RouteMap } from '@callepuzzle/core';
+import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
+import { m } from '#lib/paraglide/messages.js';
 
-const myRoutes: Routes = {
-	home_list: {
-		name: m.routes_home_list(),
-		url: '/home/',
-		isProtected: true,
-		showInMenu: true
-	},
-	home_index: {
-		name: m.routes_home_index(),
-		url: (id: string) => `/home/${id}`,
-		isProtected: true,
-		showInMenu: false
-	},
-	grocery_index: {
-		name: m.routes_grocery_index(),
-		url: (id: string) => `/home/${id}/grocery`,
-		isProtected: true,
-		showInMenu: false
-	}
-};
-
-export const routes = { ...coreRoutes, ...myRoutes };
+// Factoría, no `const`: las etiquetas `m.*` se resuelven en render, nunca en
+// scope de módulo. La clave del mapa ES la ruta; `showInMenu` pinta en el menú
+// de escritorio y `showInMobile` en el dock móvil (filtros independientes).
+export function getRoutes(): RouteMap<RouteId> {
+	return {
+		'/': {
+			label: m.routes_home(),
+			icon: ShoppingBasket,
+			showInMenu: true,
+			showInMobile: true
+		}
+	};
+}

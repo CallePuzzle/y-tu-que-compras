@@ -1,5 +1,16 @@
 {
-	"routes_home_list": "Lista de casas",
-	"routes_home_index": "Casa",
-	"routes_grocery_index": "Productos / comida"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"app_brand": "¿Y tú qué compras?",
+	"app_tagline": "Gestiona tus compras del super y del mercado",
+	"app_footer": "¿Y tú qué compras? Tu lista de la compra, del super y del mercado.",
+
+	"routes_home": "Inicio",
+
+	"ui_back": "Atrás",
+	"ui_open_sidebar": "Abrir el menú",
+	"ui_close_sidebar": "Cerrar el menú",
+	"ui_main_nav": "Navegación principal",
+	"ui_side_nav": "Navegación lateral",
+	"ui_bottom_nav": "Navegación inferior"
 }
