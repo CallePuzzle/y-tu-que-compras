@@ -10,8 +10,10 @@ Versiones fijadas en `.tool-versions` (asdf): node y bun.
 asdf install
 ```
 
-La autenticación contra GitHub Packages (`@callepuzzle/*`) se resuelve con `NPM_TOKEN`
-desde el `.npmrc` (ver `.env.example`). Sin token, `bun install` falla con 401.
+La autenticación contra GitHub Packages (`@callepuzzle/*`, `@zytera/*`) se resuelve con un
+[Personal Access Token](https://github.com/settings/tokens) clásico con permiso `read:packages`.
+Defínelo como `NPM_TOKEN` en el `.env` (ver `.env.example`): el `.npmrc` lo inyecta
+(`//npm.pkg.github.com/:_authToken=${NPM_TOKEN}`). Sin token, `bun install` falla con 401.
 
 ## Instalación
 
