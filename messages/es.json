@@ -12,5 +12,10 @@
 	"ui_close_sidebar": "Cerrar el menú",
 	"ui_main_nav": "Navegación principal",
 	"ui_side_nav": "Navegación lateral",
-	"ui_bottom_nav": "Navegación inferior"
+	"ui_bottom_nav": "Navegación inferior",
+
+	"email_otp_subject": "{code} es tu código de acceso",
+	"email_otp_body": "Introduce este código para entrar en ¿Y tú qué compras?:\n\n{code}\n\nEl código caduca en unos minutos. Si no has sido tú, ignora este correo.",
+	"email_invite_subject": "{inviter} te ha invitado a su familia",
+	"email_invite_body": "{inviter} te ha invitado a compartir tu lista de la compra en ¿Y tú qué compras?:\n\n{url}\n\nSi no quieres unirte, ignora este correo."
 }

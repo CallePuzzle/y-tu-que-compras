@@ -12,5 +12,10 @@
 	"ui_close_sidebar": "Close the menu",
 	"ui_main_nav": "Main navigation",
 	"ui_side_nav": "Side navigation",
-	"ui_bottom_nav": "Bottom navigation"
+	"ui_bottom_nav": "Bottom navigation",
+
+	"email_otp_subject": "{code} is your sign-in code",
+	"email_otp_body": "Enter this code to sign in to What are you buying?:\n\n{code}\n\nThe code expires in a few minutes. If this wasn't you, just ignore this email.",
+	"email_invite_subject": "{inviter} has invited you to their family",
+	"email_invite_body": "{inviter} has invited you to share your shopping list on What are you buying?:\n\n{url}\n\nIf you don't want to join, just ignore this email."
 }
