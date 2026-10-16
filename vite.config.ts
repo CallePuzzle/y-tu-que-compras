@@ -22,6 +22,8 @@ export default defineConfig({
 	},
 	test: {
 		expect: { requireAssertions: true },
+		// El proyecto `client` todavía no tiene tests de componentes.
+		passWithNoTests: true,
 		projects: [
 			{
 				extends: './vite.config.ts',

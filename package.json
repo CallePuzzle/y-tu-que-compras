@@ -19,18 +19,20 @@
 		"db:studio": "prisma studio",
 		"test:unit": "vitest",
 		"test": "bun run test:unit -- --run && bun run test:e2e",
-		"test:e2e": "playwright install && playwright test"
+		"test:e2e": "playwright test",
+		"test:e2e:install": "playwright install chromium",
+		"audit": "bun audit --audit-level=moderate --ignore=GHSA-ggr8-5vv4-36mx"
 	},
 	"packageManager": "bun@1.4.3",
 	"engines": {
-		"node": ">=22",
+		"node": ">=24",
 		"bun": ">=1.4.0"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@inlang/paraglide-js": "^2.18.2",
 		"@playwright/test": "^1.60.0",
-		"@sveltejs/adapter-auto": "^6.1.1",
+		"@sveltejs/adapter-vercel": "6.3.4",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@tailwindcss/vite": "^4.3.0",
@@ -55,10 +57,6 @@
 		"vitest": "^4.1.8",
 		"vitest-browser-svelte": "^2.1.1"
 	},
-	"imports": {
-		"#lib": "./src/lib/index.js",
-		"#lib/*": "./src/lib/*"
-	},
 	"dependencies": {
 		"@callepuzzle/auth": "^1.0.0",
 		"@callepuzzle/core": "^1.0.0",
@@ -66,7 +64,7 @@
 		"@lucide/svelte": "^1.57.0",
 		"@prisma/adapter-pg": "^7.10.0",
 		"@prisma/client": "^7.10.0",
-		"better-auth": "^1.7.9",
+		"better-auth": "^1.7.10",
 		"pg": "^8.23.1"
 	},
 	"trustedDependencies": [
@@ -76,6 +74,7 @@
 	"overrides": {
 		"formsnap": {
 			"svelte-toolbelt": "^0.10.6"
-		}
+		},
+		"mysql2": "^3.24.6"
 	}
 }
