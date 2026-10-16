@@ -1,19 +1,45 @@
 <script lang="ts">
 	import '../app.css';
 	import { page } from '$app/state';
-	import { Dock, Drawer, Footer, Header, NavBarList } from '@callepuzzle/svelte-ui';
+	import {
+		ButtonSignOut,
+		Dock,
+		Drawer,
+		Footer,
+		Header,
+		Link,
+		NavBarEnd,
+		NavBarList,
+		UserNotLogged
+	} from '@callepuzzle/svelte-ui';
+	import { invalidateAll } from '$app/navigation';
 	import { getRoutes } from '$lib/routes';
 	import { m } from '$lib/paraglide/messages.js';
+	import { authClient } from '$lib/auth-client.js';
 	import type { LayoutProps } from './$types';
 
 	// `children` se renombra: dentro del snippet `children` del `Drawer` el nombre
 	// quedaría sombreado y `{@render children()}` fallaría.
-	let { children: content }: LayoutProps = $props();
+	let { children: content, data }: LayoutProps = $props();
 
 	// `getRoutes()` es una factoría para que las etiquetas se resuelvan al renderizar,
-	// con el locale de la petición. No hace falta `$derived`: cambiar de locale en
-	// Paraglide recarga la página.
-	const routes = getRoutes();
+	// con el locale de la petición. `$derived` (y no una llamada única): el layout no
+	// se remonta al navegar, y el mapa debe recalcularse cuando `data.user` aparece
+	// o desaparece (tras el login/logout), p. ej. para ocultar «Acceder» de los menús.
+	const routes = $derived(getRoutes(Boolean(data.user)));
+
+	// El login es público: su contenido no exige sesión. En el resto de rutas, si
+	// no hay usuario se muestra el aviso (defensiva: el guard de hooks ya redirige
+	// a /login; esto cubre p. ej. una sesión que muere entre navegaciones).
+	const showContent = $derived(Boolean(data.user) || page.route.id === '/login');
+
+	// Tras `signOut()` la cookie ya no vale, pero SvelteKit NO reejecuta el load
+	// del layout al navegar (no depende de url/params): sin esta invalidación la
+	// cabecera seguiría pintando al usuario. El refetch pasa por el guard y, al
+	// no haber sesión, nos termina mandando a /login.
+	async function onSignOut() {
+		await invalidateAll();
+	}
 </script>
 
 <Drawer strings={{ openSidebar: m.ui_open_sidebar(), closeSidebar: m.ui_close_sidebar() }}>
@@ -32,10 +58,51 @@
 				{#snippet title()}
 					<span class="text-lg font-bold">{m.app_brand()}</span>
 				{/snippet}
+
+				{#snippet navEnd()}
+					<!-- Con sesión, el menú de usuario con «Cerrar sesión». Sin sesión, un
+					     enlace al login. El `ButtonSignOut` va en `menuExtra` (y no vía la
+					     prop `authClient`) porque `NavBarEnd` no reenvía `onSignOut`, y el
+					     logout necesita invalidar los datos: sin eso la cabecera seguiría
+					     pintando la sesión vieja. `redirectTo={null}`: la navegación la
+					     decide el guard, que con la cookie borrada manda a /login. -->
+					<NavBarEnd
+						user={data.user}
+						strings={{
+							userMenu: m.ui_user_menu(),
+							signOut: m.ui_sign_out(),
+							avatarAlt: (name) => m.ui_avatar_alt({ name })
+						}}
+					>
+						{#snippet login()}
+							<Link href="/login" label={m.routes_login()} class="btn btn-primary" />
+						{/snippet}
+
+						{#snippet menuExtra()}
+							<li>
+								<ButtonSignOut
+									{authClient}
+									redirectTo={null}
+									{onSignOut}
+									strings={{ signOut: m.ui_sign_out() }}
+								/>
+							</li>
+						{/snippet}
+					</NavBarEnd>
+				{/snippet}
 			</Header>
 
 			<main class="container mx-auto grow p-4 pb-24 lg:pb-4">
-				{@render content()}
+				<!-- Ver `showContent`: sin sesión (fuera de /login) se muestra el aviso. -->
+				{#if showContent}
+					{@render content()}
+				{:else}
+					<UserNotLogged text={m.ui_user_not_logged()}>
+						{#snippet action()}
+							<Link href="/login" label={m.routes_login()} class="btn btn-primary" />
+						{/snippet}
+					</UserNotLogged>
+				{/if}
 			</main>
 
 			<Footer>

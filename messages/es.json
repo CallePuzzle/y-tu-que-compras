@@ -6,11 +6,38 @@
 	"app_footer": "¿Y tú qué compras? Tu lista de la compra, del super y del mercado.",
 
 	"routes_home": "Inicio",
+	"routes_login": "Acceder",
 
 	"ui_back": "Atrás",
 	"ui_open_sidebar": "Abrir el menú",
 	"ui_close_sidebar": "Cerrar el menú",
 	"ui_main_nav": "Navegación principal",
 	"ui_side_nav": "Navegación lateral",
-	"ui_bottom_nav": "Navegación inferior"
+	"ui_bottom_nav": "Navegación inferior",
+	"ui_user_menu": "Menú de usuario",
+	"ui_avatar_alt": "Avatar de {name}",
+	"ui_sign_out": "Cerrar sesión",
+	"ui_user_not_logged": "Necesitas iniciar sesión para ver este contenido.",
+
+	"form_required": "Obligatorio",
+	"form_optional": "Opcional",
+
+	"form_login_sign_in": "Iniciar sesión",
+	"form_login_step_email": "Introduce tu email",
+	"form_login_step_otp": "Valida el código",
+	"form_login_otp_label": "Código de verificación de 6 dígitos",
+	"form_login_otp_description": "Introduce el código de {digits} dígitos que te hemos enviado al correo",
+	"form_login_success": "Sesión iniciada con éxito",
+	"form_login_rate_limited": "Ya te hemos enviado un código hace un momento. Espera unos segundos antes de pedir otro.",
+	"form_login_invalid_code": "Ese código no es válido. Compruébalo e inténtalo de nuevo.",
+	"form_login_error": "Error al iniciar sesión, por favor inténtalo más tarde.",
+	"form_login_start_over": "Empezar de nuevo",
+
+	"schema_login_email_describe": "Te enviaremos un código de un solo uso para entrar",
+	"schema_login_email_error": "Por favor, introduce una dirección de correo electrónico válida.",
+
+	"email_otp_subject": "{code} es tu código de acceso",
+	"email_otp_body": "Introduce este código para entrar en ¿Y tú qué compras?:\n\n{code}\n\nEl código caduca en unos minutos. Si no has sido tú, ignora este correo.",
+	"email_invite_subject": "{inviter} te ha invitado a su familia",
+	"email_invite_body": "{inviter} te ha invitado a compartir tu lista de la compra en ¿Y tú qué compras?:\n\n{url}\n\nSi no quieres unirte, ignora este correo."
 }

@@ -5,6 +5,30 @@
 			"codegraph": {
 				"type": "local",
 				"command": ["codegraph", "serve", "--mcp"]
+			},
+			"playwright": {
+				"type": "local",
+				"disabled": true,
+				"command": [
+					"npx",
+					"-y",
+					"@playwright/mcp@latest",
+					"--browser",
+					"chromium",
+					"--executable-path",
+					"/usr/bin/chromium"
+				]
+			},
+			"chrome-devtools": {
+				"type": "local",
+				"disabled": true,
+				"command": [
+					"npx",
+					"-y",
+					"chrome-devtools-mcp@latest",
+					"--executable-path=/usr/bin/brave",
+					"--no-usage-statistics"
+				]
 			}
 		}
 	}

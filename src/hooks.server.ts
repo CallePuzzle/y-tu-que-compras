@@ -5,6 +5,7 @@ import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { betterAuthHandle } from '@callepuzzle/auth/hooks';
 import { auth } from '$lib/server/auth';
+import { handleAuthGuard } from '$lib/server/auth-guard';
 import logger from '$lib/server/logger';
 import { getTextDirection } from '$lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '$lib/paraglide/server.js';
@@ -105,10 +106,14 @@ export const handleError: HandleServerError = ({ error, event }) => {
 // betterAuthHandle resuelve la sesión una vez por request (event.locals) y
 // atiende /api/auth/*; `building` evita resolver sesión durante el prerender y
 // `skipAssets` se la ahorra en `/_app/*`, imágenes y fuentes.
+// handleAuthGuard (justo después, para ver `locals.user`) exige sesión en todo
+// lo demás y manda a /login sin ella: cubre también `+server.ts` y form actions,
+// que un guard en `+layout.server.ts` no vería.
 export const handle: Handle = sequence(
 	handleLogging,
 	handleSecurityHeaders,
 	betterAuthHandle(auth, building, { skipAssets: true }),
+	handleAuthGuard,
 	handleUserTrace,
 	handleParaglide
 );
