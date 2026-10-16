@@ -35,8 +35,12 @@ export default defineConfig(
 		}
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		rules: {
+			// Un solo alias para `src/lib`: el nativo de SvelteKit.
+			'no-restricted-imports': [
+				'error',
+				{ patterns: [{ group: ['#lib', '#lib/*'], message: 'Usa `$lib/...`.' }] }
+			]
+		}
 	}
 );

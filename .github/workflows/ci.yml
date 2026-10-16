@@ -14,15 +14,9 @@ permissions:
   contents: read
   packages: read
 
-env:
-  # `@callepuzzle/*` se resuelven contra GitHub Packages (ver .npmrc).
-  # GITHUB_TOKEN basta porque los paquetes tienen este repo añadido
-  # en "Manage Actions access" de su configuración.
-  NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   quality:
-    name: lint + check + test + build
+    name: lint + check + test + build + e2e
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -43,10 +37,17 @@ jobs:
           restore-keys: |
             bun-${{ runner.os }}-
 
-      - run: bun install --frozen-lockfile
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+        env:
+          # `@callepuzzle/*` se resuelven contra GitHub Packages (ver .npmrc).
+          # GITHUB_TOKEN basta porque los paquetes tienen este repo añadido
+          # en "Manage Actions access" de su configuración. Solo en este paso:
+          # el resto (lint, tests, build) ejecuta código de terceros sin token.
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Los tests de componentes corren en navegador real (vitest browser mode).
-      - name: Instalar Chromium para vitest browser mode
+      # Los tests de componentes (vitest browser mode) y los e2e corren en Chromium.
+      - name: Instalar Chromium
         run: bunx playwright install --with-deps chromium
 
       - name: Lint
@@ -60,3 +61,38 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      # Vuelve a construir dentro del webServer de Playwright (ver playwright.config.ts).
+      - name: Test e2e
+        run: bun run test:e2e
+
+  security:
+    name: audit + secretos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # Historial completo: gitleaks revisa todos los commits, no solo el último.
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      # Solo necesita bun.lock: no instala nada ni usa NPM_TOKEN. Los `@callepuzzle/*`
+      # no se pueden auditar (GitHub Packages no responde al audit): se escanean en su repo.
+      # Las excepciones y el umbral están en el script `audit` de package.json.
+      - name: bun audit
+        run: bun run audit
+
+      # Binario oficial verificado por checksum (gitleaks-action pide licencia en organizaciones).
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfLo gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar xzf gitleaks.tar.gz gitleaks
+          ./gitleaks git --redact --no-banner --exit-code 1 .

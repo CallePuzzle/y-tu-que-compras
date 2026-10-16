@@ -32,6 +32,11 @@ function getPrismaClient(): PrismaClient {
 // El cliente se crea en el primer acceso, no al importar el módulo: `vite build`
 // evalúa el código de servidor sin variables de entorno, así que instanciarlo
 // aquí obligaría a tener DATABASE_URL definida para compilar.
+//
+// Limitaciones del proxy (cubierto en prisma.spec.ts):
+// - cualquier acceso lo instancia, también los accidentales (`await prisma`
+//   lee `then`);
+// - `prisma instanceof PrismaClient` es `false` y el depurador muestra `{}`.
 const prisma = new Proxy({} as PrismaClient, {
 	get(_target, property) {
 		const instance = getPrismaClient();
