@@ -6,6 +6,7 @@
 	"app_footer": "What are you buying? Your shopping list, for the supermarket and the market.",
 
 	"routes_home": "Home",
+	"routes_login": "Sign in",
 
 	"ui_back": "Back",
 	"ui_open_sidebar": "Open the menu",
@@ -13,6 +14,23 @@
 	"ui_main_nav": "Main navigation",
 	"ui_side_nav": "Side navigation",
 	"ui_bottom_nav": "Bottom navigation",
+
+	"form_required": "Required",
+	"form_optional": "Optional",
+
+	"form_login_sign_in": "Sign in",
+	"form_login_step_email": "Enter your email",
+	"form_login_step_otp": "Verify the code",
+	"form_login_otp_label": "6-digit verification code",
+	"form_login_otp_description": "Enter the {digits}-digit code we sent to your email",
+	"form_login_success": "Signed in successfully",
+	"form_login_rate_limited": "We just sent you a code. Wait a few seconds before requesting another one.",
+	"form_login_invalid_code": "That code is not valid. Please check it and try again.",
+	"form_login_error": "Sign-in failed, please try again later.",
+	"form_login_start_over": "Start over",
+
+	"schema_login_email_describe": "We will email you a one-time code to sign in",
+	"schema_login_email_error": "Please enter a valid email address.",
 
 	"email_otp_subject": "{code} is your sign-in code",
 	"email_otp_body": "Enter this code to sign in to What are you buying?:\n\n{code}\n\nThe code expires in a few minutes. If this wasn't you, just ignore this email.",

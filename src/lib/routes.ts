@@ -1,5 +1,6 @@
 import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
+import LogIn from '@lucide/svelte/icons/log-in';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 import { m } from '$lib/paraglide/messages.js';
 
@@ -11,6 +12,12 @@ export function getRoutes(): RouteMap<RouteId> {
 		'/': {
 			label: m.routes_home(),
 			icon: ShoppingBasket,
+			showInMenu: true,
+			showInMobile: true
+		},
+		'/login': {
+			label: m.routes_login(),
+			icon: LogIn,
 			showInMenu: true,
 			showInMobile: true
 		}
