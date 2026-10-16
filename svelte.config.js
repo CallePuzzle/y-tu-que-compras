@@ -29,6 +29,15 @@ const config = {
 				'form-action': ['self'],
 				'frame-ancestors': ['none']
 			}
+		},
+
+		// Experimentales (warning esperado al compilar): `tracing.server` activa la
+		// emisión de spans de SvelteKit (handle/load/actions/+server) y
+		// `instrumentation.server` carga `src/instrumentation.server.ts` antes del
+		// código de la app (requisito para instrumentar imports, p. ej. pg).
+		experimental: {
+			tracing: { server: true },
+			instrumentation: { server: true }
 		}
 	}
 };
