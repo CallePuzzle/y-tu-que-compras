@@ -1,16 +1,28 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { FormLoginOtp } from '@callepuzzle/svelte-ui/otp';
 	import { createLoginSchema } from '@callepuzzle/core/schema';
 	import { m } from '$lib/paraglide/messages.js';
 	import { authClient } from '$lib/auth-client.js';
+	import { sanitizeRedirectTo } from '$lib/redirect.js';
+
+	// Redirección post-login: el guard manda aquí con `?redirectTo=<url original>`.
+	// Se acepta sólo si es una ruta interna (`sanitizeRedirectTo`), nunca una URL
+	// externa: sin esa validación, el login sería un open redirect.
+	const redirectTo = $derived(sanitizeRedirectTo(page.url.searchParams.get('redirectTo')));
+
+	// Destino tras el login: la página que pidió el usuario (o el inicio). El cast
+	// es el patrón de la librería: `resolve` espera los RouteId del proyecto y
+	// `redirectTo` es un pathname interno arbitrario.
+	const afterLoginHref = $derived(resolve((redirectTo ?? '/') as Parameters<typeof resolve>[0]));
 
 	// La libreria no invalida ni navega: aqui repintamos la sesion (el layout
-	// la recibe del load) y volvemos al inicio.
+	// la recibe del load) y volvemos a la página que pidió el usuario (o al inicio).
 	async function onLoginSuccess() {
 		await invalidateAll();
-		await goto(resolve('/'));
+		await goto(afterLoginHref);
 	}
 
 	// El schema se construye EN RENDER, nunca en scope de modulo (regla i18n de

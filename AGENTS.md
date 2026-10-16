@@ -55,6 +55,8 @@ webServer de Playwright). Un test suelto:
   nombradas en producción. No "corregirlo".
 - Usar **`$env/dynamic/private`**, no `process.env`, para env en código de servidor (bun no inyecta
   el `.env` en los scripts; es Vite/SvelteKit quien lo carga — ver `src/lib/server/auth.ts`).
+- Tampoco el CLI de Prisma ve el `.env`: lo carga `dotenv` en `prisma.config.ts`. Ni `bunx` ni
+  `bun run` lo inyectan (los flags `--env-file` de bun solo valen para scripts del propio bun).
 - El cliente Prisma (`src/lib/server/prisma.ts`) se instancia perezosamente vía Proxy para que
   `vite build` no necesite `DATABASE_URL`. Mantener ese patrón si se toca.
 - `ssr.noExternal` en `vite.config.ts`: los paquetes `@callepuzzle/*`, formsnap y

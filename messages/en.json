@@ -14,6 +14,10 @@
 	"ui_main_nav": "Main navigation",
 	"ui_side_nav": "Side navigation",
 	"ui_bottom_nav": "Bottom navigation",
+	"ui_user_menu": "User menu",
+	"ui_avatar_alt": "Avatar of {name}",
+	"ui_sign_out": "Sign out",
+	"ui_user_not_logged": "You need to sign in to see this content.",
 
 	"form_required": "Required",
 	"form_optional": "Optional",

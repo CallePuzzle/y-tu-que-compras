@@ -32,3 +32,6 @@ project.inlang/cache/
 
 # Codegraph
 .codegraph/
+
+# Playwright MCP (snapshots y screenshots)
+.playwright-mcp/
