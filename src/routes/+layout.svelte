@@ -3,15 +3,17 @@
 	import { page } from '$app/state';
 	import { Dock, Drawer, Footer, Header, NavBarList } from '@callepuzzle/svelte-ui';
 	import { getRoutes } from '$lib/routes';
-	import { m } from '#lib/paraglide/messages.js';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { LayoutProps } from './$types';
 
 	// `children` se renombra: dentro del snippet `children` del `Drawer` el nombre
 	// quedaría sombreado y `{@render children()}` fallaría.
 	let { children: content }: LayoutProps = $props();
 
-	// Factoría, no `const`: las etiquetas se resuelven en render con el locale activo.
-	const routes = $derived(getRoutes());
+	// `getRoutes()` es una factoría para que las etiquetas se resuelvan al renderizar,
+	// con el locale de la petición. No hace falta `$derived`: cambiar de locale en
+	// Paraglide recarga la página.
+	const routes = getRoutes();
 </script>
 
 <Drawer strings={{ openSidebar: m.ui_open_sidebar(), closeSidebar: m.ui_close_sidebar() }}>

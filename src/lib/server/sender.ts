@@ -4,6 +4,8 @@ import type { Transporter } from 'nodemailer';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 
+import logger from '$lib/server/logger';
+
 export interface EmailContent {
 	to: string;
 	subject: string;
@@ -46,7 +48,9 @@ function smtpTransporter(): Transporter | undefined {
 export async function sendEmail(content: EmailContent): Promise<void> {
 	if (dev) {
 		// Transporte de desarrollo/test: de local no sale ningun email real.
-		console.info(`[sender] email (capturado, no enviado):\n${JSON.stringify(content, null, 2)}`);
+		// Via pino (como el resto de logs de la app); las claves del contenido
+		// (`to`, `subject`, `text`) no colisionan con las redactadas.
+		logger.info(content, 'email capturado (no enviado)');
 		capturedEmails.push(content);
 		return;
 	}

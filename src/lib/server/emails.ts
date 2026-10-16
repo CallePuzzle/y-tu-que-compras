@@ -1,6 +1,6 @@
-import { m } from '#lib/paraglide/messages.js';
+import { m } from '$lib/paraglide/messages.js';
 
-import type { Locale } from '#lib/paraglide/runtime.js';
+import type { Locale } from '$lib/paraglide/runtime.js';
 import { sendEmail } from './sender.js';
 
 export interface OtpEmailParams {

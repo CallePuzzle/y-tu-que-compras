@@ -72,3 +72,14 @@ model Verification {
 	@@index([identifier])
 	@@map("verification")
 }
+
+// Almacén del rate limit de better-auth (`rateLimit.storage: 'database'`).
+model RateLimit {
+	id          String @id
+	key         String
+	count       Int
+	lastRequest BigInt
+
+	@@unique([key])
+	@@map("rateLimit")
+}
