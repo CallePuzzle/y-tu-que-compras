@@ -2,84 +2,288 @@
 // Regenerate with `npx @better-auth/cli generate` when adding auth plugins.
 
 generator client {
-	provider = "prisma-client"
-	output   = "../src/lib/generated/prisma"
+  provider = "prisma-client"
+  output   = "../src/lib/generated/prisma"
 }
 
 datasource db {
-	provider = "postgresql"
+  provider = "postgresql"
 }
 
 model User {
-	id            String    @id
-	name          String
-	email         String
-	emailVerified Boolean   @default(false)
-	image         String?
-	createdAt     DateTime  @default(now())
-	updatedAt     DateTime  @updatedAt
-	sessions      Session[]
-	accounts      Account[]
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
 
-	@@unique([email])
-	@@map("user")
+  // Grants/denies recibidos (userId) y concedidos/denegados por el usuario
+  // (grantedBy/deniedBy). Los recibidos mueren con el usuario; los firmados
+  // por él sobreviven (Restrict): un permiso no deja de existir porque quien
+  // lo concedió borre su cuenta.
+  permissionGrants       PermissionGrant[] @relation("PermissionGrantsReceived")
+  permissionGrantsGiven  PermissionGrant[] @relation("PermissionGrantsGiven")
+  permissionDenies       PermissionDeny[]  @relation("PermissionDeniesReceived")
+  permissionDeniesIssued PermissionDeny[]  @relation("PermissionDeniesIssued")
+  invitations            Invitation[]
+
+  @@unique([email])
+  @@map("user")
 }
 
 model Session {
-	id        String   @id
-	expiresAt DateTime
-	token     String
-	createdAt DateTime @default(now())
-	updatedAt DateTime @updatedAt
-	ipAddress String?
-	userAgent String?
-	userId    String
-	user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-	@@unique([token])
-	@@index([userId])
-	@@map("session")
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
 }
 
 model Account {
-	id                    String    @id
-	accountId             String
-	providerId            String
-	userId                String
-	user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-	accessToken           String?
-	refreshToken          String?
-	idToken               String?
-	accessTokenExpiresAt  DateTime?
-	refreshTokenExpiresAt DateTime?
-	scope                 String?
-	password              String?
-	createdAt             DateTime  @default(now())
-	updatedAt             DateTime  @updatedAt
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-	@@index([userId])
-	@@map("account")
+  @@index([userId])
+  @@map("account")
 }
 
 model Verification {
-	id         String   @id
-	identifier String
-	value      String
-	expiresAt  DateTime
-	createdAt  DateTime @default(now())
-	updatedAt  DateTime @updatedAt
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-	@@index([identifier])
-	@@map("verification")
+  @@index([identifier])
+  @@map("verification")
 }
 
 // Almacén del rate limit de better-auth (`rateLimit.storage: 'database'`).
 model RateLimit {
-	id          String @id
-	key         String
-	count       Int
-	lastRequest BigInt
+  id          String @id
+  key         String
+  count       Int
+  lastRequest BigInt
 
-	@@unique([key])
-	@@map("rateLimit")
+  @@unique([key])
+  @@map("rateLimit")
+}
+
+// ============================================================================
+// Plugin @zytera/better-auth-tenancy (familia = organization).
+//
+// Los modelos replican el `schema` que declara el plugin en el servidor; el
+// nombre Prisma es el del modelo better-auth y `@@map` usa la misma clave que
+// usa el adaptador para buscar la tabla. Los campos polimórficos
+// (contextType/contextId, parentType/parentId) no pueden ser FK en Prisma:
+// quedan como columnas planas con índice. El resto de FKs sigue el esquema
+// drizzle del servicio Zytera, que lleva este plugin en producción.
+// ============================================================================
+
+// Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
+// columnas planas (contextId) en role/member/invitation/grant/deny.
+model Organization {
+  id        String   @id
+  name      String
+  slug      String   @unique
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("organization")
+}
+
+// Agrupación hija (hoy sin uso: una familia no tiene subgrupos). Se declara
+// porque el plugin expone sus endpoints contra este modelo.
+model Team {
+  id         String   @id
+  parentType String
+  parentId   String
+  name       String
+  slug       String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([parentType, parentId])
+  @@map("team")
+}
+
+// Catálogo de permisos `categoria:operacion`. Los roles referencian statements
+// por su id aunque no estén catalogados (el chequeo es un cruce por cadena), así
+// que la tabla puede quedarse vacía; existe para los endpoints del plugin.
+model Statement {
+  id           String                 @id
+  category     String
+  operation    String
+  createdAt    DateTime               @default(now())
+  translations StatementTranslation[]
+
+  @@map("statement")
+}
+
+model StatementTranslation {
+  id          String    @id
+  statementId String
+  statement   Statement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  locale      String
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([statementId, locale])
+  @@map("statementTranslation")
+}
+
+// Rol de una familia (contextType = 'organization'). `name` es el identificador
+// estable ('admin'/'member'); el nombre visible vive en RoleTranslation.
+model Role {
+  id           String            @id
+  contextType  String
+  contextId    String
+  name         String
+  description  String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  statements   RoleStatement[]
+  translations RoleTranslation[]
+  members      Member[]
+
+  @@index([contextType, contextId])
+  @@map("role")
+}
+
+// Statements del rol. `statementId` sin FK a propósito: los roles llevan ids de
+// statements propios de la app (`member:invite`, …) que no están en el catálogo
+// `statement`, y una FK los obligaría a sembrarlo antes de crear cada familia.
+model RoleStatement {
+  id          String   @id
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  statementId String
+  createdAt   DateTime @default(now())
+
+  @@index([roleId])
+  @@index([statementId])
+  @@map("roleStatement")
+}
+
+model RoleTranslation {
+  id          String   @id
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  locale      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@unique([roleId, locale])
+  @@map("roleTranslation")
+}
+
+// Miembro de una familia (o, en el futuro, de un Team). `roleId` opcional: el
+// rol por defecto se asigna al entrar (issue #59) y `SetNull` mantiene la
+// pertenencia si el rol desaparece.
+model Member {
+  id          String   @id
+  contextType String
+  contextId   String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId      String?
+  role        Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([contextType, contextId])
+  @@map("member")
+}
+
+// Overrides puntuales sobre el rol (deny-first policy). `statementId` plano por
+// lo mismo que en RoleStatement.
+model PermissionGrant {
+  id            String    @id
+  userId        String
+  user          User      @relation("PermissionGrantsReceived", fields: [userId], references: [id], onDelete: Cascade)
+  statementId   String
+  contextType   String
+  contextId     String
+  expiresAt     DateTime?
+  grantedBy     String
+  grantedByUser User      @relation("PermissionGrantsGiven", fields: [grantedBy], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+  @@index([contextType, contextId])
+  @@map("permissionGrant")
+}
+
+model PermissionDeny {
+  id           String   @id
+  userId       String
+  user         User     @relation("PermissionDeniesReceived", fields: [userId], references: [id], onDelete: Cascade)
+  statementId  String
+  contextType  String
+  contextId    String
+  deniedBy     String
+  deniedByUser User     @relation("PermissionDeniesIssued", fields: [deniedBy], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([contextType, contextId])
+  @@map("permissionDeny")
+}
+
+// Invitación a una familia. `roleId` sin FK: el plugin no valida su existencia
+// (la resolución de rol en lectura es tolerante a fallos) y así una invitación
+// no se rompe si el rol se recrea con otro id.
+model Invitation {
+  id             String    @id
+  token          String    @unique
+  invitationCode String?
+  identifier     String?
+  contextType    String
+  contextId      String
+  roleId         String?
+  invitedBy      String
+  invitedByUser  User      @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
+  status         String    @default("pending")
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  acceptedAt     DateTime?
+  cancelledAt    DateTime?
+  metadata       Json?
+
+  @@index([contextType, contextId])
+  @@index([identifier])
+  @@index([roleId])
+  @@map("invitation")
 }

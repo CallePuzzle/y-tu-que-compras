@@ -9,6 +9,8 @@ import { env } from '$env/dynamic/private';
 
 import logger from '$lib/server/logger';
 import { sendOtpEmail } from '$lib/server/emails';
+import { tenancyConfig } from '$lib/server/tenancy.js';
+import { tenancy } from '@zytera/better-auth-tenancy/server';
 
 // El login solo usa OTP de tipo "sign-in": el resto de tipos no debería llegar
 // nunca y no envía ningún correo.
@@ -47,6 +49,11 @@ export const auth = getBetterAuth({
 		// (defaults de better-auth, dejados explícitos para que el límite sea
 		// visible; al agotarse el código queda invalidado).
 		emailOtpPreset(sendVerificationOtp, { expiresIn: 300, allowedAttempts: 3 }),
+		// Familias (familia = organization): endpoints de organizaciones, roles,
+		// miembros e invitaciones. La configuración (i18n `es`, filtro de
+		// familias por pertenencia y seed de roles al crear) vive en
+		// `$lib/server/tenancy.ts`.
+		tenancy(tenancyConfig),
 		// sveltekitCookies el ÚLTIMO: better-auth avisa de que su hook `after`
 		// debe correr al final o las Set-Cookie del login no llegan al navegador.
 		sveltekitCookies(getRequestEvent)
