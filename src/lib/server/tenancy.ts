@@ -1,7 +1,15 @@
 import type { AuthContext, GenericEndpointContext } from '@better-auth/core';
 import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
-import type { PermissionFilteringHooks, TenancyConfig } from '@zytera/better-auth-tenancy/server';
-import { getSessionFromCtx } from 'better-auth/api';
+import type {
+	ContextType,
+	EndpointAuthContext,
+	EndpointAuthHook,
+	PermissionFilteringHooks,
+	ResourceContext,
+	TenancyConfig
+} from '@zytera/better-auth-tenancy/server';
+import { resolvePermission } from '@zytera/better-auth-tenancy/server';
+import { APIError, getSessionFromCtx } from 'better-auth/api';
 
 // El plugin de tenancy mapea la jerarquía de better-auth sobre el dominio de la
 // app: **familia = organization**. Los equipos (teams) no se usan de momento.
@@ -28,9 +36,9 @@ export const FAMILY_MEMBER_ROLE = 'member';
  * `categoria:operacion` (un solo `:`): así podrían catalogarse en `statement`
  * con traducciones más adelante sin cambiar los ids.
  *
- * De momento ningún endpoint los consulta: los hooks de autorización fina se
- * conectarán al asignar roles a usuarios (issue #59). Sembrarlos ya deja el
- * modelo de permisos definido en un solo sitio.
+ * No son decorativos: cada uno guarda los endpoints del plugin que ejecutan la
+ * operación (ver `endpoints` en `tenancyConfig`), resuelto con el
+ * `resolvePermission` del propio plugin — issue #59.
  */
 export const FAMILY_ADMIN_STATEMENTS = [
 	'organization:update', // Renombrar la familia
@@ -41,8 +49,15 @@ export const FAMILY_ADMIN_STATEMENTS = [
 	'invitation:cancel' // Cancelar invitaciones pendientes
 ] as const;
 
-/** Statements del rol básico: ver la familia. Crecerá con las listas. */
+/**
+ * Statements del rol básico: ver la familia, que es justo lo que su único
+ * statement guarda (la lectura de la organización). Crecerá con las listas.
+ */
 export const FAMILY_MEMBER_STATEMENTS = ['organization:get'] as const;
+
+/** Unión de todos los statements que siembra la app en los roles de familia. */
+type FamilyStatement =
+	(typeof FAMILY_ADMIN_STATEMENTS)[number] | (typeof FAMILY_MEMBER_STATEMENTS)[number];
 
 /** Nombre visible del rol según locale (fallback: el `name` del rol). */
 const FAMILY_ROLE_TRANSLATIONS: Record<string, Record<string, string>> = {
@@ -109,6 +124,146 @@ export async function seedFamilyRoles(adapter: Adapter, familyId: string): Promi
 	return adminRole.id;
 }
 
+/** Familia sobre la que recae un statement (los teams no se usan de momento). */
+type StatementScope = { contextType: ContextType; contextId: string };
+
+/**
+ * Fábrica de hooks de autorización para los endpoints del plugin: exige que el
+ * usuario de la sesión tenga el `statement` sobre la familia que resuelve
+ * `scopeOf` y lanza 403 si no lo tiene.
+ *
+ * La resolución es la del propio plugin (`resolvePermission`): negaciones
+ * explícitas (`permissionDeny`), concesiones (`permissionGrant`) y, sobre todo,
+ * los statements del rol del miembro (`member` → `roleStatement`) — el modelo
+ * que `seedFamilyRoles` siembra al crear cada familia.
+ */
+function requireFamilyStatement(
+	statement: FamilyStatement,
+	scopeOf: (context: EndpointAuthContext) => StatementScope | Promise<StatementScope>
+): EndpointAuthHook {
+	return async ({ ctx, session }) => {
+		// Los endpoints del plugin resuelven la sesión antes de autorizar y la
+		// pasan ya hecha; el fallback cubre el caso (teórico) de que no llegue.
+		const current = session ?? (await getSessionFromCtx(ctx).catch(() => null));
+		if (!current?.user) {
+			throw new APIError('UNAUTHORIZED', {
+				message: 'Authentication required. Please provide valid credentials.'
+			});
+		}
+
+		const scope = await scopeOf({ ctx, session: current });
+		if (!scope.contextType || !scope.contextId) {
+			throw new APIError('BAD_REQUEST', {
+				message: 'contextType and contextId are required to authorize this request.'
+			});
+		}
+
+		const { allowed } = await resolvePermission(ctx.context.adapter, {
+			userId: current.user.id,
+			statementId: statement,
+			contextType: scope.contextType,
+			contextId: scope.contextId
+		});
+		if (!allowed) {
+			// Mismo mensaje que el `requirePermission` del plugin.
+			throw new APIError('FORBIDDEN', { message: `Missing permission: ${statement}` });
+		}
+	};
+}
+
+/** Familia señalada por su `id` en el body (renombrar y borrar la organización). */
+const fromBodyOrganizationId = ({ ctx }: EndpointAuthContext): StatementScope => ({
+	contextType: 'organization',
+	contextId: ctx.body.id
+});
+
+/** Familia señalada por `contextType`/`contextId` en el body (invitar). */
+const fromBodyContext = ({ ctx }: EndpointAuthContext): StatementScope => ({
+	contextType: ctx.body.contextType,
+	contextId: ctx.body.contextId
+});
+
+/**
+ * Familia que el plugin ya resolvió y cuelga de `ctx.resource` (expulsar,
+ * cambiar el rol, cancelar invitación): el endpoint busca el miembro o la
+ * invitación ANTES de autorizar y nos ahorra la consulta.
+ */
+const fromResolvedResource = ({ ctx }: EndpointAuthContext): StatementScope => {
+	const resource = ctx.resource as ResourceContext | undefined;
+	if (!resource) {
+		// Inalcanzable: los endpoints que usan este resolver inyectan `resource`
+		// antes de autorizar (ver `members.js`/`invitations.js` del plugin).
+		return { contextType: 'organization', contextId: '' };
+	}
+	return { contextType: resource.contextType, contextId: resource.contextId };
+};
+
+/** Familia señalada por `contextType`/`contextId` en el query (listados). */
+const fromQueryContext = ({ ctx }: EndpointAuthContext): StatementScope => ({
+	contextType: ctx.query.contextType,
+	contextId: ctx.query.contextId
+});
+
+/**
+ * Familia de un miembro: el listado la trae en el query (`member/list`) y
+ * `member/:id` solo el id del miembro, que el endpoint no resuelve a su familia
+ * hasta después de autorizar.
+ */
+const fromMemberRef = async ({ ctx }: EndpointAuthContext): Promise<StatementScope> => {
+	if (ctx.query?.contextId) {
+		return { contextType: ctx.query.contextType, contextId: ctx.query.contextId };
+	}
+	if (!ctx.params.id) {
+		return { contextType: 'organization', contextId: '' };
+	}
+
+	const member = (await ctx.context.adapter.findOne({
+		model: 'member',
+		where: [{ field: 'id', value: ctx.params.id }]
+	})) as StatementScope | null;
+	// Miembro inexistente: cae al propio id y el `resolvePermission` lo denegará
+	// (403, sin revelar si el miembro existe).
+	return member ?? { contextType: 'organization', contextId: ctx.params.id };
+};
+
+/**
+ * Endpoints que la app no expone: los roles, statements y permisos finos los
+ * decide el servidor al sembrar cada familia (`seedFamilyRoles`), y ni los
+ * teams ni las operaciones en bloque forman parte del producto. Sin este hook,
+ * el plugin los deja pasar con solo una sesión válida — p. ej. cualquiera
+ * podría auto-concederse `organization:update` sobre una familia ajena vía
+ * `permission/grant`.
+ */
+const denyEndpoint: EndpointAuthHook = async () => {
+	throw new APIError('FORBIDDEN', { message: 'This endpoint is disabled.' });
+};
+
+/** Deniega en bloque los endpoints del grupo cuyas claves se pasan. */
+function denyEndpoints<const Keys extends readonly string[]>(
+	keys: Keys
+): { [K in Keys[number]]: EndpointAuthHook } {
+	return Object.fromEntries(keys.map((key) => [key, denyEndpoint] as const)) as {
+		[K in Keys[number]]: EndpointAuthHook;
+	};
+}
+
+/**
+ * Familia leída por id (`organization/:id`) o por slug
+ * (`organization/by-slug/:slug`): dos endpoints comparten el hook de lectura y
+ * cada uno trae su identificador en `params`.
+ */
+const fromOrganizationParams = async ({ ctx }: EndpointAuthContext): Promise<StatementScope> => {
+	if (ctx.params.id) return { contextType: 'organization', contextId: ctx.params.id };
+
+	const organization = (await ctx.context.adapter.findOne({
+		model: 'organization',
+		where: [{ field: 'slug', value: ctx.params.slug }]
+	})) as { id: string } | null;
+	// Un slug inexistente no encuentra familia: cae al propio slug y el
+	// `resolvePermission` lo denegará (403, sin filtrar si existe o no).
+	return { contextType: 'organization', contextId: organization?.id ?? ctx.params.slug };
+};
+
 /**
  * Filtra organizaciones dejando solo las donde el usuario es miembro.
  *
@@ -153,6 +308,75 @@ export const tenancyConfig: TenancyConfig = {
 	// Accept-Language (las peticiones del navegador llevan la locale activa de
 	// Paraglide vía el cliente: ver `src/lib/auth-client.ts`).
 	i18n: { defaultLocale: 'es' },
+
+	// Autorización por statements (issue #59): el plugin NO comprueba los
+	// statements por sí solo — los consulta a través de estos hooks. Cada
+	// statement de admin guarda la operación que ejecuta; la lectura de la
+	// familia y de sus miembros queda en manos del statement del miembro
+	// (`organization:get`), así nadie ve familias ajenas ni por id ni por slug.
+	// El listado de familias no se toca: ya lo filtra por membresía
+	// `permissionFiltering.filterOrganizations`.
+	//
+	// Todo lo que la app no usa se deniega en bloque: el plugin monta por
+	// defecto endpoints de administración (roles, statements, permisos, teams)
+	// que solo exigen sesión, y por ahí un usuario cualquiera podría escalarse
+	// permisos en cualquier familia. Las invitaciones se aceptan con su token,
+	// así que `accept`/`decline`/`getByToken` no necesitan hook; en cambio su
+	// listado (emails de invitados) es cosa del admin.
+	endpoints: {
+		// `create` queda abierto (cualquiera puede crear su familia).
+		organization: {
+			read: requireFamilyStatement('organization:get', fromOrganizationParams),
+			update: requireFamilyStatement('organization:update', fromBodyOrganizationId),
+			delete: requireFamilyStatement('organization:delete', fromBodyOrganizationId)
+		},
+		member: {
+			add: requireFamilyStatement('member:invite', fromBodyContext),
+			remove: requireFamilyStatement('member:remove', fromResolvedResource),
+			updateRole: requireFamilyStatement('member:update', fromResolvedResource),
+			// Ver quiénes son los miembros: cualquiera de la familia.
+			list: requireFamilyStatement('organization:get', fromMemberRef),
+			...denyEndpoints(['bulkAdd', 'bulkRemove', 'transfer'])
+		},
+		invitation: {
+			create: requireFamilyStatement('member:invite', fromBodyContext),
+			revoke: requireFamilyStatement('invitation:cancel', fromResolvedResource),
+			// Las invitaciones pendientes llevan emails de terceros: solo admin.
+			list: requireFamilyStatement('member:invite', fromQueryContext),
+			// Mantenimiento interno (cron), no se expone al cliente.
+			cleanupExpired: denyEndpoint
+		},
+		team: denyEndpoints(['create', 'read', 'update', 'delete', 'list']),
+		role: denyEndpoints([
+			'create',
+			'read',
+			'update',
+			'delete',
+			'addStatement',
+			'removeStatement',
+			'list'
+		]),
+		statement: denyEndpoints([
+			'create',
+			'read',
+			'update',
+			'delete',
+			'list',
+			'translate',
+			'batchCreate'
+		]),
+		permission: denyEndpoints([
+			'grant',
+			'deny',
+			'revoke',
+			'check',
+			'listGrants',
+			'listDenies',
+			'contexts',
+			'grantBatch',
+			'denyBatch'
+		])
+	},
 
 	permissionFiltering: {
 		// El cast documenta el contrato real del hook: el plugin pasa
