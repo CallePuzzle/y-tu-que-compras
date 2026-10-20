@@ -18,8 +18,9 @@
 		"db:deploy": "prisma migrate deploy",
 		"db:status": "prisma migrate status",
 		"db:studio": "prisma studio",
-		"test:unit": "vitest",
-		"test": "bun run test:unit -- --run && bun run test:e2e",
+		"test:unit": "vitest --project client --project server",
+		"test:integration": "vitest --run --project integration",
+		"test": "bun run test:unit -- --run && bun run test:integration && bun run test:e2e",
 		"test:e2e": "playwright test",
 		"test:e2e:install": "playwright install chromium",
 		"audit": "bun audit --audit-level=moderate --ignore=GHSA-ggr8-5vv4-36mx"

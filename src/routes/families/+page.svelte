@@ -71,7 +71,7 @@
 			bind:this={modal}
 			type="X"
 			boxClass="modal-box max-w-md"
-			strings={{ close: m.ui_cerrar() }}
+			strings={{ close: m.ui_close() }}
 		>
 			{#snippet trigger({ showModal })}
 				<button type="button" class="btn btn-primary" onclick={() => abrirModal(showModal)}>

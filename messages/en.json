@@ -42,10 +42,11 @@
 	"families_create": "Create family",
 	"families_success": "Family created: it is now in your list.",
 	"families_error": "The family could not be created. Please try again later.",
+	"families_limit": "You've reached the limit of {max} families per user.",
 	"schema_families_name_label": "Family name",
 	"schema_families_name_placeholder": "e.g. Perez family",
 	"schema_families_name_error": "Enter a family name (max. 100 characters).",
-	"ui_cerrar": "Close",
+	"ui_close": "Close",
 
 	"email_otp_subject": "{code} is your sign-in code",
 	"email_otp_body": "Enter this code to sign in to What are you buying?:\n\n{code}\n\nThe code expires in a few minutes. If this wasn't you, just ignore this email.",

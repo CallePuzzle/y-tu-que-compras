@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GenericEndpointContext } from '@better-auth/core';
 import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
+import { tenancy } from '@zytera/better-auth-tenancy/server';
 import type { EndpointAuthHook } from '@zytera/better-auth-tenancy/server';
 
 import {
@@ -8,6 +9,7 @@ import {
 	FAMILY_ADMIN_STATEMENTS,
 	FAMILY_MEMBER_ROLE,
 	FAMILY_MEMBER_STATEMENTS,
+	MAX_FAMILIES_PER_USER,
 	seedFamilyRoles,
 	tenancyConfig
 } from './tenancy.js';
@@ -353,9 +355,10 @@ describe('tenancyConfig.endpoints (listados de miembros e invitaciones)', () => 
 describe('tenancyConfig.endpoints denegados (administración del plugin)', () => {
 	// El plugin monta por defecto endpoints de administración que solo piden
 	// sesión; si alguno quedara sin hook, cualquier usuario autenticado podría
-	// escalarse permisos. El test fija el perímetro completo: claves esperadas
-	// (si el plugin estrena una y no la cerramos, falla) y 403 en todas.
-	const deniedGroups: [group: 'team' | 'role' | 'statement' | 'permission', keys: string[]][] = [
+	// escalarse permisos. Aquí se comprueba que cada hook configurado rechaza;
+	// que NO queda ningún endpoint sin clasificar lo fija el describe
+	// «perímetro del plugin», que mira los endpoints reales del plugin.
+	const deniedGroups: ['team' | 'role' | 'statement' | 'permission', string[]][] = [
 		['team', ['create', 'read', 'update', 'delete', 'list']],
 		['role', ['create', 'read', 'update', 'delete', 'addStatement', 'removeStatement', 'list']],
 		['statement', ['create', 'read', 'update', 'delete', 'list', 'translate', 'batchCreate']],
@@ -378,6 +381,8 @@ describe('tenancyConfig.endpoints denegados (administración del plugin)', () =>
 	it('roles, statements, permisos y teams están cerrados en bloque', async () => {
 		for (const [group, keys] of deniedGroups) {
 			const hooks = tenancyConfig.endpoints?.[group];
+			// Cada clave declarada existe y rechaza: el `denyEndpoints` real no es
+			// un no-op (p. ej. nadie borró la denegación al refactorizar).
 			expect(Object.keys(hooks ?? {}).sort()).toEqual([...keys].sort());
 			for (const hook of Object.values(hooks ?? {})) {
 				await expect(callHook(hook, familyAdapterMock(), {}, sessionOf('admin-1'))).rejects.toThrow(
@@ -398,6 +403,121 @@ describe('tenancyConfig.endpoints denegados (administración del plugin)', () =>
 				'disabled'
 			);
 		}
+	});
+});
+
+describe('perímetro del plugin (surface real de endpoints)', () => {
+	// El mapa de `tenancyConfig.endpoints` es parcial por diseño (hooks solo en
+	// lo que la app necesita), así que compararlo consigo mismo no demostraría
+	// nada. Este test construye el plugin CON nuestra config y compara sus 52
+	// endpoints reales contra esta clasificación: si una actualización del
+	// plugin estrena o retira un endpoint, el listado deja de cuadrar y el test
+	// obliga a clasificarlo (hook nuevo, denegación o apertura deliberada).
+	const SURFACE: [path: string, guardia: string][] = [
+		// organization: creación con tope; lectura de miembro; admin el resto;
+		// listado filtrado por pertenencia (permissionFiltering).
+		['/tenancy/organization/create', 'sesión + tope de familias'],
+		['/tenancy/organization/:id', 'organization:get'],
+		['/tenancy/organization/by-slug/:slug', 'organization:get'],
+		['/tenancy/organization/update', 'organization:update'],
+		['/tenancy/organization/delete', 'organization:delete'],
+		['/tenancy/organization/list', 'filterOrganizations (pertenencia)'],
+		// member: la clave `list` guarda también el GET por id, y `updateRole`
+		// guarda el cambio de metadatos (así lo cablea el plugin).
+		['/tenancy/member/list', 'organization:get'],
+		['/tenancy/member/:id', 'organization:get (clave member.list)'],
+		['/tenancy/member/add', 'member:invite'],
+		['/tenancy/member/remove', 'member:remove'],
+		['/tenancy/member/role/update', 'member:update'],
+		['/tenancy/member/metadata/update', 'member:update (clave member.updateRole)'],
+		['/tenancy/member/check', 'self-scoped en el plugin (requireSelfOr)'],
+		['/tenancy/member/user/memberships', 'self-scoped en el plugin (requireSelfOr)'],
+		// invitation: token = credenciales de la invitación.
+		['/tenancy/invitation/create', 'member:invite'],
+		['/tenancy/invitation/cancel', 'invitation:cancel'],
+		['/tenancy/invitation/list', 'member:invite (llevan emails de terceros)'],
+		['/tenancy/invitation/accept', 'token de la invitación'],
+		['/tenancy/invitation/reject', 'token o código de la invitación'],
+		['/tenancy/invitation/by-token/:token', 'token de la invitación'],
+		['/tenancy/invitation/by-code/:code', 'código de la invitación'],
+		['/tenancy/invitation/by-identifier', 'self-scoped en el plugin (requireSelfOr)'],
+		['/tenancy/invitation/cleanup-expired', 'denegado (mantenimiento interno)'],
+		// Administración del plugin que la app no expone: denegado en bloque.
+		['/tenancy/team/create', 'denegado'],
+		['/tenancy/team/:id', 'denegado'],
+		['/tenancy/team/:parentType/:parentId/by-slug/:slug', 'denegado'],
+		['/tenancy/team/update', 'denegado'],
+		['/tenancy/team/delete', 'denegado'],
+		['/tenancy/team/list', 'denegado'],
+		['/tenancy/role/create', 'denegado'],
+		['/tenancy/role/:id', 'denegado'],
+		['/tenancy/role/update', 'denegado'],
+		['/tenancy/role/delete', 'denegado'],
+		['/tenancy/role/list', 'denegado'],
+		['/tenancy/role/statement/add', 'denegado'],
+		['/tenancy/role/statement/remove', 'denegado'],
+		['/tenancy/role/translations/set', 'denegado (clave role.update)'],
+		['/tenancy/statement/create', 'denegado'],
+		['/tenancy/statement/:id', 'denegado'],
+		['/tenancy/statement/update', 'denegado'],
+		['/tenancy/statement/delete', 'denegado'],
+		['/tenancy/statement/list', 'denegado'],
+		['/tenancy/statement/batch-create', 'denegado'],
+		['/tenancy/permission/grant', 'denegado'],
+		['/tenancy/permission/deny', 'denegado'],
+		['/tenancy/permission/revoke', 'denegado'],
+		['/tenancy/permission/check', 'denegado'],
+		['/tenancy/permission/grants', 'denegado'],
+		['/tenancy/permission/denies', 'denegado'],
+		['/tenancy/permission/grant-batch', 'denegado'],
+		['/tenancy/permission/deny-batch', 'denegado'],
+		// Self-scoped dentro del plugin: lista SOLO los contextos del usuario de
+		// la sesión; no consulta hook (ver comentarios en tenancy.ts).
+		['/tenancy/permission/contexts', 'self-scoped en el plugin']
+	];
+
+	it('cada endpoint del plugin está clasificado (hook, denegado o abierto a propósito)', () => {
+		const plugin = tenancy(tenancyConfig);
+		const actual = Object.values(plugin.endpoints)
+			.map((endpoint) => endpoint.path)
+			.sort();
+		const expected = SURFACE.map(([path]) => path).sort();
+
+		// Con este diff, si el plugin estrena un endpoint el fallo muestra
+		// directamente cuál falta por clasificar.
+		expect(actual).toEqual(expected);
+	});
+
+	it('el conteo cuadra (evita clasificaciones duplicadas que se anulen)', () => {
+		const plugin = tenancy(tenancyConfig);
+		expect(SURFACE).toHaveLength(Object.keys(plugin.endpoints).length);
+	});
+});
+
+describe('tenancyConfig.endpoints.organization.create (tope de familias)', () => {
+	const create = tenancyConfig.endpoints?.organization?.create;
+
+	/** N membresías de organización para el usuario de la sesión. */
+	function familiesAdapterMock(n: number) {
+		return adapterMock(Array.from({ length: n }, (_, i) => ({ contextId: `fam-${i + 1}` })));
+	}
+
+	it(`con ${MAX_FAMILIES_PER_USER - 1} familias deja crear la siguiente`, async () => {
+		await expect(
+			callHook(create, familiesAdapterMock(MAX_FAMILIES_PER_USER - 1), {}, sessionOf('user-1'))
+		).resolves.toBeUndefined();
+	});
+
+	it(`con ${MAX_FAMILIES_PER_USER} familias deniega la creación (403)`, async () => {
+		await expect(
+			callHook(create, familiesAdapterMock(MAX_FAMILIES_PER_USER), {}, sessionOf('user-1'))
+		).rejects.toThrow('Family limit reached');
+	});
+
+	it('sin sesión pide autenticación', async () => {
+		await expect(callHook(create, familiesAdapterMock(0), {})).rejects.toThrow(
+			'Authentication required'
+		);
 	});
 });
 

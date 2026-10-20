@@ -293,6 +293,55 @@ async function filterOrganizations<T extends { id: string }>(
 	return organizations.filter((organization) => familyIds.has(organization.id));
 }
 
+/** Máximo de familias a las que puede pertenecer un usuario (issue #38). */
+export const MAX_FAMILIES_PER_USER = 5;
+
+/**
+ * Mensaje del 403 que lanza el endpoint `organization/create` al superar el
+ * tope. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
+ * de formulario (`FamilyLimitReachedError`); no cambiarlo sin ajustar allí.
+ */
+export const FAMILY_LIMIT_MESSAGE = `Family limit reached: max ${MAX_FAMILIES_PER_USER}.`;
+
+/** ¿Es este el error de tope de familias que lanza el hook de creación? */
+export function isFamilyLimitReached(error: unknown): boolean {
+	return error instanceof APIError && error.message === FAMILY_LIMIT_MESSAGE;
+}
+
+/** Nº de familias del usuario (membresías de tipo organization). */
+async function countUserFamilies(adapter: Adapter, userId: string): Promise<number> {
+	const memberships = await adapter.findMany<{ contextId: string }>({
+		model: 'member',
+		where: [
+			{ field: 'userId', value: userId },
+			{ field: 'contextType', value: 'organization' }
+		]
+	});
+	return memberships.length;
+}
+
+/**
+ * El plugin no trae tope de organizaciones por usuario (`HierarchyLimits`
+ * solo cubre teams/members/roles), y sin él cualquier usuario autenticado
+ * podría sembrar familias en bucle (~12 filas por familia; el rate limit de
+ * better-auth es por petición, no por recurso creado).
+ */
+const requireBelowFamilyLimit: EndpointAuthHook = async ({ ctx, session }) => {
+	// Mismo fallback que `requireFamilyStatement`: el endpoint resuelve la
+	// sesión antes de autorizar; el cubre el caso (teórico) de que no llegue.
+	const current = session ?? (await getSessionFromCtx(ctx).catch(() => null));
+	if (!current?.user) {
+		throw new APIError('UNAUTHORIZED', {
+			message: 'Authentication required. Please provide valid credentials.'
+		});
+	}
+
+	const families = await countUserFamilies(ctx.context.adapter, current.user.id);
+	if (families >= MAX_FAMILIES_PER_USER) {
+		throw new APIError('FORBIDDEN', { message: FAMILY_LIMIT_MESSAGE });
+	}
+};
+
 /**
  * Configuración del plugin `tenancy` para `getBetterAuth` (`src/lib/server/
  * auth.ts`).
@@ -324,8 +373,10 @@ export const tenancyConfig: TenancyConfig = {
 	// así que `accept`/`decline`/`getByToken` no necesitan hook; en cambio su
 	// listado (emails de invitados) es cosa del admin.
 	endpoints: {
-		// `create` queda abierto (cualquiera puede crear su familia).
+		// `create` pide sesión y tope de familias por usuario (`MAX_FAMILIES_PER_USER`):
+		// crear la propia familia sí que está abierto al mundo con sesión.
 		organization: {
+			create: requireBelowFamilyLimit,
 			read: requireFamilyStatement('organization:get', fromOrganizationParams),
 			update: requireFamilyStatement('organization:update', fromBodyOrganizationId),
 			delete: requireFamilyStatement('organization:delete', fromBodyOrganizationId)
@@ -362,6 +413,9 @@ export const tenancyConfig: TenancyConfig = {
 			'update',
 			'delete',
 			'list',
+			// El tipo del plugin la declara, pero hoy no hay endpoint que la
+			// consulte (statements.js solo monta create/read/update/delete/
+			// list/batchCreate). Se deniega por si una versión futura la usa.
 			'translate',
 			'batchCreate'
 		]),
@@ -372,6 +426,10 @@ export const tenancyConfig: TenancyConfig = {
 			'check',
 			'listGrants',
 			'listDenies',
+			// Igual que `statement.translate`: declarada en el tipo, pero el
+			// endpoint `permission/contexts` es self-scoped dentro del plugin
+			// (lista SOLO los contextos del usuario de la sesión) y nunca
+			// consulta este hook. Denegada por si eso cambia.
 			'contexts',
 			'grantBatch',
 			'denyBatch'

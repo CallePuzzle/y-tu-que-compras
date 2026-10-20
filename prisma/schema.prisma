@@ -210,6 +210,11 @@ model RoleTranslation {
 // Miembro de una familia (o, en el futuro, de un Team). `roleId` opcional: el
 // rol por defecto se asigna al entrar (issue #59) y `SetNull` mantiene la
 // pertenencia si el rol desaparece.
+//
+// La pertenencia es única por contexto: `member/add` del plugin no comprueba
+// duplicados (solo `limits`), y sin esta restricción un admin podría añadir dos veces
+// al mismo usuario (saldría duplicado en los listados de miembros). El precio:
+// un duplicado lanza P2002 (la UI lo traduce a error genérico).
 model Member {
   id          String   @id
   contextType String
@@ -224,6 +229,7 @@ model Member {
 
   @@index([userId])
   @@index([contextType, contextId])
+  @@unique([contextType, contextId, userId])
   @@map("member")
 }
 

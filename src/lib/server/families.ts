@@ -2,12 +2,24 @@ import { randomUUID } from 'node:crypto';
 import type { RequestEvent } from '@sveltejs/kit';
 
 import { auth } from '$lib/server/auth.js';
+import { MAX_FAMILIES_PER_USER, isFamilyLimitReached } from '$lib/server/tenancy.js';
 
 /** Familia con los campos que la UI necesita (el plugin devuelve más). */
 export interface Family {
 	id: string;
 	name: string;
 }
+
+/** El usuario ya pertenece a `FAMILIES_MAX` familias: no puede crear otra. */
+export class FamilyLimitReachedError extends Error {
+	constructor() {
+		super(`Max ${MAX_FAMILIES_PER_USER} families per user`);
+		this.name = 'FamilyLimitReachedError';
+	}
+}
+
+/** Tope de familias por usuario, para los mensajes de la UI. */
+export const FAMILIES_MAX = MAX_FAMILIES_PER_USER;
 
 /**
  * Las familias del usuario, vía el endpoint del plugin: su hook de filtrado
@@ -35,6 +47,10 @@ export async function listFamilies(event: RequestEvent): Promise<Family[]> {
  * alta al creador como admin; si eso falla, el plugin deshace la creación y
  * aquí llega el error: no hay familia a medias.
  *
+ * Si el usuario ya alcanza el tope (`MAX_FAMILIES_PER_USER`, guardado en el
+ * hook `organization/create` del plugin), lanza `FamilyLimitReachedError` para
+ * que el formulario pueda dar un mensaje concreto y no el genérico.
+ *
  * `metadata: undefined` es solo tipado, no semántica: el zod del endpoint lo
  * tiene opcional, pero el tipo de entrada del plugin (3.2.2) lo declara
  * requerido (ver Zytera/better-auth-tenancy#26).
@@ -43,10 +59,17 @@ export async function createFamily(
 	event: RequestEvent,
 	family: { name: string; slug: string }
 ): Promise<void> {
-	await auth.api.createOrganization({
-		body: { ...family, metadata: undefined },
-		headers: event.request.headers
-	});
+	try {
+		await auth.api.createOrganization({
+			body: { ...family, metadata: undefined },
+			headers: event.request.headers
+		});
+	} catch (error) {
+		if (isFamilyLimitReached(error)) {
+			throw new FamilyLimitReachedError();
+		}
+		throw error;
+	}
 }
 
 /**

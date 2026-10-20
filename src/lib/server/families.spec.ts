@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// `families.ts` importa `auth` ($lib/server/auth.js), que instancia better-auth
+// (y con él el PrismaClient) al importar el módulo. Este spec sólo prueba
+// `familySlug`, así que `auth` se sustituye por un stub: sin BD ni better-auth
+// (en CI no hay `.env` y el init del adaptador Prisma reventaría).
+vi.mock('$lib/server/auth.js', () => ({ auth: {} }));
 
 import { familySlug } from './families.js';
 

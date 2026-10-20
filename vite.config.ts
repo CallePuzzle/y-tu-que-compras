@@ -45,7 +45,21 @@ export default defineConfig({
 					name: 'server',
 					environment: 'node',
 					include: ['src/**/*.{test,spec}.{js,ts}'],
-					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}', 'src/**/*.int.spec.{js,ts}']
+				}
+			},
+
+			{
+				extends: './vite.config.ts',
+				test: {
+					name: 'integration',
+					environment: 'node',
+					// Tests que ejercitan el adaptador Prisma real (seed de familias,
+					// sesiones, hooks del plugin): necesitan un Postgres con las
+					// migraciones aplicadas (`DATABASE_URL`; en CI hay un service).
+					// El resto de la suite sigue funcionando sin base de datos.
+					include: ['src/**/*.int.spec.{js,ts}'],
+					setupFiles: ['src/lib/server/integration-setup.ts']
 				}
 			}
 		]
