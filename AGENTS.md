@@ -32,25 +32,33 @@ Guía para agentes de IA. App **y-tu-que-compras**: SvelteKit 2 + Svelte 5 (rune
 bun run lint        # prettier --check + eslint (formato: bun run format)
 bun run check       # svelte-check (typecheck)
 bun run test:unit -- --run   # vitest en modo run (sin --run queda en watch)
+bun run test:integration     # vitest proyecto `integration` (necesita DATABASE_URL con migraciones aplicadas)
 bun run test:e2e    # playwright (hace build + preview en :4173 antes)
-bun run test        # unit + e2e
+bun run test        # unit + integration + e2e
 ```
 
-Orden en CI (`lint → check → test:unit → build → e2e`; los e2e re-hacen el build dentro del
-webServer de Playwright). Un test suelto:
+Orden en CI (`lint → check → test:unit → test:integration → build → e2e`; los e2e re-hacen el build
+dentro del webServer de Playwright, y `test:integration` aplica las migraciones al service de
+postgres antes). Un test suelto:
 `bun run test:unit -- --run src/lib/server/emails.spec.ts`; e2e suelto: `bunx playwright test <fichero>`.
 
 ## Tests
 
-- Dos proyectos de vitest (`vite.config.ts`): **client** corre `.svelte.{test,spec}.*` en Chromium
-  real (vitest browser mode; requiere `bunx playwright install --with-deps chromium` la primera vez)
-  y **server** corre el resto en node. Los tests de `src/lib/server/**` son siempre de servidor.
+- Tres proyectos de vitest (`vite.config.ts`): **client** corre `.svelte.{test,spec}.*` en Chromium
+  real (vitest browser mode; requiere `bunx playwright install --with-deps chromium` la primera vez),
+  **server** corre el resto en node (sin base de datos) y **integration** corre `*.int.spec.ts`
+  contra Postgres real (en local: postgres en :5432 + `bun run db:migrate`; en CI hay un service).
+  Los tests de `src/lib/server/**` son siempre de servidor.
 - `requireAssertions: true`: un test sin assertions falla.
 - **En dev/test no sale ningún email real**: `sendEmail` lo imprime en el log y lo deja capturado en
   `capturedEmailsForTests` (ver `src/lib/server/emails.ts`) para asertarlo.
 
 ## Gotchas
 
+- **Las rutas (URLs) van en inglés**, igual que el código: `/families`, `/login`… aunque el dominio
+  del producto sea español («familias», no «families»). Los textos visibles van en i18n
+  (`messages/{es,en}.json`); las claves de mensaje también en inglés (`routes_families`,
+  `families_create`). No crear rutas ni claves en español.
 - El typo **`SMPT_`** en las variables de email (`SMPT_AUTH_USER`, etc.) es intencionado: así están
   nombradas en producción. No "corregirlo".
 - Usar **`$env/dynamic/private`**, no `process.env`, para env en código de servidor (bun no inyecta

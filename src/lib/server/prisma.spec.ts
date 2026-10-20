@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const env: Record<string, string | undefined> = {};
+const appEnvironment = { dev: false, building: false };
 const constructed = vi.fn();
 
 vi.mock('$env/dynamic/private', () => ({ env }));
-vi.mock('$app/environment', () => ({ dev: false }));
+vi.mock('$app/environment', () => ({
+	get dev() {
+		return appEnvironment.dev;
+	},
+	get building() {
+		return appEnvironment.building;
+	}
+}));
 vi.mock('@prisma/adapter-pg', () => ({ PrismaPg: class {} }));
 vi.mock('$lib/generated/prisma/client', () => ({
 	PrismaClient: class {
@@ -29,6 +37,8 @@ async function importPrisma() {
 describe('prisma (proxy perezoso)', () => {
 	beforeEach(() => {
 		constructed.mockClear();
+		appEnvironment.dev = false;
+		appEnvironment.building = false;
 		delete env.DATABASE_URL;
 	});
 
@@ -47,6 +57,18 @@ describe('prisma (proxy perezoso)', () => {
 	it('falla en el primer acceso si falta DATABASE_URL', async () => {
 		const { default: prisma } = await importPrisma();
 		expect(() => prisma.user).toThrow('Falta DATABASE_URL');
+	});
+
+	it('en build sin DATABASE_URL devuelve un stub sin instanciar nada', async () => {
+		// El `analyse` de SvelteKit evalúa los nodos de servidor en build y llega
+		// hasta aquí vía auth (ver prisma.ts): no debe lanzar ni construir.
+		// `_runtimeDataModel` es lo que lee el adapter de better-auth: si falta,
+		// se salta su comprobación de schema.
+		appEnvironment.building = true;
+		const { default: prisma } = await importPrisma();
+		const runtimeDataModel = (prisma as { _runtimeDataModel?: unknown })._runtimeDataModel;
+		expect(runtimeDataModel).toBeUndefined();
+		expect(constructed).not.toHaveBeenCalled();
 	});
 
 	it('crea un único cliente y enlaza sus métodos', async () => {
