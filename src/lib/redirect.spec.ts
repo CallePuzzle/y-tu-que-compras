@@ -5,8 +5,8 @@ import { isInternalPath, sanitizeRedirectTo } from './redirect.js';
 describe('isInternalPath', () => {
 	it('acepta rutas relativas al origen, con o sin query', () => {
 		expect(isInternalPath('/')).toBe(true);
-		expect(isInternalPath('/familias/123')).toBe(true);
-		expect(isInternalPath('/familias/123?orden=asc')).toBe(true);
+		expect(isInternalPath('/families/123')).toBe(true);
+		expect(isInternalPath('/families/123?orden=asc')).toBe(true);
 	});
 
 	it('rechaza lo vacío y lo externo', () => {
@@ -19,15 +19,15 @@ describe('isInternalPath', () => {
 		// El navegador trata `\` como `/` en URLs especiales: mismo truco.
 		expect(isInternalPath('/\\malicioso.example')).toBe(false);
 		// Sin barra inicial no es ruta absoluta.
-		expect(isInternalPath('familias')).toBe(false);
+		expect(isInternalPath('families')).toBe(false);
 		// Caracteres de control: no pueden aparecer en un `Location` limpio.
-		expect(isInternalPath('/familias\r\nSet-Cookie: x')).toBe(false);
+		expect(isInternalPath('/families\r\nSet-Cookie: x')).toBe(false);
 	});
 });
 
 describe('sanitizeRedirectTo', () => {
 	it('devuelve la ruta tal cual si es interna', () => {
-		expect(sanitizeRedirectTo('/familias?orden=asc')).toBe('/familias?orden=asc');
+		expect(sanitizeRedirectTo('/families?orden=asc')).toBe('/families?orden=asc');
 	});
 
 	it('devuelve undefined si no lo es, para caer al destino por defecto', () => {

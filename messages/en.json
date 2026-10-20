@@ -36,6 +36,17 @@
 	"schema_login_email_describe": "We will email you a one-time code to sign in",
 	"schema_login_email_error": "Please enter a valid email address.",
 
+	"routes_families": "Families",
+	"families_title": "Your families",
+	"families_empty": "You don't belong to any family yet. Create one to start sharing shopping lists.",
+	"families_create": "Create family",
+	"families_success": "Family created: it is now in your list.",
+	"families_error": "The family could not be created. Please try again later.",
+	"schema_families_name_label": "Family name",
+	"schema_families_name_placeholder": "e.g. Perez family",
+	"schema_families_name_error": "Enter a family name (max. 100 characters).",
+	"ui_cerrar": "Close",
+
 	"email_otp_subject": "{code} is your sign-in code",
 	"email_otp_body": "Enter this code to sign in to What are you buying?:\n\n{code}\n\nThe code expires in a few minutes. If this wasn't you, just ignore this email.",
 	"email_invite_subject": "{inviter} has invited you to their family",

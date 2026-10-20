@@ -5,8 +5,8 @@ test('sin sesion, una ruta privada redirige a /login conservando la url', async 
 	await expect(page).toHaveURL(/\/login\?redirectTo=%2F$/);
 
 	// Una ruta profunda, con query: tras el login se debe volver a ella.
-	await page.goto('/familias/45?orden=asc');
-	await expect(page).toHaveURL(/\/login\?redirectTo=%2Ffamilias%2F45%3Forden%3Dasc$/);
+	await page.goto('/families/45?orden=asc');
+	await expect(page).toHaveURL(/\/login\?redirectTo=%2Ffamilies%2F45%3Forden%3Dasc$/);
 });
 
 test('la CSP no bloquea nada y llegan las cabeceras de seguridad', async ({ page }) => {

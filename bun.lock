@@ -5,7 +5,7 @@
     "": {
       "name": "y-tu-que-compras",
       "dependencies": {
-        "@callepuzzle/auth": "^1.0.0",
+        "@callepuzzle/auth": "^1.0.2",
         "@callepuzzle/core": "^1.0.0",
         "@callepuzzle/svelte-ui": "^1.0.0",
         "@lucide/svelte": "^1.57.0",
@@ -13,12 +13,14 @@
         "@prisma/adapter-pg": "^7.10.0",
         "@prisma/client": "^7.10.0",
         "@vercel/otel": "^2.1.3",
-        "@zytera/better-auth-tenancy": "^3.2.1",
+        "@zytera/better-auth-tenancy": "^3.2.2",
         "better-auth": "^1.7.10",
         "bits-ui": "^2.19.0",
         "nodemailer": "^10.1.2",
         "pg": "^8.23.1",
         "pino": "^10.4.0",
+        "sveltekit-superforms": "^2.31.0",
+        "zod": "^4.6.7",
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
@@ -119,7 +121,7 @@
 
     "@cacheable/utils": ["@cacheable/utils@2.5.0", "", { "dependencies": { "hashery": "^1.5.1", "keyv": "^5.6.0" } }, "sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA=="],
 
-    "@callepuzzle/auth": ["@callepuzzle/auth@1.0.0", "https://npm.pkg.github.com/download/@callepuzzle/auth/1.0.0/aeac1ba9911b32051fbe7eb54b00ca2db48cc288", { "peerDependencies": { "@sveltejs/kit": "^2.27.0", "better-auth": "^1.3.4" } }, "sha512-t5wzNVTrS5bbtJRJJeo6C+fzsA8/FIBWcIrsGLH0yV5d6fjhOpS7A9xSCSwYlETUCORuqrE6xC7dP5d0Zii2zw=="],
+    "@callepuzzle/auth": ["@callepuzzle/auth@1.0.2", "https://npm.pkg.github.com/download/@callepuzzle/auth/1.0.2/ef5bc183e18e238c9e9af14fdfb9152b62a5deff", { "peerDependencies": { "@sveltejs/kit": "^2.27.0", "better-auth": "^1.3.4" } }, "sha512-0u0OBeA/PZ0ptG8dT88ntzxsPId8l/W1qSqREhiHQ0TR1lMfNM/YD3X15U+ZrF2vr+V+0EfG6xTLgmoa65ootA=="],
 
     "@callepuzzle/core": ["@callepuzzle/core@1.0.0", "https://npm.pkg.github.com/download/@callepuzzle/core/1.0.0/96a13a20b1449e54d66b3817d7130b0386bc3779", { "peerDependencies": { "svelte": "^5.36.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-A0ppWUiDqf9YdcOxxAh93s/rLyXeulHJ3uiYGLjoZ1diRwyROMBRm8kYzPM7EVzD3j0qP8aLAyJcwijW6nU3cA=="],
 
@@ -585,7 +587,7 @@
 
     "@vitest/utils": ["@vitest/utils@4.1.11", "", { "dependencies": { "@vitest/pretty-format": "4.1.11", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ=="],
 
-    "@zytera/better-auth-tenancy": ["@zytera/better-auth-tenancy@3.2.1", "https://npm.pkg.github.com/download/@zytera/better-auth-tenancy/3.2.1/8067abacc5ae935500e1d3cbe05692cd134c0330", { "peerDependencies": { "better-auth": ">=1.0.0", "zod": "^4.1.5" } }, "sha512-xjZJJf9BMHtvTg3YyPi6NorPHPXUExpumlQyNwlmPpkZWgafc4W6DmzHPSGPpHp2kpr3ODEMS5xpoSW08cNPKw=="],
+    "@zytera/better-auth-tenancy": ["@zytera/better-auth-tenancy@3.2.2", "https://npm.pkg.github.com/download/@zytera/better-auth-tenancy/3.2.2/3b57f411db6e940fbd9749ede647c4fa900cc407", { "peerDependencies": { "better-auth": ">=1.0.0", "zod": "^4.1.5" } }, "sha512-cpEpxm5E0ddqX53LBjWjSZy0KF+CCkHSTCB7mNxS9/v85i+6prhT8SUDd6deu2xy0hs706TB5w5AUlZ+fxTG8A=="],
 
     "abbrev": ["abbrev@3.0.1", "", {}, "sha512-AO2ac6pjRB3SJmGJo+v5/aK6Omggp6fsLrs6wN9bd35ulu4cCwaAU9+7ZhXjeqHVkaHThLuzH0nZr0YpCDhygg=="],
 
@@ -725,7 +727,7 @@
 
     "dotenv": ["dotenv@18.0.8", "", { "bin": { "dotenv": "dist/index.cjs" } }, "sha512-2KDeoFoK/zRtcnbunCDlLG5VWVMcyqeQc6iK65o231nfNAcuGrKoqUQfJFUtBI+QlShk5HKIHxwebBtUl3rEfA=="],
 
-    "effect": ["effect@3.20.0", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-qMLfDJscrNG8p/aw+IkT9W7fgj50Z4wG5bLBy0Txsxz8iUHjDIkOgO3SV0WZfnQbNG2VJYb0b+rDLMrhM4+Krw=="],
+    "effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
 
     "elkjs": ["elkjs@0.11.1", "", {}, "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg=="],
 
@@ -1273,6 +1275,8 @@
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 
+    "@prisma/config/effect": ["effect@3.20.0", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-qMLfDJscrNG8p/aw+IkT9W7fgj50Z4wG5bLBy0Txsxz8iUHjDIkOgO3SV0WZfnQbNG2VJYb0b+rDLMrhM4+Krw=="],
+
     "@prisma/dev/std-env": ["std-env@3.10.0", "", {}, "sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg=="],
 
     "@prisma/engines/@prisma/get-platform": ["@prisma/get-platform@7.10.0", "", { "dependencies": { "@prisma/debug": "7.10.0" } }, "sha512-0bra1LFYi8xNw0yqV62bHJNQk4BKleOngZiqPWIQc7a3+9q6rqsnqJ15BuepP8943PFMvtmgnP52juZsyYkA6w=="],
@@ -1332,8 +1336,6 @@
     "svelte-eslint-parser/eslint-visitor-keys": ["eslint-visitor-keys@4.2.1", "", {}, "sha512-Uhdk5sfqcee/9H/rCOJikYz67o0a2Tw2hGRPOG2Y1R2dg7brRe1uG0yaNQDHu+TO/uQPF/5eCapvYSmHUjt7JQ=="],
 
     "svelte-eslint-parser/espree": ["espree@10.4.0", "", { "dependencies": { "acorn": "^8.15.0", "acorn-jsx": "^5.3.2", "eslint-visitor-keys": "^4.2.1" } }, "sha512-j6PAQ2uUr79PZhBjP5C5fhl8e39FmRnOjsD5lGnWrFU8i2G776tBK7+nP8KuQUTTyAZUwfQqXAgrVH5MbH9CYQ=="],
-
-    "sveltekit-superforms/effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
 
     "@prisma/streams-local/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 

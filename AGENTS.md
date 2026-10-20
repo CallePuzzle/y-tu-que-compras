@@ -51,6 +51,10 @@ webServer de Playwright). Un test suelto:
 
 ## Gotchas
 
+- **Las rutas (URLs) van en inglés**, igual que el código: `/families`, `/login`… aunque el dominio
+  del producto sea español («familias», no «families»). Los textos visibles van en i18n
+  (`messages/{es,en}.json`); las claves de mensaje también en inglés (`routes_families`,
+  `families_create`). No crear rutas ni claves en español.
 - El typo **`SMPT_`** en las variables de email (`SMPT_AUTH_USER`, etc.) es intencionado: así están
   nombradas en producción. No "corregirlo".
 - Usar **`$env/dynamic/private`**, no `process.env`, para env en código de servidor (bun no inyecta

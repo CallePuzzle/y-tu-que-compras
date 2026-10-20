@@ -2,6 +2,7 @@ import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
 import LogIn from '@lucide/svelte/icons/log-in';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
+import Users from '@lucide/svelte/icons/users';
 import { m } from '$lib/paraglide/messages.js';
 
 // Factoría, no `const`: las etiquetas `m.*` se resuelven en render, nunca en
@@ -25,6 +26,17 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 		routes['/login'] = {
 			label: m.routes_login(),
 			icon: LogIn,
+			showInMenu: true,
+			showInMobile: true
+		};
+	}
+
+	// «Familias» exige sesión (el guard manda al login igualmente): el enlace
+	// sólo tiene sentido con ella, al revés que «Acceder».
+	if (isLoggedIn) {
+		routes['/families'] = {
+			label: m.routes_families(),
+			icon: Users,
 			showInMenu: true,
 			showInMobile: true
 		};
