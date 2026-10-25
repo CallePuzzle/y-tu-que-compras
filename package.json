@@ -18,8 +18,9 @@
 		"db:deploy": "prisma migrate deploy",
 		"db:status": "prisma migrate status",
 		"db:studio": "prisma studio",
-		"test:unit": "vitest",
-		"test": "bun run test:unit -- --run && bun run test:e2e",
+		"test:unit": "vitest --project client --project server",
+		"test:integration": "vitest --run --project integration",
+		"test": "bun run test:unit -- --run && bun run test:integration && bun run test:e2e",
 		"test:e2e": "playwright test",
 		"test:e2e:install": "playwright install chromium",
 		"audit": "bun audit --audit-level=moderate --ignore=GHSA-ggr8-5vv4-36mx"
@@ -62,9 +63,10 @@
 		"vitest-browser-svelte": "^2.1.1"
 	},
 	"dependencies": {
-		"@callepuzzle/auth": "^1.0.0",
+		"@callepuzzle/auth": "^1.0.2",
 		"@callepuzzle/core": "^1.0.0",
 		"@callepuzzle/svelte-ui": "^1.0.0",
+		"@zytera/better-auth-tenancy": "^3.2.2",
 		"@lucide/svelte": "^1.57.0",
 		"@opentelemetry/api": "^1.9.1",
 		"@prisma/adapter-pg": "^7.10.0",
@@ -74,7 +76,9 @@
 		"bits-ui": "^2.19.0",
 		"nodemailer": "^10.1.2",
 		"pg": "^8.23.1",
-		"pino": "^10.4.0"
+		"pino": "^10.4.0",
+		"sveltekit-superforms": "^2.31.0",
+		"zod": "^4.6.7"
 	},
 	"trustedDependencies": [
 		"@prisma/engines",

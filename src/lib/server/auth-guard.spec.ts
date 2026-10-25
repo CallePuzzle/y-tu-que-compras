@@ -24,14 +24,14 @@ describe('isPublicPathname', () => {
 	it('el resto de rutas exigen sesión', () => {
 		expect(isPublicPathname('/')).toBe(false);
 		expect(isPublicPathname('/loginfoo')).toBe(false);
-		expect(isPublicPathname('/familias')).toBe(false);
+		expect(isPublicPathname('/families')).toBe(false);
 		expect(isPublicPathname('/api/otra-cosa')).toBe(false);
 	});
 });
 
 describe('handleAuthGuard', () => {
 	it('sin sesión redirige a /login conservando path y query, sin resolver', async () => {
-		const event = eventOf('/familias/45?orden=asc');
+		const event = eventOf('/families/45?orden=asc');
 		const resolve = vi.fn(async () => new Response('ok'));
 
 		// `redirect()` lanza un `Redirect` de SvelteKit; lo capturamos a mano.
@@ -44,7 +44,7 @@ describe('handleAuthGuard', () => {
 
 		expect(resolve).not.toHaveBeenCalled();
 		expect(thrown?.status).toBe(302);
-		expect(thrown?.location).toBe('/login?redirectTo=%2Ffamilias%2F45%3Forden%3Dasc');
+		expect(thrown?.location).toBe('/login?redirectTo=%2Ffamilies%2F45%3Forden%3Dasc');
 	});
 
 	it('con sesión resuelve la petición', async () => {

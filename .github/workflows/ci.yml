@@ -18,6 +18,21 @@ jobs:
   quality:
     name: lint + check + test + build + e2e
     runs-on: ubuntu-latest
+    # Postgres solo para el proyecto `integration` de vitest (seed de familias
+    # contra el adaptador Prisma real). El resto de la suite no lo toca.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: y_tu_que_compras
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -58,6 +73,15 @@ jobs:
 
       - name: Test unit
         run: bun run test:unit -- --run
+
+      # Aplica las migraciones a la BD del service y corre los tests de
+      # integración (adaptador Prisma real).
+      - name: Test integration
+        run: |
+          bunx prisma migrate deploy
+          bun run test:integration
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/y_tu_que_compras
 
       - name: Build
         run: bun run build

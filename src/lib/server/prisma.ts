@@ -1,6 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '$lib/generated/prisma/client';
-import { dev } from '$app/environment';
+import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 
 function createPrismaClient(): PrismaClient {
@@ -8,6 +8,16 @@ function createPrismaClient(): PrismaClient {
 	// quien carga el `.env`, y en producción se lee el entorno real.
 	const url = env.DATABASE_URL;
 	if (!url) {
+		// El paso `analyse` del build de SvelteKit importa y evalúa los nodos de
+		// servidor (`+page.server.ts`), y por las importaciones llega hasta el
+		// `auth` de better-auth: su adapter de Prisma lee `_runtimeDataModel` del
+		// cliente al inicializarse, atravesando el proxy. En build no hay
+		// consultas que hacer: con un stub inerte vale (sin `_runtimeDataModel`,
+		// el adapter se salta su comprobación de schema) y el build no exige
+		// `DATABASE_URL`. En runtime el error se mantiene.
+		if (building) {
+			return {} as PrismaClient;
+		}
 		throw new Error('Falta DATABASE_URL. Ver .env.example.');
 	}
 	return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
