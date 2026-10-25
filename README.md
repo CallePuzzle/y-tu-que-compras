@@ -1,12 +1,12 @@
 # y-tu-que-compras
 
-Aplicación SvelteKit 2 + Svelte 5, desplegada en [Vercel](https://vercel.com). Gestor de paquetes:
-[bun](https://bun.sh).
+Aplicación SvelteKit 2 + Svelte 5, desplegada en el clúster k0s de `villajilguero-oci-services`
+(https://ytqc.callepuzzle.com). Gestor de paquetes: [bun](https://bun.sh).
 
 ## Requisitos
 
-Versiones fijadas en `.tool-versions` (asdf): node y bun. Node va alineado con el runtime de Vercel
-(`nodejs24.x` en `svelte.config.js`) y con `engines.node`; si cambias uno, cambia los tres.
+Versiones fijadas en `.tool-versions` (asdf): node y bun. Node va alineado con el runtime de
+Vercel (`nodejs24.x` en `svelte.config.js`) y con `engines.node`; si cambias uno, cambia los tres.
 
 ```sh
 asdf install
@@ -51,7 +51,8 @@ bun run dev -- --open
 ## Build
 
 ```sh
-bun run build     # genera la salida de Vercel en .vercel/output
+bun run build     # build de @sveltejs/adapter-vercel (default; .vercel/output)
+ADAPTER=node bun run build   # build de @sveltejs/adapter-node: servidor en build/ (el del clúster)
 bun run preview   # sirve el build en http://localhost:4173
 ```
 
@@ -108,20 +109,21 @@ El remitente es `@callepuzzle.com` y el dominio ya está listo para producción
 Con el From firmado por DKIM de `callepuzzle.com`, el alineamiento DMARC pasa
 y los correos llegan sin caer en spam por políticas de autenticación.
 
-## Despliegue (Vercel)
+## Despliegue (clúster k0s)
 
-Variables de entorno del proyecto en Vercel:
+GitOps con Argo CD: el app-of-apps de `villajilguero-oci-services/jilguedev/app-of-apps/` apunta
+al directorio `deploy/` de este repo (proyecto Tanka) y sincroniza en el namespace
+`callepuzzle-dev` del clúster dev. Detalles de la arquitectura y de los secretos en el `AGENTS.md`
+y en la issue [#30](https://github.com/CallePuzzle/villajilguero-oci-services/issues/30).
 
-| Variable             | Valor                                                                            |
-| -------------------- | -------------------------------------------------------------------------------- |
-| `DATABASE_URL`       | PostgreSQL (con pooler si el proveedor lo ofrece)                                |
-| `BETTER_AUTH_URL`    | URL pública **https** de la app                                                  |
-| `BETTER_AUTH_SECRET` | Secreto propio por entorno (`openssl rand -base64 32`)                           |
-| `SMPT_*`             | SMTP de Oracle Email Delivery: host, usuario, password y remitente (ver «Email») |
-| `NPM_TOKEN`          | PAT con `read:packages` para instalar `@callepuzzle/*` en el build               |
+El release (`.github/workflows/release.yml`) se dispara al mergear a `main`: construye la imagen
+`linux/arm64` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`, con `NPM_TOKEN` como secret de
+BuildKit), corta la release con tag y commitea el nuevo tag en `deploy/dev/version.jsonnet`, lo
+que dispara el sync de Argo CD. Las migraciones las aplica el init container `db-migrate`
+(`prisma migrate deploy`) en cada despliegue; no hace falta ejecutarlas a mano.
 
-Las migraciones no se aplican en el build: ejecuta `bun run db:deploy` contra la base de datos de
-cada entorno antes de desplegar código que dependa de ellas. No uses `db:push` fuera de local.
+Secretos del despliegue: `deploy/dev/secrets.enc` (cifrado con SOPS, clave age del repo de
+infra). Sin `SMTP_HOST`/`SMPT_*` la app arranca, pero el login OTP falla al enviar el correo.
 
 ## Seguridad
 
@@ -130,8 +132,8 @@ cada entorno antes de desplegar código que dependa de ellas. No uses `db:push` 
   `src/hooks.server.ts`. Si añades orígenes externos (imágenes, analítica, APIs), declara el
   origen en la directiva correspondiente.
 - **better-auth** (`src/lib/server/auth.ts`): rate limit persistido en base de datos, IP del
-  cliente leída de `x-real-ip` (la reescribe Vercel), cookies `Secure` fuera de desarrollo y tokens
-  OAuth cifrados.
+  cliente leída de `cf-connecting-ip` (la fija Cloudflare; `x-real-ip` queda como candidato
+  heredado de Vercel), cookies `Secure` fuera de desarrollo y tokens OAuth cifrados.
 - **Módulos de inlang** (`project.inlang/settings.json`): se descargan de jsDelivr y se ejecutan
   en cada build; van con versión exacta. Actualízalos a mano revisando el changelog.
 
