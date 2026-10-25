@@ -17,8 +17,18 @@ import type { RequestEvent } from '@sveltejs/kit';
 // migraciones aplicadas (postgres local o el service del CI). Cada test usa
 // ids/emails únicos: no hace falta limpiar ni coordinar ejecuciones.
 import { auth } from './auth.js';
-import { FAMILY_MEMBER_ROLE, MAX_FAMILIES_PER_USER } from './tenancy.js';
-import { familySlug, inviteFamily } from './families.js';
+import { FAMILY_ADMIN_ROLE, FAMILY_MEMBER_ROLE, MAX_FAMILIES_PER_USER } from './tenancy.js';
+import {
+	FamilyLastAdminError,
+	FamilyMemberGoneError,
+	deleteFamily,
+	familyDetailView,
+	familySlug,
+	inviteFamily,
+	leaveFamily,
+	promoteFamilyMember,
+	removeFamilyMember
+} from './families.js';
 import { capturedEmailsForTests, clearCapturedEmailsForTests } from './sender.js';
 import prisma from './prisma.js';
 
@@ -48,13 +58,21 @@ async function sessionCookieFor(
 	// (el que realmente verificará la cookie, sea el del `.env` o el fallback
 	// de better-auth cuando no hay ninguno): leer `$env/dynamic/private` a pelo
 	// sería frágil porque ese env se congela al arrancar vitest.
+	//
+	// Caducidad LARGA (30 días) y no una hora: con una sesión próxima a caducar
+	// better-auth la REFRESCA en cada `getSession` (updateAge) y responde con
+	// `Set-Cookie`; el after-hook de `sveltekitCookies` lo reproduce en el
+	// evento de SvelteKit, que solo existe dentro de `handle` — fuera (las
+	// llamadas directas a `auth.api.*` de estos tests) revienta. Con el refresh
+	// desactivado la respuesta no lleva cookies y las llamadas directas no
+	// tocan ese camino.
 	const context = await auth.$context;
 	const token = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
 	await prisma.session.create({
 		data: {
 			id: randomUUID(),
 			token,
-			expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+			expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
 			userId
 		}
 	});
@@ -496,5 +514,194 @@ describe('aceptar y rechazar invitación (#61)', () => {
 		expect(
 			await prisma.member.findFirst({ where: { contextId: familyId, userId: guest.userId } })
 		).toBeNull();
+	});
+});
+
+/**
+ * Gestionar miembros (issue #62): listar, expulsar, abandonar, promover y
+ * borrar la familia. Las llamadas van por las funciones de
+ * `$lib/server/families.ts` (las mismas que usan los form actions), así que
+ * los guards reales de los hooks (`tenancy.ts`) están en el camino.
+ */
+describe('expulsar, abandonar, promover y borrar (#62)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string, userId?: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: userId ? { id: userId } : undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Gestion ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Crea usuario con sesión y lo da de alta en la familia con ese rol. */
+	async function addSessionMember(
+		familyId: string,
+		roleName: typeof FAMILY_ADMIN_ROLE | typeof FAMILY_MEMBER_ROLE = FAMILY_MEMBER_ROLE
+	): Promise<{ cookie: string; userId: string; email: string; memberId: string }> {
+		const session = await sessionCookieFor('Miembro De Gestion');
+		const role = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: roleName }
+		});
+		const membership = await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: role.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { ...session, memberId: membership.id };
+	}
+
+	it('la vista de gestión muestra los miembros con su rol y el viewer en el suyo', async () => {
+		const admin = await sessionCookieFor('Admin Gestion');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+
+		const view = await familyDetailView(eventOf(admin.cookie, admin.userId), familyId);
+		expect(view?.name).toContain('Familia Gestion');
+		expect(view?.viewer).toEqual({ memberId: expect.any(String), isAdmin: true });
+		expect(view?.members).toHaveLength(2);
+
+		const memberRow = view?.members.find((row) => row.id === member.memberId);
+		expect(memberRow?.isAdmin).toBe(false);
+		expect(memberRow?.email).toBe(member.email);
+	});
+
+	it('un miembro se ve sin admin; quien no pertenece no ve nada', async () => {
+		const admin = await sessionCookieFor('Admin Vista');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+
+		const memberView = await familyDetailView(eventOf(member.cookie, member.userId), familyId);
+		expect(memberView?.viewer).toEqual({ memberId: member.memberId, isAdmin: false });
+
+		const outsider = await sessionCookieFor('Ajeno Vista');
+		expect(await familyDetailView(eventOf(outsider.cookie, outsider.userId), familyId)).toBeNull();
+	});
+
+	it('el admin expulsa a un miembro', async () => {
+		const admin = await sessionCookieFor('Admin Expulsador');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+
+		await removeFamilyMember(eventOf(admin.cookie), member.memberId);
+		expect(await prisma.member.findUnique({ where: { id: member.memberId } })).toBeNull();
+	});
+
+	it('un miembro no puede expulsar a otro (403 del guard)', async () => {
+		const admin = await sessionCookieFor('Admin Celoso');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+		const other = await addSessionMember(familyId);
+
+		await expect(removeFamilyMember(eventOf(member.cookie), other.memberId)).rejects.toThrow(
+			/Missing permission: member:remove/
+		);
+		expect(await prisma.member.findUnique({ where: { id: other.memberId } })).not.toBeNull();
+	});
+
+	it('expulsar a quien ya no está da el error tipado (404)', async () => {
+		const admin = await sessionCookieFor('Admin Tardío');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+		await removeFamilyMember(eventOf(admin.cookie), member.memberId);
+
+		await expect(removeFamilyMember(eventOf(admin.cookie), member.memberId)).rejects.toBeInstanceOf(
+			FamilyMemberGoneError
+		);
+	});
+
+	it('un miembro puede abandonar por sí mismo', async () => {
+		const admin = await sessionCookieFor('Admin Anfitrión');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+
+		await leaveFamily(eventOf(member.cookie), member.memberId);
+		expect(await prisma.member.findUnique({ where: { id: member.memberId } })).toBeNull();
+	});
+
+	it('el último admin no puede abandonar; promoviendo a otro, sí', async () => {
+		const admin = await sessionCookieFor('Admin Último');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+		const adminMembership = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: admin.userId }
+		});
+
+		await expect(leaveFamily(eventOf(admin.cookie), adminMembership.id)).rejects.toBeInstanceOf(
+			FamilyLastAdminError
+		);
+		expect(await prisma.member.findUnique({ where: { id: adminMembership.id } })).not.toBeNull();
+
+		// «Debe promover a otro»: promovido el miembro, el admin original sale.
+		await promoteFamilyMember(eventOf(admin.cookie), familyId, member.memberId);
+		const promoted = await prisma.member.findUniqueOrThrow({
+			where: { id: member.memberId },
+			include: { role: true }
+		});
+		expect(promoted.role?.name).toBe(FAMILY_ADMIN_ROLE);
+
+		await leaveFamily(eventOf(admin.cookie), adminMembership.id);
+		expect(await prisma.member.findUnique({ where: { id: adminMembership.id } })).toBeNull();
+	});
+
+	it('promover exige admin (403) y asigna el rol admin de esa familia', async () => {
+		const admin = await sessionCookieFor('Admin Promotor');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+
+		await expect(
+			promoteFamilyMember(eventOf(member.cookie), familyId, member.memberId)
+		).rejects.toThrow(/Missing permission: member:update/);
+
+		await promoteFamilyMember(eventOf(admin.cookie), familyId, member.memberId);
+		const promoted = await prisma.member.findUniqueOrThrow({
+			where: { id: member.memberId },
+			include: { role: true }
+		});
+		expect(promoted.role?.name).toBe(FAMILY_ADMIN_ROLE);
+	});
+
+	it('borrar la familia se lleva familia, miembros, roles, statements e invitaciones', async () => {
+		const admin = await sessionCookieFor('Admin Borrador');
+		const familyId = await createFamilyFor(admin.cookie);
+		await addSessionMember(familyId);
+
+		// Una invitación pendiente también desaparece con la familia.
+		const guestEmail = `borrada-${randomUUID().slice(0, 8)}@example.com`;
+		await inviteFamily(eventOf(admin.cookie), { familyId, email: guestEmail });
+		expect(await prisma.invitation.findFirst({ where: { contextId: familyId } })).not.toBeNull();
+
+		await deleteFamily(eventOf(admin.cookie), familyId);
+
+		expect(await prisma.organization.findUnique({ where: { id: familyId } })).toBeNull();
+		expect(await prisma.member.findMany({ where: { contextId: familyId } })).toHaveLength(0);
+		expect(await prisma.role.findMany({ where: { contextId: familyId } })).toHaveLength(0);
+		expect(
+			await prisma.roleStatement.findMany({ where: { role: { contextId: familyId } } })
+		).toHaveLength(0);
+		expect(await prisma.invitation.findMany({ where: { contextId: familyId } })).toHaveLength(0);
+	});
+
+	it('un miembro sin rol admin no puede borrar la familia (403)', async () => {
+		const admin = await sessionCookieFor('Admin Superviviente');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addSessionMember(familyId);
+
+		await expect(deleteFamily(eventOf(member.cookie), familyId)).rejects.toThrow(
+			/Missing permission: organization:delete/
+		);
+		expect(await prisma.organization.findUnique({ where: { id: familyId } })).not.toBeNull();
 	});
 });

@@ -12,6 +12,7 @@ import {
 	FAMILY_MEMBER_STATEMENTS,
 	FAMILY_MEMBERS_LIMIT_MESSAGE,
 	INVITATION_NOT_FOR_ACCOUNT_MESSAGE,
+	LAST_FAMILY_ADMIN_MESSAGE,
 	MAX_FAMILY_MEMBERS,
 	MAX_FAMILIES_PER_USER,
 	seedFamilyRoles,
@@ -357,6 +358,197 @@ describe('tenancyConfig.endpoints (listados de miembros e invitaciones)', () => 
 	});
 });
 
+/**
+ * Expulsar, abandonar y promover (issue #62). El plugin entrega el member YA
+ * resuelto en `ctx.resource.data`, y sobre eso deciden los hooks: salir puede
+ * cualquiera consigo mismo, expulsar solo el admin, y NADIE deja a la familia
+ * sin su último admin.
+ */
+describe('expulsar y abandonar: hook de member/remove (#62)', () => {
+	const remove = tenancyConfig.endpoints?.member?.remove;
+
+	/** La petición tal y como el plugin la entrega: member ya resuelto. */
+	function removeRequest(userId: string, roleId: string | null) {
+		return {
+			body: { id: 'membership-1' },
+			resource: {
+				contextType: 'organization',
+				contextId: 'fam-1',
+				data: { userId, roleId }
+			}
+		};
+	}
+
+	/** Adaptador base + rol admin de la familia con `admins` miembros encima. */
+	function adapterWithAdmins(admins: number) {
+		const base = familyAdapterMock();
+		return {
+			findOne({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				if (model === 'role') {
+					const name = where.find(({ field }) => field === 'name')?.value;
+					return name === FAMILY_ADMIN_ROLE ? { id: 'role-admin' } : null;
+				}
+				return base.findOne({ model, where });
+			},
+			findMany({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				// Solo el recuento de admines es nuestro; el resto pasa al base (el
+				// `resolvePermission` consulta membresías y statements en él).
+				if (model === 'member' && where.some(({ field }) => field === 'roleId')) {
+					return Array.from({ length: admins }, (_, index) => ({ id: `admin-${index}` }));
+				}
+				return base.findMany({ model, where });
+			}
+		};
+	}
+
+	it('un miembro puede abandonar por sí mismo (sin statement member:remove)', async () => {
+		await expect(
+			callHook(
+				remove,
+				adapterWithAdmins(1),
+				removeRequest('member-1', 'role-member'),
+				sessionOf('member-1')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('el último admin no puede abandonar: debe promover a otro o borrar', async () => {
+		await expect(
+			callHook(
+				remove,
+				adapterWithAdmins(1),
+				removeRequest('admin-1', 'role-admin'),
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow(LAST_FAMILY_ADMIN_MESSAGE);
+	});
+
+	it('con otro admin en la familia, abandonar sí está permitido', async () => {
+		await expect(
+			callHook(
+				remove,
+				adapterWithAdmins(2),
+				removeRequest('admin-1', 'role-admin'),
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('el admin puede expulsar a un miembro', async () => {
+		await expect(
+			callHook(
+				remove,
+				adapterWithAdmins(1),
+				removeRequest('member-1', 'role-member'),
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('un miembro no puede expulsar a otro (403)', async () => {
+		await expect(
+			callHook(
+				remove,
+				adapterWithAdmins(2),
+				removeRequest('admin-1', 'role-admin'),
+				sessionOf('member-1')
+			)
+		).rejects.toThrow('Missing permission: member:remove');
+	});
+});
+
+/** Promover a admin (issue #62): solo el admin, y sin dejar la familia huérfana. */
+describe('promover: hook de member/role/update (#62)', () => {
+	const updateRole = tenancyConfig.endpoints?.member?.updateRole;
+
+	function updateRoleRequest(targetRoleId: string, nextRoleId: string) {
+		return {
+			body: { id: 'membership-1', roleId: nextRoleId },
+			resource: {
+				contextType: 'organization',
+				contextId: 'fam-1',
+				data: { userId: 'member-1', roleId: targetRoleId }
+			}
+		};
+	}
+
+	// Mismo adaptador que el describe anterior: el rol admin de la familia con
+	// su recuento de admines es justo lo que el guard del último admin mira.
+	const adapterWithAdmins = (admins: number) => {
+		const base = familyAdapterMock();
+		return {
+			findOne({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				if (model === 'role') {
+					const name = where.find(({ field }) => field === 'name')?.value;
+					return name === FAMILY_ADMIN_ROLE ? { id: 'role-admin' } : null;
+				}
+				return base.findOne({ model, where });
+			},
+			findMany({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				if (model === 'member' && where.some(({ field }) => field === 'roleId')) {
+					return Array.from({ length: admins }, (_, index) => ({ id: `admin-${index}` }));
+				}
+				return base.findMany({ model, where });
+			}
+		};
+	};
+
+	it('el admin promueve a un miembro', async () => {
+		await expect(
+			callHook(
+				updateRole,
+				adapterWithAdmins(1),
+				updateRoleRequest('role-member', 'role-admin'),
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('un miembro sin rol admin no puede promover (403)', async () => {
+		await expect(
+			callHook(
+				updateRole,
+				adapterWithAdmins(1),
+				updateRoleRequest('role-member', 'role-admin'),
+				sessionOf('member-1')
+			)
+		).rejects.toThrow('Missing permission: member:update');
+	});
+
+	it('degradar al último admin deja a la familia sin admines: 400', async () => {
+		await expect(
+			callHook(
+				updateRole,
+				adapterWithAdmins(1),
+				updateRoleRequest('role-admin', 'role-member'),
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow(LAST_FAMILY_ADMIN_MESSAGE);
+	});
+
+	it('degradar a uno de dos admines está permitido', async () => {
+		await expect(
+			callHook(
+				updateRole,
+				adapterWithAdmins(2),
+				updateRoleRequest('role-admin', 'role-member'),
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('re-asignar el rol admin al que ya lo lleva no corta (idempotente)', async () => {
+		await expect(
+			callHook(
+				updateRole,
+				adapterWithAdmins(1),
+				updateRoleRequest('role-admin', 'role-admin'),
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	});
+});
+
 describe('tenancyConfig.endpoints denegados (administración del plugin)', () => {
 	// El plugin monta por defecto endpoints de administración que solo piden
 	// sesión; si alguno quedara sin hook, cualquier usuario autenticado podría
@@ -432,8 +624,8 @@ describe('perímetro del plugin (surface real de endpoints)', () => {
 		['/tenancy/member/list', 'organization:get'],
 		['/tenancy/member/:id', 'organization:get (clave member.list)'],
 		['/tenancy/member/add', 'member:invite'],
-		['/tenancy/member/remove', 'member:remove'],
-		['/tenancy/member/role/update', 'member:update'],
+		['/tenancy/member/remove', 'admin o el propio miembro; el último admin protegido (#62)'],
+		['/tenancy/member/role/update', 'member:update (promover; último admin protegido, #62)'],
 		['/tenancy/member/metadata/update', 'member:update (clave member.updateRole)'],
 		['/tenancy/member/check', 'self-scoped en el plugin (requireSelfOr)'],
 		['/tenancy/member/user/memberships', 'self-scoped en el plugin (requireSelfOr)'],

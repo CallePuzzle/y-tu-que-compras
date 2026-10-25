@@ -360,6 +360,20 @@ export function isInvitationNotForAccount(error: unknown): boolean {
 }
 
 /**
+ * Mensaje del 400 que lanzan los hooks de `member/remove` y
+ * `member/role/update` cuando la operación dejaría a la familia sin su único
+ * admin (issue #62). Es un contrato con `$lib/server/families.ts`, que lo
+ * traduce al error de formulario (`FamilyLastAdminError`); no cambiarlo sin
+ * ajustar allí.
+ */
+export const LAST_FAMILY_ADMIN_MESSAGE = 'Cannot remove the last admin of the family';
+
+/** ¿Es este el error de quitar al último admin de la familia? */
+export function isLastFamilyAdmin(error: unknown): boolean {
+	return error instanceof APIError && error.message === LAST_FAMILY_ADMIN_MESSAGE;
+}
+
+/**
  * Mensaje del 403 que lanza el endpoint `organization/create` al superar el
  * tope. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
  * de formulario (`FamilyLimitReachedError`); no cambiarlo sin ajustar allí.
@@ -499,6 +513,119 @@ const requireBelowFamilyMemberLimit: EndpointAuthHook = async ({ ctx, session })
 	}
 };
 
+// ===========================================================================
+// Gestionar miembros (issue #62): expulsar, abandonar y promover.
+// ===========================================================================
+
+/**
+ * El miembro que el plugin ya resolvió y cuelga de `resource.data`
+ * (`findMemberContext` de `members.js` trae la fila completa). `undefined` si
+ * no viene: peticiones hechas a mano que el statement denegará por su cuenta.
+ */
+function resolvedMemberOf(context: EndpointAuthContext):
+	| {
+			userId: string;
+			roleId: string | null;
+	  }
+	| undefined {
+	// El plugin inyecta el recurso en el ctx que pasa al hook
+	// (`applyEndpointAuth(hook, { ...ctx, resource }, session)`).
+	const data = (context.ctx as { resource?: ResourceContext }).resource?.data as
+		{ userId?: unknown; roleId?: unknown } | undefined;
+	if (!data || typeof data.userId !== 'string' || !data.userId) return undefined;
+	return { userId: data.userId, roleId: typeof data.roleId === 'string' ? data.roleId : null };
+}
+
+/**
+ * El rol admin de una familia y cuántos miembros lo llevan. `null` si la
+ * familia no tiene rol admin sembrado (familia a medio deshacer): nada que
+ * proteger y el statement del actor decide por su cuenta.
+ */
+async function familyAdminRoleWithCount(
+	adapter: Adapter,
+	familyId: string
+): Promise<{ id: string; admins: number } | null> {
+	const role = (await adapter.findOne({
+		model: 'role',
+		where: [
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: familyId },
+			{ field: 'name', value: FAMILY_ADMIN_ROLE }
+		]
+	})) as { id: string } | null;
+	if (!role) return null;
+
+	const admins = await adapter.findMany({
+		model: 'member',
+		where: [
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: familyId },
+			{ field: 'roleId', value: role.id }
+		]
+	});
+	return { id: role.id, admins: admins.length };
+}
+
+/**
+ * Quita al miembro su administración si con ello la familia se queda sin
+ * admines: `nextRoleId` es el rol que le quedaría (el mismo al expulsar; el
+ * del body al cambiar el rol). Promover NO corta: el rol destino es otro.
+ */
+async function rejectIfLastFamilyAdmin(
+	context: EndpointAuthContext,
+	currentRoleId: string | null,
+	nextRoleId: string | null = currentRoleId
+): Promise<void> {
+	if (!currentRoleId) return;
+	// Mismo lugar que `resolvedMemberOf`: el plugin inyecta el recurso en ctx.
+	const resource = (context.ctx as { resource?: ResourceContext }).resource;
+	if (!resource) return;
+
+	const adminRole = await familyAdminRoleWithCount(context.ctx.context.adapter, resource.contextId);
+	if (!adminRole || currentRoleId !== adminRole.id) return;
+	// Sigue admin después del cambio: nada que proteger.
+	if (nextRoleId === adminRole.id) return;
+	if (adminRole.admins <= 1) {
+		throw new APIError('BAD_REQUEST', { message: LAST_FAMILY_ADMIN_MESSAGE });
+	}
+}
+
+/**
+ * Expulsar o abandonar (issue #62): puede el admin (statement `member:remove`)
+ * o el PROPIO miembro apuntado, que es justo «abandonar la familia» — el
+ * plugin no tiene endpoint de salida y `member/remove` es la única puerta. Sin
+ * los datos del miembro (peticiones a mano) cae al statement: la vía
+ * conservadora, que solo abre el admin.
+ */
+const allowSelfRemoveOrAdmin: EndpointAuthHook = async (context) => {
+	const current = await endpointSession(context.ctx, context.session);
+	if (resolvedMemberOf(context)?.userId === current.user.id) return;
+	await requireFamilyStatement('member:remove', fromResolvedResource)(context);
+};
+
+/** Expulsar o abandonar no puede dejar a la familia sin su último admin. */
+const requireNotLastFamilyAdminOnRemove: EndpointAuthHook = async (context) => {
+	await endpointSession(context.ctx, context.session);
+	const member = resolvedMemberOf(context);
+	if (!member) return;
+	// Al quitar al miembro se queda SIN rol: si era el único admin, no hay
+	// salida posible sin promover a otro o borrar la familia.
+	await rejectIfLastFamilyAdmin(context, member.roleId, null);
+};
+
+/**
+ * Cambiar el rol (promover, issue #62) tampoco puede dejar a la familia sin
+ * admines: degradar al único admin sería abandonar la administración por la
+ * puerta de atrás y dejaría la familia sin nadie que invite, expulse o borre.
+ */
+const requireNotLastFamilyAdminOnRoleChange: EndpointAuthHook = async (context) => {
+	await endpointSession(context.ctx, context.session);
+	const member = resolvedMemberOf(context);
+	if (!member) return;
+	const nextRoleId = typeof context.ctx.body?.roleId === 'string' ? context.ctx.body.roleId : null;
+	await rejectIfLastFamilyAdmin(context, member.roleId, nextRoleId);
+};
+
 /**
  * La invitación del body, resuelta por token o por código: la misma resolución
  * que hacen los endpoints `invitation/accept` y `invitation/decline` del
@@ -600,8 +727,14 @@ export const tenancyConfig: TenancyConfig = {
 		},
 		member: {
 			add: requireFamilyStatement('member:invite', fromBodyContext),
-			remove: requireFamilyStatement('member:remove', fromResolvedResource),
-			updateRole: requireFamilyStatement('member:update', fromResolvedResource),
+			// Expulsar (#62): el admin, o el propio miembro (abandonar). Y nadie
+			// quita al último admin: debe promover a otro o borrar la familia.
+			remove: combineHooks(allowSelfRemoveOrAdmin, requireNotLastFamilyAdminOnRemove),
+			// Promover (#62): solo admin, y sin dejar a la familia sin admines.
+			updateRole: combineHooks(
+				requireFamilyStatement('member:update', fromResolvedResource),
+				requireNotLastFamilyAdminOnRoleChange
+			),
 			// Ver quiénes son los miembros: cualquiera de la familia.
 			list: requireFamilyStatement('organization:get', fromMemberRef),
 			...denyEndpoints(['bulkAdd', 'bulkRemove', 'transfer'])

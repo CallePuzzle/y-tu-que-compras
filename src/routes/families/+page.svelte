@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
 	import Plus from '@lucide/svelte/icons/plus';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
+	import Users from '@lucide/svelte/icons/users';
 	import { m } from '$lib/paraglide/messages.js';
 	import { createFamilySchema, inviteFamilySchema } from '$lib/schemas/family.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
@@ -212,18 +214,36 @@
 	{:else}
 		<ul class="mt-4 flex flex-col gap-2">
 			{#each data.families as familia (familia.id)}
-				<li class="bg-base-200 rounded-box flex items-center justify-between gap-2 px-4 py-3">
-					<span>{familia.name}</span>
-					{#if familia.canInvite}
-						<button
-							type="button"
+				<li
+					class="bg-base-200 rounded-box flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+				>
+					<!-- La gestión de miembros (issue #62) vive en su página: el
+					     nombre enlaza a ella y hay botón propio por descubribilidad. -->
+					<a
+						href={resolve('/families/[familyId]', { familyId: familia.id })}
+						class="min-w-0 flex-1 truncate font-medium hover:underline"
+					>
+						{familia.name}
+					</a>
+					<span class="flex items-center gap-1">
+						<a
+							href={resolve('/families/[familyId]', { familyId: familia.id })}
 							class="btn btn-ghost btn-sm"
-							onclick={() => abrirInvitacion(familia)}
 						>
-							<UserPlus aria-hidden="true" />
-							{m.families_invite()}
-						</button>
-					{/if}
+							<Users aria-hidden="true" />
+							{m.families_members()}
+						</a>
+						{#if familia.canInvite}
+							<button
+								type="button"
+								class="btn btn-ghost btn-sm"
+								onclick={() => abrirInvitacion(familia)}
+							>
+								<UserPlus aria-hidden="true" />
+								{m.families_invite()}
+							</button>
+						{/if}
+					</span>
 				</li>
 			{/each}
 		</ul>

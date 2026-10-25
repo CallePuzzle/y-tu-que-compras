@@ -14,7 +14,8 @@ import {
 	isFamilyInvitationPending,
 	isFamilyLimitReached,
 	isFamilyMembersLimitReached,
-	isInvitationNotForAccount
+	isInvitationNotForAccount,
+	isLastFamilyAdmin
 } from '$lib/server/tenancy.js';
 
 /** Familia con los campos que la UI necesita (el plugin devuelve más). */
@@ -80,6 +81,30 @@ export class FamilyInvitationNotForAccountError extends Error {
 	constructor(public readonly email: string) {
 		super(`Invitation is not for this account: ${email}`);
 		this.name = 'FamilyInvitationNotForAccountError';
+	}
+}
+
+/** El miembro es el último admin: no puede salir ni ser expulsado (issue #62). */
+export class FamilyLastAdminError extends Error {
+	constructor() {
+		super('Cannot remove the last admin of the family');
+		this.name = 'FamilyLastAdminError';
+	}
+}
+
+/** El miembro apuntado ya no está (lo expulsaron antes, carrera con la UI). */
+export class FamilyMemberGoneError extends Error {
+	constructor() {
+		super('Family member no longer exists');
+		this.name = 'FamilyMemberGoneError';
+	}
+}
+
+/** La familia ya no existe (la borraron antes desde otro dispositivo, p. ej.). */
+export class FamilyGoneError extends Error {
+	constructor() {
+		super('Family no longer exists');
+		this.name = 'FamilyGoneError';
 	}
 }
 
@@ -326,6 +351,176 @@ export async function rejectFamilyInvitation(event: RequestEvent, token: string)
 	} catch (error) {
 		const mapped = invitationResponseError(error);
 		if (mapped) throw mapped;
+		throw error;
+	}
+}
+
+// ===========================================================================
+// Gestionar miembros (issue #62): listar, expulsar, abandonar, promover.
+// ===========================================================================
+
+/** Un miembro de la familia, tal y como la UI de gestión lo muestra. */
+export interface FamilyMember {
+	/** Id de la fila `member`: lo que viaja en expulsar/promover/abandonar. */
+	id: string;
+	userId: string;
+	name: string;
+	email: string;
+	/** ¿Lleva el rol admin de la familia? (el nombre de programa, no el traducido). */
+	isAdmin: boolean;
+	joinedAt: Date;
+}
+
+/** Vista de gestión de una familia: sus miembros y qué puede hacer quien mira. */
+export interface FamilyDetailView {
+	id: string;
+	name: string;
+	members: FamilyMember[];
+	/** El usuario de la sesión; `null` si no pertenece (la ruta redirige). */
+	viewer: { memberId: string; isAdmin: boolean } | null;
+}
+
+/**
+ * Vista de gestión de una familia (issue #62): miembros con su rol y la
+ * pertenencia del usuario de la sesión.
+ *
+ * La lectura se hace por Prisma (el endpoint `member/list` del plugin trae el
+ * rol YA traducido a la locale, y la UI necesita el nombre de programa para
+ * decidir sus acciones). El guard de lectura es el mismo del endpoint: solo
+ * entra quien pertenece — aquí, devolviendo `null` y sin revelar nada más.
+ */
+export async function familyDetailView(
+	event: RequestEvent,
+	familyId: string
+): Promise<FamilyDetailView | null> {
+	const user = event.locals.user;
+	if (!user) return null;
+
+	const family = await prisma.organization.findUnique({
+		where: { id: familyId },
+		select: { id: true, name: true }
+	});
+	if (!family) return null;
+
+	const memberships = await prisma.member.findMany({
+		where: { contextType: 'organization', contextId: familyId },
+		select: {
+			id: true,
+			userId: true,
+			createdAt: true,
+			role: { select: { name: true } },
+			user: { select: { name: true, email: true } }
+		},
+		orderBy: { createdAt: 'asc' }
+	});
+
+	// Quien no pertenece no ve ni los miembros (traen emails de terceros): la
+	// pertenencia del viewer es aquí el guard, igual que el statement
+	// `organization:get` lo es en los endpoints del plugin.
+	const viewerMembership = memberships.find((membership) => membership.userId === user.id);
+	if (!viewerMembership) return null;
+
+	return {
+		id: family.id,
+		name: family.name,
+		members: memberships.map((membership) => ({
+			id: membership.id,
+			userId: membership.userId,
+			name: membership.user.name,
+			email: membership.user.email,
+			isAdmin: membership.role?.name === FAMILY_ADMIN_ROLE,
+			joinedAt: membership.createdAt
+		})),
+		viewer: {
+			memberId: viewerMembership.id,
+			isAdmin: viewerMembership.role?.name === FAMILY_ADMIN_ROLE
+		}
+	};
+}
+
+/** ¿Es este el 404 de un recurso que ya no está (miembro o familia borrados)? */
+function isNotFoundError(error: unknown): boolean {
+	return error instanceof APIError && error.status === 'NOT_FOUND';
+}
+
+/**
+ * Expulsa a un miembro (issue #62) vía `member/remove`. El guard del endpoint
+ * abre la puerta al admin de la familia o al propio miembro — abandonar la
+ * familia es `leaveFamily`, el mismo endpoint — y protege al último admin;
+ * aquí solo se traducen los fallos a errores tipados para la UI.
+ */
+export async function removeFamilyMember(event: RequestEvent, memberId: string): Promise<void> {
+	try {
+		await auth.api.removeMember({ body: { id: memberId }, headers: event.request.headers });
+	} catch (error) {
+		if (isLastFamilyAdmin(error)) throw new FamilyLastAdminError();
+		if (isNotFoundError(error)) throw new FamilyMemberGoneError();
+		throw error;
+	}
+}
+
+/**
+ * Abandona la familia (issue #62): es `member/remove` sobre el propio miembro,
+ * que el guard del endpoint permite a cualquiera sobre sí mismo — con la
+ * excepción del último admin, que debe promover a otro o borrar la familia.
+ */
+export async function leaveFamily(event: RequestEvent, memberId: string): Promise<void> {
+	await removeFamilyMember(event, memberId);
+}
+
+/**
+ * Promueve a un miembro a admin (issue #62) vía `member/role/update`: solo el
+ * admin puede (statement `member:update`) y nunca deja a la familia sin
+ * admines (promover solo los añade).
+ */
+export async function promoteFamilyMember(
+	event: RequestEvent,
+	familyId: string,
+	memberId: string
+): Promise<void> {
+	// El miembro ha de pertenecer a ESTA familia: `memberId` viene del
+	// formulario, y el rol admin ha de ser el de la misma familia que el
+	// miembro (el guard del endpoint autoriza sobre la familia del miembro).
+	const membership = await prisma.member.findFirst({
+		where: { id: memberId, contextType: 'organization', contextId: familyId },
+		select: { id: true }
+	});
+	if (!membership) throw new FamilyMemberGoneError();
+
+	// El rol admin lo sembró `onEntityCreated` con la familia; no encontrarlo
+	// es un estado roto que no debería ocurrir: fallar de forma visible.
+	const adminRole = await prisma.role.findFirst({
+		where: { contextType: 'organization', contextId: familyId, name: FAMILY_ADMIN_ROLE },
+		select: { id: true }
+	});
+	if (!adminRole) {
+		throw new Error(`Family admin role not found: ${familyId}`);
+	}
+
+	try {
+		await auth.api.updateMemberRole({
+			body: { id: memberId, roleId: adminRole.id },
+			headers: event.request.headers
+		});
+	} catch (error) {
+		if (isNotFoundError(error)) throw new FamilyMemberGoneError();
+		throw error;
+	}
+}
+
+/**
+ * Borra la familia (issue #62): solo el admin (`organization:delete`) y en
+ * cascada el plugin se lleva miembros, invitaciones, roles y permisos. Las
+ * listas, la despensa y el historial colgarán de la familia por FK cuando
+ * existan (issues #65, #72 y #76): ahí añadirán su propio borrado en cascada.
+ */
+export async function deleteFamily(event: RequestEvent, familyId: string): Promise<void> {
+	try {
+		await auth.api.deleteOrganization({ body: { id: familyId }, headers: event.request.headers });
+	} catch (error) {
+		// Ya borrada (doble envío, otro dispositivo): el estado deseado se ha
+		// alcanzado, pero se distingue para que la ruta redirija sin ruido.
+		if (isNotFoundError(error)) throw new FamilyGoneError();
 		throw error;
 	}
 }
