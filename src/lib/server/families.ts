@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { RequestEvent } from '@sveltejs/kit';
+import type { InvitationStatus } from '@zytera/better-auth-tenancy';
+import { APIError } from 'better-auth/api';
 
 import { auth } from '$lib/server/auth.js';
 import prisma from '$lib/server/prisma.js';
@@ -11,7 +13,8 @@ import {
 	isAlreadyFamilyMember,
 	isFamilyInvitationPending,
 	isFamilyLimitReached,
-	isFamilyMembersLimitReached
+	isFamilyMembersLimitReached,
+	isInvitationNotForAccount
 } from '$lib/server/tenancy.js';
 
 /** Familia con los campos que la UI necesita (el plugin devuelve más). */
@@ -57,6 +60,26 @@ export class AlreadyFamilyMemberError extends Error {
 	constructor(public readonly email: string) {
 		super(`Already a member: ${email}`);
 		this.name = 'AlreadyFamilyMemberError';
+	}
+}
+
+/**
+ * La invitación ya no puede responderse: usada, cancelada, caducada o
+ * directamente inexistente (checklist #61 «invitación expirada o ya usada»).
+ * Cubre los 400/404 del plugin al aceptar o rechazar.
+ */
+export class FamilyInvitationUnavailableError extends Error {
+	constructor() {
+		super('Family invitation is no longer available');
+		this.name = 'FamilyInvitationUnavailableError';
+	}
+}
+
+/** La sesión con la que se intenta responder no es la del email invitado. */
+export class FamilyInvitationNotForAccountError extends Error {
+	constructor(public readonly email: string) {
+		super(`Invitation is not for this account: ${email}`);
+		this.name = 'FamilyInvitationNotForAccountError';
 	}
 }
 
@@ -185,6 +208,124 @@ export async function inviteFamily(
 		if (isFamilyInvitationPending(error)) {
 			throw new FamilyInvitationPendingError(identifier);
 		}
+		throw error;
+	}
+}
+
+/**
+ * Vista de una invitación de familia por token: lo que la página
+ * `/invitations/[token]` muestra (issues #60 y #61). `null` si el token no
+ * existe, no es de una familia (los teams no tienen vista) o la familia ya no
+ * existe: en todos esos casos la página da la invitación por inválida.
+ *
+ * Una invitación `pending` pero con `expiresAt` pasado se devuelve como
+ * `expired`: el cron de cleanup marcará el estado en la base, pero el invitado
+ * no tiene por qué esperar a ese barrido para ver el estado real.
+ */
+export interface FamilyInvitationView {
+	status: InvitationStatus;
+	identifier: string | null;
+	familyName: string;
+	/** Nombre visible de quien invita (su nombre, o su email a falta de él). */
+	invitedBy: string;
+}
+
+export async function familyInvitationView(token: string): Promise<FamilyInvitationView | null> {
+	const invitation = await prisma.invitation.findUnique({
+		where: { token },
+		select: {
+			status: true,
+			identifier: true,
+			expiresAt: true,
+			contextType: true,
+			contextId: true,
+			invitedByUser: { select: { name: true, email: true } }
+		}
+	});
+
+	// Solo las invitaciones a familias tienen vista en la app (los teams no se
+	// usan), y siempre cuelgan de una organización viva.
+	if (!invitation || invitation.contextType !== 'organization') {
+		return null;
+	}
+	const family = await prisma.organization.findUnique({
+		where: { id: invitation.contextId },
+		select: { name: true }
+	});
+	if (!family) {
+		return null;
+	}
+
+	// Pendiente y caducada: ver comentario de `FamilyInvitationView`.
+	const expired =
+		invitation.status === 'pending' &&
+		invitation.expiresAt !== null &&
+		invitation.expiresAt < new Date();
+
+	return {
+		// El modelo solo guarda los estados de `InvitationStatus` (los escribe
+		// el plugin); el `as` solo recupera el literal tras venir de Prisma.
+		status: (expired ? 'expired' : invitation.status) as InvitationStatus,
+		identifier: invitation.identifier,
+		familyName: family.name,
+		invitedBy: invitation.invitedByUser?.name?.trim() || invitation.invitedByUser?.email || ''
+	};
+}
+
+/**
+ * Traduce los errores del plugin al aceptar o rechazar en los tipados de la
+ * UI. Los 400/404 del endpoint (invitación inexistente, ya usada, caducada…
+ * ver `canUseInvitation` del plugin) son todos «ya no disponible»: la página
+ * ya solo ofrece responder sobre una `pending` vigente, así que aquí solo
+ * llegan por carrera con otro dispositivo o con la UI rancia.
+ */
+function invitationResponseError(error: unknown): Error | undefined {
+	if (isFamilyMembersLimitReached(error)) {
+		// La familia se llenó desde que se envió la invitación: el alta la
+		// deshizo `onInvitationAccepted` y la invitación sigue pendiente.
+		return new FamilyMemberLimitReachedError();
+	}
+	if (isInvitationNotForAccount(error)) {
+		// El hook `invitation/accept`/`decline` (`tenancy.ts`) no vio el email
+		// de la sesión entre los invitados.
+		return new FamilyInvitationNotForAccountError('');
+	}
+	if (
+		error instanceof APIError &&
+		(error.status === 'BAD_REQUEST' || error.status === 'NOT_FOUND')
+	) {
+		return new FamilyInvitationUnavailableError();
+	}
+	return undefined;
+}
+
+/**
+ * Acepta la invitación (issue #61): el plugin marca la invitación como
+ * aceptada y `actions.onInvitationAccepted` (`tenancy.ts`) da de alta al
+ * invitado como miembro con el rol de la invitación. Autorización (sesión con
+ * el email invitado) y validaciones de estado las aplican los hooks del
+ * endpoint; aquí solo se traducen los fallos para la UI.
+ *
+ * Al éxito, el invitado es miembro y ve la familia en su selector (criterio
+ * de aceptación: `listFamilies` la lista por pertenencia).
+ */
+export async function acceptFamilyInvitation(event: RequestEvent, token: string): Promise<void> {
+	try {
+		await auth.api.acceptInvitation({ body: { token }, headers: event.request.headers });
+	} catch (error) {
+		const mapped = invitationResponseError(error);
+		if (mapped) throw mapped;
+		throw error;
+	}
+}
+
+/** Rechaza la invitación (issue #61): la marca como `rejected` y no hay alta. */
+export async function rejectFamilyInvitation(event: RequestEvent, token: string): Promise<void> {
+	try {
+		await auth.api.rejectInvitation({ body: { token }, headers: event.request.headers });
+	} catch (error) {
+		const mapped = invitationResponseError(error);
+		if (mapped) throw mapped;
 		throw error;
 	}
 }

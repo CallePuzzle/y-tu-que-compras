@@ -21,6 +21,17 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/api/auth/sign-out')).toBe(true);
 	});
 
+	it('la vista de invitación por token es pública (issue #61)', () => {
+		// El token del enlace es la credencial: hay que poder ver la invitación
+		// (o su caducidad) antes de crearse una cuenta. Responderla exige
+		// sesión, y eso lo aplica la propia página.
+		expect(isPublicPathname('/invitations/tok-1')).toBe(true);
+		expect(isPublicPathname('/invitations/tok-1/__data.json')).toBe(true);
+		// El índice `/invitations` (sin token) no existe: exigir sesión es lo
+		// conservador.
+		expect(isPublicPathname('/invitations')).toBe(false);
+	});
+
 	it('el resto de rutas exigen sesión', () => {
 		expect(isPublicPathname('/')).toBe(false);
 		expect(isPublicPathname('/loginfoo')).toBe(false);

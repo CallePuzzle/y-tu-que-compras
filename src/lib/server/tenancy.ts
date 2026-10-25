@@ -1,5 +1,9 @@
 import type { AuthContext, GenericEndpointContext } from '@better-auth/core';
-import type { EntityCreatedEvent, InvitationCreatedEvent } from '@zytera/better-auth-tenancy';
+import type {
+	EntityCreatedEvent,
+	InvitationAcceptedEvent,
+	InvitationCreatedEvent
+} from '@zytera/better-auth-tenancy';
 import type {
 	ContextType,
 	EndpointAuthContext,
@@ -342,6 +346,20 @@ export function isFamilyInvitationPending(error: unknown): boolean {
 }
 
 /**
+ * Mensaje del 403 que lanzan los hooks de `invitation/accept` y
+ * `invitation/decline` cuando el email de la sesión no es el del invitado
+ * (checklist de la issue #61). Es un contrato con `$lib/server/families.ts`,
+ * que lo traduce al error de formulario (`FamilyInvitationNotForAccountError`);
+ * no cambiarlo sin ajustar allí.
+ */
+export const INVITATION_NOT_FOR_ACCOUNT_MESSAGE = 'Invitation is not for this account';
+
+/** ¿Es este el error de aceptar o rechazar una invitación ajena? */
+export function isInvitationNotForAccount(error: unknown): boolean {
+	return error instanceof APIError && error.message === INVITATION_NOT_FOR_ACCOUNT_MESSAGE;
+}
+
+/**
  * Mensaje del 403 que lanza el endpoint `organization/create` al superar el
  * tope. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
  * de formulario (`FamilyLimitReachedError`); no cambiarlo sin ajustar allí.
@@ -482,6 +500,60 @@ const requireBelowFamilyMemberLimit: EndpointAuthHook = async ({ ctx, session })
 };
 
 /**
+ * La invitación del body, resuelta por token o por código: la misma resolución
+ * que hacen los endpoints `invitation/accept` y `invitation/decline` del
+ * plugin, para que el hook evalúe siempre la invitación que aquellos van a usar.
+ */
+async function invitationFromBody(
+	adapter: Adapter,
+	body: Record<string, unknown> | undefined
+): Promise<{ identifier: string | null } | null> {
+	const token = typeof body?.token === 'string' && body.token ? body.token : undefined;
+	const code =
+		typeof body?.invitationCode === 'string' && body.invitationCode
+			? body.invitationCode.toUpperCase()
+			: undefined;
+	if (!token && !code) {
+		// El plugin responderá 400 («Either token or invitationCode…»): sin
+		// invitación que casar no hay nada que autorizar aquí.
+		return null;
+	}
+
+	if (token) {
+		return adapter.findOne<{ identifier: string | null }>({
+			model: 'invitation',
+			where: [{ field: 'token', value: token }]
+		});
+	}
+	// Solo se llega con código: el guard de arriba cortó si no había ninguno.
+	return adapter.findOne<{ identifier: string | null }>({
+		model: 'invitation',
+		where: [{ field: 'invitationCode', value: code as string }]
+	});
+}
+
+/**
+ * Aceptar o rechazar (issue #61) exige sesión y que el email del invitado sea
+ * el del usuario de la sesión: el token viaja por correo, pero quien tenga
+ * acceso al enlace no debe poder usar la invitación desde otra cuenta (y sin
+ * hook, el plugin deja pasar `accept`/`decline` a quien solo tenga el token).
+ *
+ * El match es case-insensitive: better-auth guarda los correos en minúsculas y
+ * `inviteFamily` normaliza el identifier, pero no se depende de ello.
+ */
+const requireInvitationForSessionEmail: EndpointAuthHook = async ({ ctx, session }) => {
+	const current = await endpointSession(ctx, session);
+	const invitation = await invitationFromBody(ctx.context.adapter, ctx.body);
+	// Invitación inexistente: el plugin dará su 404; aquí no se revela nada.
+	if (!invitation) return;
+
+	const invited = invitation.identifier?.trim().toLowerCase();
+	if (!invited || invited !== current.user.email.trim().toLowerCase()) {
+		throw new APIError('FORBIDDEN', { message: INVITATION_NOT_FOR_ACCOUNT_MESSAGE });
+	}
+};
+
+/**
  * Configuración del plugin `tenancy` para `getBetterAuth` (`src/lib/server/
  * auth.ts`).
  *
@@ -497,9 +569,9 @@ export const tenancyConfig: TenancyConfig = {
 	// Paraglide vía el cliente: ver `src/lib/auth-client.ts`).
 	i18n: { defaultLocale: 'es' },
 
-	// Un miembro no entra en una familia llena: lo comprueba el propio plugin
-	// al dar de alta (`member/add`, que es lo que ejecuta la aceptación de la
-	// issue #61). Al invitar lo replica `requireBelowFamilyMemberLimit`.
+	// Un miembro no entra en una familia llena: el plugin aplica este tope al
+	// invitar (`requireBelowFamilyMemberLimit`, abajo) y el alta real por
+	// invitación lo replica en `actions.onInvitationAccepted` (issue #61).
 	limits: { maxMembersPerOrganization: MAX_FAMILY_MEMBERS },
 
 	// Autorización por statements (issue #59): el plugin NO comprueba los
@@ -513,9 +585,10 @@ export const tenancyConfig: TenancyConfig = {
 	// Todo lo que la app no usa se deniega en bloque: el plugin monta por
 	// defecto endpoints de administración (roles, statements, permisos, teams)
 	// que solo exigen sesión, y por ahí un usuario cualquiera podría escalarse
-	// permisos en cualquier familia. Las invitaciones se aceptan con su token,
-	// así que `accept`/`decline`/`getByToken` no necesitan hook; en cambio su
-	// listado (emails de invitados) es cosa del admin.
+	// permisos en cualquier familia. `accept`/`decline` llevan el hook de
+	// sesión+email de la issue #61; `getByToken` queda sin hook porque la vista
+	// de invitación lee por su cuenta de Prisma (el token es la credencial de
+	// la invitación: ver `src/routes/invitations/[token]`).
 	endpoints: {
 		// `create` pide sesión y tope de familias por usuario (`MAX_FAMILIES_PER_USER`):
 		// crear la propia familia sí que está abierto al mundo con sesión.
@@ -542,6 +615,11 @@ export const tenancyConfig: TenancyConfig = {
 				requireNotAlreadyFamilyMember,
 				requireBelowFamilyMemberLimit
 			),
+			// Flujo de responder (#61): solo el invitado (email de la sesión)
+			// puede aceptar o rechazar; el plugin a su vez valida estado y
+			// caducidad, y `actions.onInvitationAccepted` da el alta real.
+			accept: requireInvitationForSessionEmail,
+			decline: requireInvitationForSessionEmail,
 			revoke: requireFamilyStatement('invitation:cancel', fromResolvedResource),
 			// Las invitaciones pendientes llevan emails de terceros: solo admin.
 			list: requireFamilyStatement('member:invite', fromQueryContext),
@@ -622,6 +700,91 @@ export const tenancyConfig: TenancyConfig = {
 		onInvitationCreated: async (event: InvitationCreatedEvent, ctx) => {
 			if (event.contextType !== 'organization') return;
 			await sendFamilyInvitationEmailFor(event, ctx);
+		},
+
+		// Aceptar una invitación (issue #61): el plugin SOLO marca la invitación
+		// como aceptada — el alta del miembro la hace este hook. Lanzar la
+		// deshace (el plugin devuelve la invitación a `pending`), así que no hay
+		// aceptaciones «a medias» sin pertenencia. El hook `invitation/accept`
+		// (`requireInvitationForSessionEmail`) ya garantizó que el email del
+		// invitado es el del usuario de la sesión.
+		onInvitationAccepted: async (event: InvitationAcceptedEvent, ctx) => {
+			if (event.contextType !== 'organization') return;
+			const adapter = ctx.context.adapter;
+
+			// El usuario de la sesión: una sesión implica fila en `user`, pero el
+			// lookup es por email (el identifier de la invitación) y mejor fallar
+			// de forma explícita — y reversible — si no apareciera. (El `ctx` de
+			// las acciones no lleva el tipo del adaptador: los casts son suyos.)
+			const email = event.identifier.trim().toLowerCase();
+			const user = (await adapter.findOne({
+				model: 'user',
+				where: [{ field: 'email', value: email }]
+			})) as { id: string } | null;
+			if (!user) {
+				throw new APIError('BAD_REQUEST', { message: `User not found: ${email}` });
+			}
+
+			// Ya miembro (doble envío, carrera): idempotente, no hay nada que dar
+			// de alta y lanzar aquí desharía una aceptación válida.
+			const existing = await adapter.findMany({
+				model: 'member',
+				where: [
+					{ field: 'contextType', value: 'organization' },
+					{ field: 'contextId', value: event.contextId },
+					{ field: 'userId', value: user.id }
+				]
+			});
+			if (existing.length > 0) return;
+
+			// Familia llena al aceptar: la invitación se envió con sitio libre,
+			// pero otras aceptaciones pudieron llenarla mientras tanto. Lanzar
+			// devuelve la invitación a `pending` (400 arriba, con este mensaje
+			// como contrato de `$lib/server/families.ts`).
+			const members = await adapter.findMany({
+				model: 'member',
+				where: [
+					{ field: 'contextType', value: 'organization' },
+					{ field: 'contextId', value: event.contextId }
+				]
+			});
+			if (members.length >= MAX_FAMILY_MEMBERS) {
+				throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
+			}
+
+			// Rol de entrada: el que lleva la invitación (siempre `member`, lo
+			// fija `inviteFamily`); si la invitación viniera sin rol, el rol
+			// básico de la familia. Sin ninguno de los dos, mejor fallar que
+			// entrar a alguien sin rol.
+			let roleId = event.roleId;
+			if (!roleId) {
+				const memberRoles = (await adapter.findMany({
+					model: 'role',
+					where: [
+						{ field: 'contextType', value: 'organization' },
+						{ field: 'contextId', value: event.contextId },
+						{ field: 'name', value: FAMILY_MEMBER_ROLE }
+					]
+				})) as { id: string }[];
+				roleId = memberRoles[0]?.id ?? null;
+			}
+			if (!roleId) {
+				throw new APIError('BAD_REQUEST', {
+					message: `Family member role not found: ${event.contextId}`
+				});
+			}
+
+			await adapter.create({
+				model: 'member',
+				data: {
+					contextType: 'organization',
+					contextId: event.contextId,
+					userId: user.id,
+					roleId,
+					createdAt: new Date(),
+					updatedAt: new Date()
+				}
+			});
 		}
 	}
 };

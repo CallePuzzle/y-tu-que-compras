@@ -71,6 +71,12 @@
 	"invitations_status_cancelled": "Cancelada",
 	"invitations_status_rejected": "Rechazada",
 	"invitations_status_expired": "Caducada",
+	"invitations_accept": "Aceptar invitación",
+	"invitations_reject": "Rechazar",
+	"invitations_not_yours": "Esta invitación está a nombre de otro email: entra con la cuenta a la que se envió el correo.",
+	"invitations_unavailable": "Esta invitación ya no está disponible.",
+	"invitations_error": "No se ha podido responder a la invitación. Inténtalo de nuevo.",
+	"login_invitation": "Tienes una invitación para este email ({email}): inicia sesión para aceptarla o rechazarla.",
 
 	"email_otp_subject": "{code} es tu código de acceso",
 	"email_otp_body": "Introduce este código para entrar en ¿Y tú qué compras?:\n\n{code}\n\nEl código caduca en unos minutos. Si no has sido tú, ignora este correo.",

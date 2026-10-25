@@ -2,7 +2,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
 	// Mismos estados que la invitación (los del modelo del plugin); `expired` lo
 	// calcula el load para no esperar al barrido del cron de cleanup.
@@ -51,8 +51,32 @@
 				</div>
 			</dl>
 
-			<!-- Aceptar/rechazar (issue #61) entra aquí: la vista muestra el estado,
-			     el flujo de login con `redirectTo` ya funciona sin sesión. -->
+			<!-- Respuesta a la invitación (issue #61): solo el invitado con sesión
+			     la ve activa; el load ya redirigió al login sin ella. -->
+			{#if data.viewer?.canRespond}
+				{#if form?.error}
+					<div class="alert alert-error text-sm" role="alert">{form.error}</div>
+				{/if}
+
+				<div class="flex flex-col gap-2 sm:flex-row">
+					<form method="POST" action="?/accept" class="flex-1">
+						<button class="btn btn-accent w-full" type="submit">
+							{m.invitations_accept()}
+						</button>
+					</form>
+					<form method="POST" action="?/reject" class="flex-1">
+						<button class="btn btn-error btn-outline w-full" type="submit">
+							{m.invitations_reject()}
+						</button>
+					</form>
+				</div>
+			{:else if data.viewer && data.invitation.status === 'pending'}
+				<!-- Con sesión pero ajena a la invitación (checklist #61): ni botones
+				     ni rastro del error, solo la explicación. -->
+				<div class="alert alert-warning text-sm" role="alert">
+					{m.invitations_not_yours()}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </section>

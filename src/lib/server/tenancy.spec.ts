@@ -11,6 +11,7 @@ import {
 	FAMILY_MEMBER_ROLE,
 	FAMILY_MEMBER_STATEMENTS,
 	FAMILY_MEMBERS_LIMIT_MESSAGE,
+	INVITATION_NOT_FOR_ACCOUNT_MESSAGE,
 	MAX_FAMILY_MEMBERS,
 	MAX_FAMILIES_PER_USER,
 	seedFamilyRoles,
@@ -436,12 +437,13 @@ describe('perímetro del plugin (surface real de endpoints)', () => {
 		['/tenancy/member/metadata/update', 'member:update (clave member.updateRole)'],
 		['/tenancy/member/check', 'self-scoped en el plugin (requireSelfOr)'],
 		['/tenancy/member/user/memberships', 'self-scoped en el plugin (requireSelfOr)'],
-		// invitation: token = credenciales de la invitación.
+		// invitation: token = credenciales de la invitación; responderla exige,
+		// además, sesión con el email del invitado (hook de la issue #61).
 		['/tenancy/invitation/create', 'member:invite'],
 		['/tenancy/invitation/cancel', 'invitation:cancel'],
 		['/tenancy/invitation/list', 'member:invite (llevan emails de terceros)'],
-		['/tenancy/invitation/accept', 'token de la invitación'],
-		['/tenancy/invitation/reject', 'token o código de la invitación'],
+		['/tenancy/invitation/accept', 'sesión + email del invitado (#61)'],
+		['/tenancy/invitation/reject', 'sesión + email del invitado (#61)'],
 		['/tenancy/invitation/by-token/:token', 'token de la invitación'],
 		['/tenancy/invitation/by-code/:code', 'código de la invitación'],
 		['/tenancy/invitation/by-identifier', 'self-scoped en el plugin (requireSelfOr)'],
@@ -822,5 +824,278 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 				sessionOf('admin-1')
 			)
 		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
+	});
+});
+
+describe('responder invitaciones: hooks de accept/decline (#61)', () => {
+	/** Sesión con email (lo que el match del hook necesita). */
+	function sessionWithEmail(email: string) {
+		return { user: { id: 'user-1', email } };
+	}
+
+	/** Adaptador que responde a la búsqueda de la invitación por token. */
+	function adapterWithInvitation(identifier: string | null) {
+		return {
+			async findOne({
+				model,
+				where
+			}: {
+				model: string;
+				where: { field: string; value: unknown }[];
+			}) {
+				if (model === 'invitation' && where.some(({ field }) => field === 'token')) {
+					return { identifier };
+				}
+				return null;
+			}
+		};
+	}
+
+	const body = { token: 'tok-1' };
+
+	// Accept y decline comparten hook: se prueba la pareja completa una vez y
+	// el match/403 sobre ambos.
+	it('el propio invitado (email de la sesión) puede aceptar y rechazar', async () => {
+		for (const key of ['accept', 'decline'] as const) {
+			await expect(
+				callHook(
+					tenancyConfig.endpoints?.invitation?.[key],
+					adapterWithInvitation('invitada@example.com'),
+					{ body },
+					sessionWithEmail('invitada@example.com')
+				)
+			).resolves.toBeUndefined();
+		}
+	});
+
+	it('el match del email no distingue mayúsculas', async () => {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.accept,
+				adapterWithInvitation('INVITADA@EXAMPLE.COM'),
+				{ body },
+				sessionWithEmail('invitada@example.com')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('otra cuenta no puede responder la invitación ajena (403)', async () => {
+		for (const key of ['accept', 'decline'] as const) {
+			await expect(
+				callHook(
+					tenancyConfig.endpoints?.invitation?.[key],
+					adapterWithInvitation('invitada@example.com'),
+					{ body },
+					sessionWithEmail('otra@example.com')
+				)
+			).rejects.toThrow(INVITATION_NOT_FOR_ACCOUNT_MESSAGE);
+		}
+	});
+
+	it('una invitación sin email no la puede responder nadie', async () => {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.accept,
+				adapterWithInvitation(null),
+				{ body },
+				sessionWithEmail('invitada@example.com')
+			)
+		).rejects.toThrow(INVITATION_NOT_FOR_ACCOUNT_MESSAGE);
+	});
+
+	it('sin sesión no se puede responder', async () => {
+		await expect(
+			callHook(tenancyConfig.endpoints?.invitation?.accept, adapterWithInvitation('x@y.z'), {
+				body
+			})
+		).rejects.toThrow('Authentication required');
+	});
+
+	it('una invitación inexistente no revela nada aquí (el plugin dará su 404)', async () => {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.accept,
+				{
+					async findOne() {
+						return null;
+					}
+				},
+				{ body },
+				sessionWithEmail('invitada@example.com')
+			)
+		).resolves.toBeUndefined();
+	});
+
+	it('sin token ni código en el body el hook no opina (el plugin dará 400)', async () => {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.accept,
+				adapterWithInvitation('invitada@example.com'),
+				{},
+				sessionWithEmail('otra@example.com')
+			)
+		).resolves.toBeUndefined();
+	});
+});
+
+describe('tenancyConfig.actions.onInvitationAccepted (alta real, #61)', () => {
+	type AcceptedEvent = Parameters<
+		NonNullable<NonNullable<typeof tenancyConfig.actions>['onInvitationAccepted']>
+	>[0];
+
+	function acceptedEventOf(overrides: Partial<AcceptedEvent> = {}): AcceptedEvent {
+		return {
+			invitationId: 'tok-1',
+			identifier: 'invitada@example.com',
+			contextType: 'organization',
+			contextId: 'fam-1',
+			roleId: 'role-member',
+			timestamp: new Date(),
+			...overrides
+		};
+	}
+
+	/**
+	 * Adaptador con usuarios por email, roles de la familia y pertenencias
+	 * existentes: justo lo que el alta consulta (y donde registra el member).
+	 */
+	function acceptAdapterMock(
+		options: {
+			users?: Record<string, string>;
+			roles?: { id: string; name: string }[];
+			members?: { userId: string }[];
+		} = {}
+	) {
+		const created: { model: string; data: Record<string, unknown> }[] = [];
+		return {
+			created,
+			async findOne({
+				model,
+				where
+			}: {
+				model: string;
+				where: { field: string; value: unknown }[];
+			}) {
+				if (model === 'user') {
+					const email = where.find(({ field }) => field === 'email')?.value;
+					const userId = options.users?.[email as string];
+					return userId ? { id: userId } : null;
+				}
+				return null;
+			},
+			async findMany({
+				model,
+				where
+			}: {
+				model: string;
+				where: { field: string; value: unknown }[];
+			}) {
+				if (model === 'member') {
+					// Con filtro de usuario, la búsqueda de «¿ya es miembro?»; sin
+					// él, el recuento de la familia.
+					const userId = where.find(({ field }) => field === 'userId')?.value;
+					if (userId) {
+						return (options.members ?? []).filter((member) => member.userId === userId);
+					}
+					return options.members ?? [];
+				}
+				if (model === 'role') {
+					return options.roles ?? [];
+				}
+				return [];
+			},
+			async create({ model, data }: { model: string; data: Record<string, unknown> }) {
+				const record = { id: `new-${created.length + 1}`, ...data };
+				created.push({ model, data: record });
+				return record;
+			}
+		};
+	}
+
+	it('da de alta al invitado como miembro con el rol de la invitación', async () => {
+		const adapter = acceptAdapterMock({ users: { 'invitada@example.com': 'user-9' } });
+
+		await tenancyConfig.actions?.onInvitationAccepted?.(acceptedEventOf(), ctxOf(adapter));
+
+		const members = adapter.created.filter(({ model }) => model === 'member');
+		expect(members).toHaveLength(1);
+		expect(members[0].data.userId).toBe('user-9');
+		expect(members[0].data.contextType).toBe('organization');
+		expect(members[0].data.contextId).toBe('fam-1');
+		expect(members[0].data.roleId).toBe('role-member');
+	});
+
+	it('los teams no dan de alta a nadie', async () => {
+		const adapter = acceptAdapterMock({ users: { 'invitada@example.com': 'user-9' } });
+
+		await tenancyConfig.actions?.onInvitationAccepted?.(
+			acceptedEventOf({ contextType: 'team' }),
+			ctxOf(adapter)
+		);
+		expect(adapter.created).toHaveLength(0);
+	});
+
+	it('si ya es miembro no duplica el alta (doble envío, carrera)', async () => {
+		const adapter = acceptAdapterMock({
+			users: { 'invitada@example.com': 'user-9' },
+			members: [{ userId: 'user-9' }]
+		});
+
+		await expect(
+			tenancyConfig.actions?.onInvitationAccepted?.(acceptedEventOf(), ctxOf(adapter))
+		).resolves.toBeUndefined();
+		expect(adapter.created).toHaveLength(0);
+	});
+
+	it('con la familia llena lanza (el plugin deshace la aceptación) y no da de alta', async () => {
+		const adapter = acceptAdapterMock({
+			users: { 'invitada@example.com': 'user-9' },
+			// Sin el usuario invitado entre los miembros: es el caso «la familia se
+			// llenó con otros» (ids desde 100 para no chocar con `user-9`).
+			members: Array.from({ length: MAX_FAMILY_MEMBERS }, (_, index) => ({
+				userId: `user-${index + 100}`
+			}))
+		});
+
+		await expect(
+			tenancyConfig.actions?.onInvitationAccepted?.(acceptedEventOf(), ctxOf(adapter))
+		).rejects.toThrow(FAMILY_MEMBERS_LIMIT_MESSAGE);
+		expect(adapter.created).toHaveLength(0);
+	});
+
+	it('sin cuenta para el email invitado lanza (no hay usuario que dar de alta)', async () => {
+		const adapter = acceptAdapterMock({});
+
+		await expect(
+			tenancyConfig.actions?.onInvitationAccepted?.(acceptedEventOf(), ctxOf(adapter))
+		).rejects.toThrow(/user not found/i);
+		expect(adapter.created).toHaveLength(0);
+	});
+
+	it('una invitación sin rol cae al rol `member` de la familia', async () => {
+		const adapter = acceptAdapterMock({
+			users: { 'invitada@example.com': 'user-9' },
+			roles: [{ id: 'role-member-seeded', name: FAMILY_MEMBER_ROLE }]
+		});
+
+		await tenancyConfig.actions?.onInvitationAccepted?.(
+			acceptedEventOf({ roleId: null }),
+			ctxOf(adapter)
+		);
+
+		const member = adapter.created.find(({ model }) => model === 'member');
+		expect(member?.data.roleId).toBe('role-member-seeded');
+	});
+
+	it('sin rol en la invitación ni en la familia lanza y no da de alta', async () => {
+		const adapter = acceptAdapterMock({ users: { 'invitada@example.com': 'user-9' } });
+
+		await expect(
+			tenancyConfig.actions?.onInvitationAccepted?.(
+				acceptedEventOf({ roleId: null }),
+				ctxOf(adapter)
+			)
+		).rejects.toThrow(/role not found/i);
+		expect(adapter.created).toHaveLength(0);
 	});
 });

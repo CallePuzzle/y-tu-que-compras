@@ -20,3 +20,18 @@ export function isInternalPath(value: string | null | undefined): value is strin
 export function sanitizeRedirectTo(value: string | null | undefined): string | undefined {
 	return isInternalPath(value) ? value : undefined;
 }
+
+/**
+ * El email al que pre-rellenar el formulario de login (`?email=`, issue #61).
+ *
+ * Viaja en la query de una URL pública, así que es entrada de usuario: solo se
+ * acepta si tiene forma de email (lo que el login pide de todos modos); lo que
+ * no, se ignora y el campo queda vacío. Nunca decide nada de seguridad: solo
+ * ahorra teclear la dirección a quien viene del enlace de invitación.
+ */
+export function sanitizeInvitedEmail(value: string | null | undefined): string | undefined {
+	if (!value) return undefined;
+	// Suficiente para el prefill (no para validar identidad): algo@algo.tld,
+	// sin espacios ni controles. La validación real la hace el schema del form.
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : undefined;
+}

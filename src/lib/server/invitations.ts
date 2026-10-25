@@ -9,9 +9,9 @@ import logger from './logger.js';
 
 /**
  * Ruta (en inglés, como todas las URLs) de la vista de una invitación por
- * token. El enlace del correo apunta aquí: el guard de sesión manda al
- * invitado sin sesión a `/login?redirectTo=...` y, tras autenticarse, vuelve a
- * esta página (aceptar/rechazar es la issue #61).
+ * token. El enlace del correo apunta aquí: sin sesión, la propia vista manda
+ * al login con el email prefijado (`?email=`) y vuelve tras autenticarse, donde
+ * se acepta o rechaza (issue #61).
  */
 export const INVITATION_PATHNAME = '/invitations';
 

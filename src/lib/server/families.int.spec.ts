@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { makeSignature } from 'better-auth/crypto';
 import { describe, expect, it } from 'vitest';
+import type { RequestEvent } from '@sveltejs/kit';
 
 // Test de INTEGRACIÓN (proyecto vitest `integration`): a diferencia de
 // `tenancy.spec.ts` (mock del adaptador), aquí corre el adaptador Prisma real
@@ -17,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 // ids/emails únicos: no hace falta limpiar ni coordinar ejecuciones.
 import { auth } from './auth.js';
 import { FAMILY_MEMBER_ROLE, MAX_FAMILIES_PER_USER } from './tenancy.js';
-import { familySlug } from './families.js';
+import { familySlug, inviteFamily } from './families.js';
 import { capturedEmailsForTests, clearCapturedEmailsForTests } from './sender.js';
 import prisma from './prisma.js';
 
@@ -214,7 +215,8 @@ describe('unicidad de pertenencia (constraint member)', () => {
 /**
  * Invitar por email (issue #60). El flujo completo por HTTP: el admin crea la
  * familia, invita y el correo sale con el token; los duplicados y los no-admin
- * se deniegan. El alta por invitación (aceptar/rechazar) es la issue #61.
+ * se deniegan. (El alta por invitación, en el describe «aceptar y rechazar»
+ * de abajo.)
  */
 describe('invitar por email (#60)', () => {
 	/** Crea familia y devuelve su id. */
@@ -323,7 +325,8 @@ describe('invitar por email (#60)', () => {
 		const admin = await sessionCookieFor('Admin Ajeno');
 		const familyId = await createFamily(admin.cookie, 'Familia Ajena');
 		const member = await sessionCookieFor('Miembro Sin Rol');
-		// Alta real del usuario de la sesión como miembro (el alta por invitación es la #61).
+		// Alta real del usuario de la sesión como miembro (la invitación directa
+		// se lo prohibiría y aquí interesa solo la pertenencia).
 		const memberRole = await prisma.role.findFirstOrThrow({
 			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
 		});
@@ -345,5 +348,153 @@ describe('invitar por email (#60)', () => {
 			`alguien-${randomUUID().slice(0, 8)}@example.com`
 		);
 		expect(response.status).toBe(403);
+	});
+});
+
+/**
+ * Aceptar o rechazar la invitación (issue #61), por la ruta completa del
+ * router HTTP: el hook `invitation/accept`/`decline` (sesión con el email del
+ * invitado), la validación de estado/caducidad del plugin y el alta real del
+ * miembro de `onInvitationAccepted`. Criterio de aceptación: al aceptar, el
+ * invitado es miembro y la familia sale en SU listado (el «selector»).
+ */
+describe('aceptar y rechazar invitación (#61)', () => {
+	/** Evento mínimo para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } })
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id. */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(
+			cookie,
+			`Familia Respuesta ${randomUUID().slice(0, 8)}`
+		);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Crea familia, invita al email y devuelve el token de la invitación. */
+	async function invitedToken(
+		admin: { cookie: string },
+		guestEmail: string
+	): Promise<{ familyId: string; token: string }> {
+		const familyId = await createFamilyFor(admin.cookie);
+
+		// La invitación va por la función de app (`inviteFamily`): es la que fija
+		// el rol `member` de entrada que la aceptación debe respetar.
+		await inviteFamily(eventOf(admin.cookie), { familyId, email: guestEmail });
+
+		const invitation = await prisma.invitation.findFirstOrThrow({
+			where: { identifier: guestEmail, contextId: familyId }
+		});
+		return { familyId, token: invitation.token };
+	}
+
+	async function acceptViaApi(cookie: string, token: string): Promise<Response> {
+		return auth.handler(
+			tenancyRequest('invitation/accept', cookie, { method: 'POST', body: { token } })
+		);
+	}
+
+	async function rejectViaApi(cookie: string, token: string): Promise<Response> {
+		return auth.handler(
+			tenancyRequest('invitation/reject', cookie, { method: 'POST', body: { token } })
+		);
+	}
+
+	it('al aceptar, el invitado es miembro y la familia sale en su listado', async () => {
+		const admin = await sessionCookieFor('Admin Anfitrión');
+		const guest = await sessionCookieFor('Invitada Que Acepta');
+		const { familyId, token } = await invitedToken(admin, guest.email);
+
+		const accepted = await acceptViaApi(guest.cookie, token);
+		expect(accepted.ok).toBe(true);
+
+		// La invitación queda aceptada y el alta existe, con el rol `member`.
+		const invitation = await prisma.invitation.findUniqueOrThrow({ where: { token } });
+		expect(invitation.status).toBe('accepted');
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		const membership = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: guest.userId }
+		});
+		expect(membership.roleId).toBe(memberRole.id);
+
+		// «La ve en su selector»: el listado del plugin (fuente de `/families`)
+		// incluye la familia para la invitada.
+		const list = await auth.handler(tenancyRequest('organization/list', guest.cookie));
+		expect(list.ok).toBe(true);
+		const { items } = (await list.json()) as { items: { id: string }[] };
+		expect(items.map((organization) => organization.id)).toContain(familyId);
+	});
+
+	it('otra cuenta no puede aceptar la invitación ajena (hook 403)', async () => {
+		const admin = await sessionCookieFor('Admin Celoso');
+		const guest = await sessionCookieFor('Invitada Legal');
+		const outsider = await sessionCookieFor('Cuenta Ajena');
+		const { token } = await invitedToken(admin, guest.email);
+
+		const stolen = await acceptViaApi(outsider.cookie, token);
+		expect(stolen.status).toBe(403);
+		expect(await stolen.text()).toContain('Invitation is not for this account');
+
+		// Nada cambió: ni alta ni estado.
+		const invitation = await prisma.invitation.findUniqueOrThrow({ where: { token } });
+		expect(invitation.status).toBe('pending');
+		expect(await prisma.member.findFirst({ where: { userId: outsider.userId } })).toBeNull();
+	});
+
+	it('una invitación ya aceptada no se puede aceptar dos veces', async () => {
+		const admin = await sessionCookieFor('Admin Doble');
+		const guest = await sessionCookieFor('Invitada Repetida');
+		const { familyId, token } = await invitedToken(admin, guest.email);
+
+		expect((await acceptViaApi(guest.cookie, token)).ok).toBe(true);
+		const second = await acceptViaApi(guest.cookie, token);
+		expect(second.status).toBe(400);
+
+		// Y el alta no se duplicó (constraint `member` + idempotencia del hook).
+		const memberships = await prisma.member.findMany({
+			where: { contextId: familyId, userId: guest.userId }
+		});
+		expect(memberships).toHaveLength(1);
+	});
+
+	it('una invitación caducada no se puede aceptar', async () => {
+		const admin = await sessionCookieFor('Admin Tardío');
+		const guest = await sessionCookieFor('Invitada Tardía');
+		const { token } = await invitedToken(admin, guest.email);
+
+		await prisma.invitation.update({
+			where: { token },
+			data: { expiresAt: new Date(Date.now() - 1000) }
+		});
+
+		const expired = await acceptViaApi(guest.cookie, token);
+		expect(expired.status).toBe(400);
+		expect(await expired.text()).toContain('expired');
+
+		const invitation = await prisma.invitation.findUniqueOrThrow({ where: { token } });
+		expect(invitation.status).toBe('pending');
+	});
+
+	it('rechazar marca la invitación y no da de alta a nadie', async () => {
+		const admin = await sessionCookieFor('Admin Rechazado');
+		const guest = await sessionCookieFor('Invitada Que Rechaza');
+		const { familyId, token } = await invitedToken(admin, guest.email);
+
+		const rejected = await rejectViaApi(guest.cookie, token);
+		expect(rejected.ok).toBe(true);
+
+		const invitation = await prisma.invitation.findUniqueOrThrow({ where: { token } });
+		expect(invitation.status).toBe('rejected');
+		expect(
+			await prisma.member.findFirst({ where: { contextId: familyId, userId: guest.userId } })
+		).toBeNull();
 	});
 });

@@ -71,6 +71,12 @@
 	"invitations_status_cancelled": "Cancelled",
 	"invitations_status_rejected": "Rejected",
 	"invitations_status_expired": "Expired",
+	"invitations_accept": "Accept invitation",
+	"invitations_reject": "Decline",
+	"invitations_not_yours": "This invitation is for a different email: sign in with the account the email was sent to.",
+	"invitations_unavailable": "This invitation is no longer available.",
+	"invitations_error": "The invitation could not be answered. Please try again.",
+	"login_invitation": "You have an invitation for this email ({email}): sign in to accept or decline it.",
 
 	"email_otp_subject": "{code} is your sign-in code",
 	"email_otp_body": "Enter this code to sign in to What are you buying?:\n\n{code}\n\nThe code expires in a few minutes. If this wasn't you, just ignore this email.",
