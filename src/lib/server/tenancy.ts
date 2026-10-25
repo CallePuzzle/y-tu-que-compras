@@ -1,5 +1,5 @@
 import type { AuthContext, GenericEndpointContext } from '@better-auth/core';
-import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
+import type { EntityCreatedEvent, InvitationCreatedEvent } from '@zytera/better-auth-tenancy';
 import type {
 	ContextType,
 	EndpointAuthContext,
@@ -10,6 +10,8 @@ import type {
 } from '@zytera/better-auth-tenancy/server';
 import { resolvePermission } from '@zytera/better-auth-tenancy/server';
 import { APIError, getSessionFromCtx } from 'better-auth/api';
+
+import { sendFamilyInvitationEmailFor } from './invitations.js';
 
 // El plugin de tenancy mapea la jerarquía de better-auth sobre el dominio de la
 // app: **familia = organization**. Los equipos (teams) no se usan de momento.
@@ -297,6 +299,49 @@ async function filterOrganizations<T extends { id: string }>(
 export const MAX_FAMILIES_PER_USER = 5;
 
 /**
+ * Máximo de miembros por familia. El plugin lo respeta al DAR de alta a un
+ * miembro (`limits.maxMembersPerOrganization`, que se aplica al aceptar una
+ * invitación), pero no al INVITAR, y una invitación ya cuesta un correo: se
+ * comprueba también aquí, para que el admin lo vea como error de formulario y
+ * no como un registro que fallará después (issue #60).
+ */
+export const MAX_FAMILY_MEMBERS = 20;
+
+/**
+ * Mensaje del 400 que lanza el endpoint `invitation/create` con la familia
+ * llena. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
+ * de formulario (`FamilyMemberLimitReachedError`); no cambiarlo sin ajustar allí.
+ */
+export const FAMILY_MEMBERS_LIMIT_MESSAGE = `Family members limit reached: max ${MAX_FAMILY_MEMBERS}.`;
+
+/** ¿Es este el error de familia llena que lanza el hook de invitar? */
+export function isFamilyMembersLimitReached(error: unknown): boolean {
+	return error instanceof APIError && error.message === FAMILY_MEMBERS_LIMIT_MESSAGE;
+}
+
+/** Mensaje del 400 para invitar a quien ya es miembro de la familia. */
+export const ALREADY_FAMILY_MEMBER_MESSAGE = 'Already a member of the family';
+
+/** ¿Es este el error de invitar a alguien que ya es miembro? */
+export function isAlreadyFamilyMember(error: unknown): boolean {
+	return error instanceof APIError && error.message === ALREADY_FAMILY_MEMBER_MESSAGE;
+}
+
+/**
+ * Prefijo del 400 que lanza el PROPIO plugin (`invitation/create`) al encontrar
+ * ya una invitación pendiente para el mismo email en la familia: el duplicado
+ * que la lista «validación de duplicados» de la issue #60 exige vigilar.
+ */
+export const FAMILY_INVITATION_PENDING_PREFIX = 'Pending invitation already exists';
+
+/** ¿Es este el error de invitación pendiente duplicada del plugin? */
+export function isFamilyInvitationPending(error: unknown): boolean {
+	return (
+		error instanceof APIError && (error.message ?? '').startsWith(FAMILY_INVITATION_PENDING_PREFIX)
+	);
+}
+
+/**
  * Mensaje del 403 que lanza el endpoint `organization/create` al superar el
  * tope. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
  * de formulario (`FamilyLimitReachedError`); no cambiarlo sin ajustar allí.
@@ -343,6 +388,100 @@ const requireBelowFamilyLimit: EndpointAuthHook = async ({ ctx, session }) => {
 };
 
 /**
+ * Combina hooks de autorización en uno: se ejecutan en orden y el primero que
+ * lanza corta (el plugin solo consulta UN hook por endpoint).
+ */
+function combineHooks(...hooks: EndpointAuthHook[]): EndpointAuthHook {
+	return async (context) => {
+		for (const hook of hooks) {
+			await hook(context);
+		}
+	};
+}
+
+/** Sesión del endpoint; los hooks del plugin la traen ya resuelta. */
+async function endpointSession(
+	ctx: GenericEndpointContext,
+	session: EndpointAuthContext['session']
+) {
+	// Mismo fallback que `requireFamilyStatement` y `requireBelowFamilyLimit`.
+	const current = session ?? (await getSessionFromCtx(ctx).catch(() => null));
+	if (!current?.user) {
+		throw new APIError('UNAUTHORIZED', {
+			message: 'Authentication required. Please provide valid credentials.'
+		});
+	}
+	return current;
+}
+
+/**
+ * El email del invitado, normalizado como better-auth guarda los correos
+ * (en minúsculas; el body del plugin no lo normaliza). `undefined` si no viene.
+ */
+function invitedEmail(ctx: GenericEndpointContext): string | undefined {
+	const identifier = ctx.body?.identifier;
+	return typeof identifier === 'string' && identifier ? identifier.trim().toLowerCase() : undefined;
+}
+
+/**
+ * Invitar a quien ya es miembro (400): el plugin solo evita invitaciones
+ * pendientes duplicadas, así que un miembro actual seguiría recibiendo (y
+ * pudiendo aceptar) invitaciones nuevas. Sin cuenta no puede ser miembro: se
+ * deja pasar sin comprobar, porque la invitación es justo lo que lo traerá.
+ */
+const requireNotAlreadyFamilyMember: EndpointAuthHook = async ({ ctx, session }) => {
+	await endpointSession(ctx, session);
+	const contextId = ctx.body?.contextId;
+	if (typeof contextId !== 'string' || !contextId) {
+		// Solo al PokeYolo de una petición hecha a mano: el statement del plugin
+		// (primero en el orden de `combineHooks`) ya deniega el body sin familia.
+		return;
+	}
+	const email = invitedEmail(ctx);
+	if (!email) return;
+
+	const user = await ctx.context.adapter.findOne({
+		model: 'user',
+		where: [{ field: 'email', value: email }]
+	});
+	if (!user) return;
+
+	const memberships = await ctx.context.adapter.findMany({
+		model: 'member',
+		where: [
+			{ field: 'userId', value: user.id },
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: contextId }
+		]
+	});
+	if (memberships.length > 0) {
+		throw new APIError('BAD_REQUEST', { message: ALREADY_FAMILY_MEMBER_MESSAGE });
+	}
+};
+
+/**
+ * Invitar con la familia llena (400): el plugin ya deniega el ALTA de miembros
+ * pasados el tope (`limits.maxMembersPerOrganization`), pero no la invitación;
+ * fallar aquí ahorra un correo imposible de usar.
+ */
+const requireBelowFamilyMemberLimit: EndpointAuthHook = async ({ ctx, session }) => {
+	await endpointSession(ctx, session);
+	const contextId = ctx.body?.contextId;
+	if (typeof contextId !== 'string' || !contextId) return;
+
+	const members = await ctx.context.adapter.findMany({
+		model: 'member',
+		where: [
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: contextId }
+		]
+	});
+	if (members.length >= MAX_FAMILY_MEMBERS) {
+		throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
+	}
+};
+
+/**
  * Configuración del plugin `tenancy` para `getBetterAuth` (`src/lib/server/
  * auth.ts`).
  *
@@ -357,6 +496,11 @@ export const tenancyConfig: TenancyConfig = {
 	// Accept-Language (las peticiones del navegador llevan la locale activa de
 	// Paraglide vía el cliente: ver `src/lib/auth-client.ts`).
 	i18n: { defaultLocale: 'es' },
+
+	// Un miembro no entra en una familia llena: lo comprueba el propio plugin
+	// al dar de alta (`member/add`, que es lo que ejecuta la aceptación de la
+	// issue #61). Al invitar lo replica `requireBelowFamilyMemberLimit`.
+	limits: { maxMembersPerOrganization: MAX_FAMILY_MEMBERS },
 
 	// Autorización por statements (issue #59): el plugin NO comprueba los
 	// statements por sí solo — los consulta a través de estos hooks. Cada
@@ -390,7 +534,14 @@ export const tenancyConfig: TenancyConfig = {
 			...denyEndpoints(['bulkAdd', 'bulkRemove', 'transfer'])
 		},
 		invitation: {
-			create: requireFamilyStatement('member:invite', fromBodyContext),
+			// Flujo de invitar (#60): primero el statement (403 a quien no
+			// administra la familia) y después las validaciones (400), con la
+			// más específica delante.
+			create: combineHooks(
+				requireFamilyStatement('member:invite', fromBodyContext),
+				requireNotAlreadyFamilyMember,
+				requireBelowFamilyMemberLimit
+			),
 			revoke: requireFamilyStatement('invitation:cancel', fromResolvedResource),
 			// Las invitaciones pendientes llevan emails de terceros: solo admin.
 			list: requireFamilyStatement('member:invite', fromQueryContext),
@@ -462,6 +613,15 @@ export const tenancyConfig: TenancyConfig = {
 					updatedAt: new Date()
 				}
 			});
+		},
+
+		// El email de invitación es parte del flujo de invitar (issue #60, con el
+		// proveedor de la #80): el plugin solo registra la invitación y el correo
+		// con su token sale de aquí. Lanzar deshace la invitación dentro del
+		// plugin, así que no queda nunca una invitación registrada sin correo.
+		onInvitationCreated: async (event: InvitationCreatedEvent, ctx) => {
+			if (event.contextType !== 'organization') return;
+			await sendFamilyInvitationEmailFor(event, ctx);
 		}
 	}
 };

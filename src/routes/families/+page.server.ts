@@ -2,19 +2,24 @@ import { fail } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { m } from '$lib/paraglide/messages.js';
-import { createFamilySchema } from '$lib/schemas/family.js';
+import { createFamilySchema, inviteFamilySchema } from '$lib/schemas/family.js';
 import {
 	FAMILIES_MAX,
+	FAMILY_MEMBERS_MAX,
+	AlreadyFamilyMemberError,
+	FamilyInvitationPendingError,
 	FamilyLimitReachedError,
+	FamilyMemberLimitReachedError,
 	createFamily,
 	familySlug,
+	inviteFamily,
 	listFamilies
 } from '$lib/server/families.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
 
-// El schema se construye EN REQUEST, nunca en scope de módulo (regla i18n de la
-// librería): los textos de Paraglide se resuelven con la locale de la petición.
+// Los schemas se construyen EN REQUEST, nunca en scope de módulo (regla i18n de
+// la librería): los textos de Paraglide se resuelven con la locale de la petición.
 function familyFormSchema() {
 	return createFamilySchema({
 		nameError: m.schema_families_name_error(),
@@ -23,11 +28,20 @@ function familyFormSchema() {
 	});
 }
 
-export const load: PageServerLoad = async (event) => {
-	const form = await superValidate(zod4(familyFormSchema()));
+function inviteFormSchema() {
+	return inviteFamilySchema({
+		emailError: m.schema_families_email_error(),
+		emailLabel: m.schema_families_email_label(),
+		emailPlaceholder: m.schema_families_email_placeholder()
+	});
+}
 
+export const load: PageServerLoad = async (event) => {
 	return {
-		form,
+		form: await superValidate(zod4(familyFormSchema())),
+		// `id` aparte para que superforms sepa a cuál de los dos formularios de
+		// la página pertenece cada respuesta de acción.
+		inviteForm: await superValidate(zod4(inviteFormSchema()), { id: 'invite' }),
 		families: await listFamilies(event)
 	};
 };
@@ -55,5 +69,49 @@ export const actions: Actions = {
 		}
 
 		return message(form, m.families_success());
+	},
+
+	// Invitar por email (issue #60). La familia viaja en la query de la acción:
+	// un solo formulario compartido por todas las filas y una familia por envío.
+	// El rol de entrada es siempre `member` (el checklist no contempla otros).
+	invite: async (event) => {
+		const inviteForm = await superValidate(event.request, zod4(inviteFormSchema()), {
+			id: 'invite'
+		});
+		if (!inviteForm.valid) {
+			return fail(400, { inviteForm });
+		}
+
+		const familyId = event.url.searchParams.get('familia');
+		if (!familyId) {
+			return message(inviteForm, m.families_invite_error(), { status: 400 });
+		}
+
+		const { email } = inviteForm.data;
+		try {
+			await inviteFamily(event, { familyId, email });
+		} catch (error) {
+			// Cada regla de la lista «validación de duplicados y límites» (#60)
+			// tiene su mensaje; lo genérico queda para el resto de fallos.
+			if (error instanceof AlreadyFamilyMemberError) {
+				return message(inviteForm, m.families_invite_member({ email: error.email }), {
+					status: 400
+				});
+			}
+			if (error instanceof FamilyInvitationPendingError) {
+				return message(inviteForm, m.families_invite_pending({ email: error.email }), {
+					status: 400
+				});
+			}
+			if (error instanceof FamilyMemberLimitReachedError) {
+				return message(inviteForm, m.families_invite_limit({ max: FAMILY_MEMBERS_MAX }), {
+					status: 400
+				});
+			}
+			logger.error({ err: error }, 'Error al enviar la invitación de familia');
+			return message(inviteForm, m.families_invite_error(), { status: 400 });
+		}
+
+		return message(inviteForm, m.families_invite_success({ email }));
 	}
 };

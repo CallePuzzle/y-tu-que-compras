@@ -16,20 +16,24 @@ import { describe, expect, it } from 'vitest';
 // migraciones aplicadas (postgres local o el service del CI). Cada test usa
 // ids/emails únicos: no hace falta limpiar ni coordinar ejecuciones.
 import { auth } from './auth.js';
-import { MAX_FAMILIES_PER_USER } from './tenancy.js';
+import { FAMILY_MEMBER_ROLE, MAX_FAMILIES_PER_USER } from './tenancy.js';
 import { familySlug } from './families.js';
+import { capturedEmailsForTests, clearCapturedEmailsForTests } from './sender.js';
 import prisma from './prisma.js';
 
 const BASE = 'http://localhost:4173/api/auth';
 
-/** Crea un usuario real y devuelve la cabecera Cookie de su sesión. */
-async function sessionCookieFor(name: string): Promise<string> {
+/** Crea un usuario real y devuelve su Cookie de sesión, id y email. */
+async function sessionCookieFor(
+	name: string
+): Promise<{ cookie: string; userId: string; email: string }> {
 	const userId = randomUUID();
+	const email = `${userId}@integration.test`;
 	await prisma.user.create({
 		data: {
 			id: userId,
 			name,
-			email: `${userId}@integration.test`,
+			email,
 			emailVerified: false,
 			createdAt: new Date(),
 			updatedAt: new Date()
@@ -57,7 +61,11 @@ async function sessionCookieFor(name: string): Promise<string> {
 	const signature = await makeSignature(token, String(context.secret));
 	// `useSecureCookies: !dev` y en vitest `dev` es true (`import.meta.env.DEV`):
 	// la cookie va sin el prefijo `__Secure-`.
-	return `better-auth.session_token=${encodeURIComponent(`${token}.${signature}`)}`;
+	return {
+		cookie: `better-auth.session_token=${encodeURIComponent(`${token}.${signature}`)}`,
+		userId,
+		email
+	};
 }
 
 function tenancyRequest(
@@ -83,7 +91,7 @@ async function createFamilyViaApi(cookie: string, name: string): Promise<Respons
 
 describe('seed de una familia (adaptador Prisma real)', () => {
 	it('crear una familia siembra roles, statements, traducciones y al admin', async () => {
-		const cookie = await sessionCookieFor('Creador');
+		const { cookie } = await sessionCookieFor('Creador');
 		const name = `Familia Integración ${randomUUID().slice(0, 8)}`;
 
 		const response = await createFamilyViaApi(cookie, name);
@@ -137,7 +145,7 @@ describe('seed de una familia (adaptador Prisma real)', () => {
 	});
 
 	it('el listado solo devuelve las familias del usuario de la sesión', async () => {
-		const cookie = await sessionCookieFor('Listador');
+		const { cookie } = await sessionCookieFor('Listador');
 		const name = `Familia Listado ${randomUUID().slice(0, 8)}`;
 
 		const created = await createFamilyViaApi(cookie, name);
@@ -152,7 +160,7 @@ describe('seed de una familia (adaptador Prisma real)', () => {
 
 describe('tope de familias por usuario (hook organization/create real)', () => {
 	it(`la ${MAX_FAMILIES_PER_USER + 1}ª familia del usuario se le deniega`, async () => {
-		const cookie = await sessionCookieFor('Topador');
+		const { cookie } = await sessionCookieFor('Topador');
 
 		for (let i = 0; i < MAX_FAMILIES_PER_USER; i++) {
 			const response = await createFamilyViaApi(
@@ -174,7 +182,7 @@ describe('tope de familias por usuario (hook organization/create real)', () => {
 
 describe('unicidad de pertenencia (constraint member)', () => {
 	it('el mismo usuario no puede pertenecer dos veces a la misma familia', async () => {
-		const cookie = await sessionCookieFor('Duplicado');
+		const { cookie } = await sessionCookieFor('Duplicado');
 		const name = `Familia Duplicada ${randomUUID().slice(0, 8)}`;
 
 		const created = await createFamilyViaApi(cookie, name);
@@ -200,5 +208,142 @@ describe('unicidad de pertenencia (constraint member)', () => {
 				}
 			})
 		).rejects.toThrow(/unique|duplicate/i);
+	});
+});
+
+/**
+ * Invitar por email (issue #60). El flujo completo por HTTP: el admin crea la
+ * familia, invita y el correo sale con el token; los duplicados y los no-admin
+ * se deniegan. El alta por invitación (aceptar/rechazar) es la issue #61.
+ */
+describe('invitar por email (#60)', () => {
+	/** Crea familia y devuelve su id. */
+	async function createFamily(cookie: string, prefix: string): Promise<string> {
+		const name = `${prefix} ${randomUUID().slice(0, 8)}`;
+		const created = await createFamilyViaApi(cookie, name);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Da de alta en la base a un miembro con rol `member` (el alta real es la #61). */
+	async function addMember(familyId: string): Promise<{ userId: string; email: string }> {
+		const userId = randomUUID();
+		const email = `miembro-${userId.slice(0, 8)}@example.com`;
+		await prisma.user.create({
+			data: {
+				id: userId,
+				name: 'Miembro',
+				email,
+				emailVerified: false,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId,
+				roleId: memberRole.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { userId, email };
+	}
+
+	async function inviteViaApi(cookie: string, familyId: string, email: string): Promise<Response> {
+		return auth.handler(
+			tenancyRequest('invitation/create', cookie, {
+				method: 'POST',
+				body: { identifier: email, contextType: 'organization', contextId: familyId }
+			})
+		);
+	}
+
+	it('el admin invita y sale el correo con el token, la familia y su nombre', async () => {
+		const { cookie } = await sessionCookieFor('Invitador');
+		const familyId = await createFamily(cookie, 'Familia Invitada');
+
+		clearCapturedEmailsForTests();
+		const email = `invitado-${randomUUID().slice(0, 8)}@example.com`;
+		const response = await inviteViaApi(cookie, familyId, email);
+		// El plugin responde 200 (no 201) a través del router HTTP de better-auth.
+		expect(response.ok).toBe(true);
+
+		// La invitación queda pendiente. El `roleId` de entrada lo añade la capa
+		// de app (`inviteFamily`, que no pasa por aquí): a este nivel el rol
+		// `member` de la familia existe porque el seed lo dejó sembrado.
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		expect(memberRole.name).toBe('member');
+		const invitation = await prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId }
+		});
+		expect(invitation.status).toBe('pending');
+
+		// Y el correo sale con el enlace del token (el hook `onInvitationCreated`).
+		const [captured] = capturedEmailsForTests();
+		expect(captured?.to).toBe(email);
+		expect(captured?.text).toContain(`/invitations/${invitation.token}`);
+		expect(captured?.text).toContain('Familia Invitada');
+		expect(captured?.subject).toContain('Invitador');
+	});
+
+	it('una segunda invitación pendiente para el mismo email se deniega', async () => {
+		const { cookie } = await sessionCookieFor('Duplicador');
+		const familyId = await createFamily(cookie, 'Familia Duplicada');
+		const email = `duplicado-${randomUUID().slice(0, 8)}@example.com`;
+
+		const first = await inviteViaApi(cookie, familyId, email);
+		expect(first.ok).toBe(true);
+
+		const second = await inviteViaApi(cookie, familyId, email);
+		expect(second.status).toBe(400);
+		expect(await second.text()).toContain('Pending invitation already exists');
+	});
+
+	it('invitar a quien ya es miembro se deniega aunque sea el admin', async () => {
+		const { cookie } = await sessionCookieFor('Reinvitador');
+		const familyId = await createFamily(cookie, 'Familia Reinvitada');
+		const { email } = await addMember(familyId);
+
+		const response = await inviteViaApi(cookie, familyId, email);
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain('Already a member of the family');
+	});
+
+	it('un miembro sin rol admin no puede invitar', async () => {
+		const admin = await sessionCookieFor('Admin Ajeno');
+		const familyId = await createFamily(admin.cookie, 'Familia Ajena');
+		const member = await sessionCookieFor('Miembro Sin Rol');
+		// Alta real del usuario de la sesión como miembro (el alta por invitación es la #61).
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: member.userId,
+				roleId: memberRole.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+
+		const response = await inviteViaApi(
+			member.cookie,
+			familyId,
+			`alguien-${randomUUID().slice(0, 8)}@example.com`
+		);
+		expect(response.status).toBe(403);
 	});
 });

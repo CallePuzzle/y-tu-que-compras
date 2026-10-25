@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { FormLoginOtp } from '@callepuzzle/svelte-ui/otp';
 	import { createLoginSchema } from '@callepuzzle/core/schema';
 	import { m } from '$lib/paraglide/messages.js';
@@ -14,9 +15,11 @@
 	const redirectTo = $derived(sanitizeRedirectTo(page.url.searchParams.get('redirectTo')));
 
 	// Destino tras el login: la página que pidió el usuario (o el inicio). El cast
-	// es el patrón de la librería: `resolve` espera los RouteId del proyecto y
-	// `redirectTo` es un pathname interno arbitrario.
-	const afterLoginHref = $derived(resolve((redirectTo ?? '/') as Parameters<typeof resolve>[0]));
+	// a `Pathname` hace creer a `resolve` que es una ruta del proyecto, cuando
+	// `redirectTo` es un pathname interno arbitrario. (El cast anterior vía
+	// `Parameters<typeof resolve>[0]` colapsaba a `never` en cuanto el proyecto
+	// estrenó su primera ruta con parámetro: /invitations/[token].)
+	const afterLoginHref = $derived(resolve((redirectTo ?? '/') as Pathname));
 
 	// La libreria no invalida ni navega: aqui repintamos la sesion (el layout
 	// la recibe del load) y volvemos a la página que pidió el usuario (o al inicio).

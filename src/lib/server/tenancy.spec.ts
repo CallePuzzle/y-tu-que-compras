@@ -1,18 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { GenericEndpointContext } from '@better-auth/core';
 import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
 import { tenancy } from '@zytera/better-auth-tenancy/server';
 import type { EndpointAuthHook } from '@zytera/better-auth-tenancy/server';
 
 import {
+	ALREADY_FAMILY_MEMBER_MESSAGE,
 	FAMILY_ADMIN_ROLE,
 	FAMILY_ADMIN_STATEMENTS,
 	FAMILY_MEMBER_ROLE,
 	FAMILY_MEMBER_STATEMENTS,
+	FAMILY_MEMBERS_LIMIT_MESSAGE,
+	MAX_FAMILY_MEMBERS,
 	MAX_FAMILIES_PER_USER,
 	seedFamilyRoles,
 	tenancyConfig
 } from './tenancy.js';
+import { capturedEmailsForTests, clearCapturedEmailsForTests } from './sender.js';
 
 /** `AuthContext['adapter']`, deducido del propio seed para el cast del mock. */
 type Adapter = Parameters<typeof seedFamilyRoles>[0];
@@ -594,5 +598,229 @@ describe('tenancyConfig.permissionFiltering.filterOrganizations', () => {
 describe('tenancyConfig.i18n', () => {
 	it('el español es la locale por defecto de los mensajes del plugin', () => {
 		expect(tenancyConfig.i18n?.defaultLocale).toBe('es');
+	});
+});
+
+describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)', () => {
+	/** Adaptador que resuelve la familia y el admin que invita. */
+	function adapterOfInvitation() {
+		return {
+			async findOne({ model }: { model: string; where: { field: string; value: unknown }[] }) {
+				if (model === 'organization') return { id: 'fam-1', name: 'Los Pérez' };
+				if (model === 'user') return { id: 'admin-1', name: 'Ana', email: 'ana@example.com' };
+				return null;
+			}
+		};
+	}
+
+	/** Endpoint context con el `request` real que lleva Accept-Language. */
+	function ctxOfRequest(adapter: unknown, locale: string): GenericEndpointContext {
+		return {
+			context: { adapter },
+			request: new Request('http://localhost/api/auth/tenancy/invitation/create', {
+				headers: { 'accept-language': locale }
+			})
+		} as unknown as GenericEndpointContext;
+	}
+
+	function invitationEvent(
+		identifier: string,
+		contextType: 'organization' | 'team' = 'organization'
+	) {
+		return {
+			invitationId: 'tok-1',
+			identifier,
+			contextType,
+			contextId: 'fam-1',
+			roleId: null,
+			invitedBy: 'admin-1',
+			token: 'tok-1',
+			expiresAt: new Date(),
+			timestamp: new Date()
+		};
+	}
+
+	afterEach(() => {
+		clearCapturedEmailsForTests();
+	});
+
+	it('envía el correo con el enlace del token, la familia y el invitador', async () => {
+		await tenancyConfig.actions?.onInvitationCreated?.(
+			invitationEvent('invitado@example.com'),
+			ctxOfRequest(adapterOfInvitation(), 'es')
+		);
+
+		expect(capturedEmailsForTests()).toHaveLength(1);
+		const email = capturedEmailsForTests()[0];
+		expect(email.to).toBe('invitado@example.com');
+		expect(email.text).toContain('/invitations/tok-1');
+		expect(email.text).toContain('Los Pérez');
+		expect(email.subject).toContain('Ana');
+	});
+
+	it('el idioma del correo sigue el Accept-Language de quien invita', async () => {
+		await tenancyConfig.actions?.onInvitationCreated?.(
+			invitationEvent('invitado@example.com'),
+			ctxOfRequest(adapterOfInvitation(), 'es')
+		);
+		await tenancyConfig.actions?.onInvitationCreated?.(
+			invitationEvent('invitado@example.com'),
+			ctxOfRequest(adapterOfInvitation(), 'en-GB,en;q=0.9')
+		);
+
+		const [es, en] = capturedEmailsForTests();
+		expect(es.subject).not.toBe(en.subject);
+	});
+
+	it('una invitación sin email no envía ningún correo', async () => {
+		await expect(
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent(''),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
+		).resolves.toBeUndefined();
+		expect(capturedEmailsForTests()).toHaveLength(0);
+	});
+
+	it('los teams no generan correo de familia', async () => {
+		await tenancyConfig.actions?.onInvitationCreated?.(
+			invitationEvent('invitado@example.com', 'team'),
+			ctxOfRequest(adapterOfInvitation(), 'es')
+		);
+		expect(capturedEmailsForTests()).toHaveLength(0);
+	});
+
+	it('sin familia (borrada entre medias) lanza y el plugin deshace la invitación', async () => {
+		const adapter = {
+			async findOne({ model }: { model: string }) {
+				return model === 'user' ? { id: 'admin-1', email: 'ana@example.com' } : null;
+			}
+		};
+
+		await expect(
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapter, 'es')
+			)
+		).rejects.toThrow(/not found/i);
+	});
+});
+
+describe('invitar: validación de duplicados y tope (#60)', () => {
+	const request = {
+		body: { identifier: 'invitado@example.com', contextType: 'organization', contextId: 'fam-1' }
+	};
+
+	/** Envoltorio que resuelve el usuario por email (el del mock base no lo hace). */
+	function adapterWithEmails(emails: Record<string, string>) {
+		const base = familyAdapterMock();
+		return {
+			findOne({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				// Solo el lookup por email es nuestro (el de id lo resuelve el base).
+				if (model === 'user' && where.some(({ field }) => field === 'email')) {
+					const email = where.find(({ field }) => field === 'email')?.value;
+					const userId = emails[email as string];
+					return userId ? { id: userId } : null;
+				}
+				return base.findOne({ model, where });
+			},
+			findMany({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				return base.findMany({ model, where });
+			}
+		};
+	}
+
+	/** Envoltorio con la familia llena (MAX_FAMILY_MEMBERS miembros). */
+	function adapterWithFullFamily() {
+		const base = familyAdapterMock();
+		return {
+			findOne({ model, where }: { model: string; where: { field: string; value: unknown }[] }) {
+				return base.findOne({ model, where });
+			},
+			async findMany({
+				model,
+				where
+			}: {
+				model: string;
+				where: { field: string; value: unknown }[];
+			}) {
+				// Solo el conteo de miembros es nuestro; el resto pasa tal cual (el
+				// `where` vacío rompería el lookup de statements del mock base).
+				if (model !== 'member') return base.findMany({ model, where });
+				// Los rellenos van DESPUÉS de las membresías reales: `resolvePermission`
+				// mira `members[0]` (el rol del admin) y el hook de tope cuenta todas.
+				const memberships = await base.findMany({ model, where });
+				return [
+					...memberships,
+					...Array.from({ length: MAX_FAMILY_MEMBERS }, (_, index) => ({
+						id: `relleno-${index}`,
+						userId: `user-${index}`,
+						contextType: 'organization',
+						contextId: 'fam-1'
+					}))
+				];
+			}
+		};
+	}
+
+	it('invitar a quien ya es miembro se deniega aunque sea admin', async () => {
+		const adapter = adapterWithEmails({ 'miembro@example.com': 'member-1' });
+		const pedido = {
+			body: {
+				identifier: 'miembro@example.com',
+				contextType: 'organization',
+				contextId: 'fam-1'
+			}
+		};
+
+		await expect(
+			callHook(tenancyConfig.endpoints?.invitation?.create, adapter, pedido, sessionOf('admin-1'))
+		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
+	});
+
+	it('un email sin cuenta no es miembro: se deja invitar', async () => {
+		const adapter = adapterWithEmails({});
+
+		await expect(
+			callHook(tenancyConfig.endpoints?.invitation?.create, adapter, request, sessionOf('admin-1'))
+		).resolves.toBeUndefined();
+	});
+
+	it('invitar con la familia llena se deniega antes de gastar el correo', async () => {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.create,
+				adapterWithFullFamily(),
+				request,
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow(FAMILY_MEMBERS_LIMIT_MESSAGE);
+	});
+
+	it('«ya es miembro» manda sobre «familia llena» (orden de las validaciones)', async () => {
+		const adapter = adapterWithEmails({ 'miembro@example.com': 'member-1' });
+		// La familia del mock base NO está llena, pero envolvemos el conteo con
+		// la llena para ver cuál de las dos reglas dispara primero.
+		const fullAdapter = adapterWithFullFamily();
+		const bothAdapter = {
+			findOne: adapter.findOne.bind(adapter),
+			findMany: fullAdapter.findMany.bind(fullAdapter)
+		};
+		const pedido = {
+			body: {
+				identifier: 'miembro@example.com',
+				contextType: 'organization',
+				contextId: 'fam-1'
+			}
+		};
+
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.create,
+				bothAdapter,
+				pedido,
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
 	});
 });

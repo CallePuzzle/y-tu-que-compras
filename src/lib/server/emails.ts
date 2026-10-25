@@ -23,6 +23,8 @@ export async function sendOtpEmail({ to, otp, locale }: OtpEmailParams): Promise
 export interface FamilyInvitationEmailParams {
 	to: string;
 	inviter: string;
+	/** Nombre de la familia a la que se invita: da contexto al invitado. */
+	family: string;
 	url: string;
 	/** Por defecto, el locale del request (o `es`). */
 	locale?: Locale;
@@ -31,12 +33,13 @@ export interface FamilyInvitationEmailParams {
 export async function sendFamilyInvitationEmail({
 	to,
 	inviter,
+	family,
 	url,
 	locale
 }: FamilyInvitationEmailParams): Promise<void> {
 	await sendEmail({
 		to,
-		subject: m.email_invite_subject({ inviter }, { locale }),
-		text: m.email_invite_body({ inviter, url }, { locale })
+		subject: m.email_invite_subject({ inviter, family }, { locale }),
+		text: m.email_invite_body({ inviter, family, url }, { locale })
 	});
 }
