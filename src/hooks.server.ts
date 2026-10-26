@@ -54,11 +54,13 @@ const handleUserTrace: Handle = ({ event, resolve }) => {
 	return resolve(event);
 };
 
-// Log estructurado por request (JSON en stdout → Runtime Logs de Vercel). Va
+// Log estructurado por request (JSON en stdout; lo recogen los logs del
+// contenedor en el clúster). Va
 // primero en la secuencia para que `event.locals.log` esté disponible en el
 // resto de handles (y en `handleError`).
 const handleLogging: Handle = async ({ event, resolve }) => {
-	// `x-vercel-id` es el id de correlación de Vercel; en local cae a un uuid.
+	// `x-vercel-id` es el id de correlación de Vercel (de donde viene la app);
+	// sin esa cabecera (k8s, local) cae a un uuid.
 	const requestId = event.request.headers.get('x-vercel-id') ?? randomUUID();
 	event.locals.log = logger.child({ requestId });
 

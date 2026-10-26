@@ -1,0 +1,161 @@
+name: Release
+
+# Merge a main: construye la imagen estable (linux/arm64, el clúster k0s es
+# aarch64), corta la release/tag en el commit y mueve deploy/pro/version.jsonnet
+# en main, de modo que ArgoCD (autoSync, plugin tanka-sops) despliegue en pro.
+# Fase 3 de la issue #30 de villajilguero-oci-services.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'deploy/**'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    # Runner ARM nativo: construye linux/arm64 sin QEMU (empaquetado con QEMU
+    # es un orden de magnitud más lento con bun/vite).
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          # El token no se queda en .git/config al alcance de dependencias y herramientas.
+          persist-credentials: false
+
+      - name: Compute next version
+        id: tag
+        run: |
+          git fetch --tags --quiet
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          latest=${latest:-v0.0.0}
+          bump() {
+            ver=${1#v}
+            rest=${ver#*.}
+            echo "v${ver%%.*}.${rest%%.*}.$(( ${rest#*.} + 1 ))"
+          }
+          next=$(bump "$latest")
+          # A merge that landed while this job queued may have taken the tag
+          # already: keep bumping until the tag is free on the remote.
+          while git ls-remote --tags origin "refs/tags/$next" | grep -q .; do
+            next=$(bump "$next")
+          done
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      # Cut the release (and its git tag) before building the image: the taken
+      # tag makes any retry compute a NEW version instead of overwriting the
+      # ghcr tag of an already-shipped version (the recompute loop only sees
+      # git tags, not ghcr). A failed build leaves an imageless release
+      # behind — harmless: the bump (and ArgoCD) only move after a push.
+      - name: Create release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          tag_name: ${{ steps.tag.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.tag.outputs.version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # El Dockerfile pide el token de GitHub Packages como secret de
+          # BuildKit (nunca en ARG/ENV ni en capas). GITHUB_TOKEN basta: los
+          # paquetes @callepuzzle/* tienen este repo añadido en "Manage Actions
+          # access" de su configuración.
+          secrets: |
+            npm_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ghcr.io can acknowledge the push before the tag is readable again
+      # (eventual consistency), and the registry API is case-sensitive while
+      # github.repository is not, so the repository path must be lowercased.
+      # Poll the manifest endpoint directly (instead of docker buildx
+      # imagetools) so the HTTP status is visible in the log. The bump job —
+      # and ArgoCD right after it — can then never point at a tag that
+      # doesn't exist yet, no matter how fast ArgoCD reconciles.
+      - name: Wait for image to be pullable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          repo=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          tag="${{ steps.tag.outputs.version }}"
+          accept='application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json'
+          for i in $(seq 1 36); do
+            tok=$(curl -sf -u "$ACTOR:$GH_TOKEN" "https://ghcr.io/token?scope=repository:${repo}:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $tok" -H "Accept: $accept" "https://ghcr.io/v2/${repo}/manifests/${tag}")
+            if [ "$code" = "200" ]; then
+              echo "Image ghcr.io/${repo}:${tag} is pullable"
+              exit 0
+            fi
+            echo "ghcr.io/${repo}:${tag} not visible yet (attempt $i/36, HTTP ${code}), retrying in 5s..."
+            sleep 5
+          done
+          echo "::error::Image ghcr.io/${repo}:${tag} still not pullable after 3 minutes"
+          exit 1
+
+  # Point pro at the new version: the commit lands on main and the autoSync'd
+  # ArgoCD Application (villajilguero-oci-services/jilguedev/app-of-apps) picks
+  # it up. [skip ci] so this push doesn't re-trigger the release workflow
+  # (paths-ignore on deploy/** is the second guard).
+  bump-pro:
+    needs: release
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          # Sin persist-credentials: false — git-auto-commit-push necesita el
+          # token en .git/config para hacer push del commit de versión.
+
+      - name: Write version.jsonnet
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          printf "{\n  version: '%s',\n}\n" "$VERSION" > deploy/pro/version.jsonnet
+
+      - name: Commit version.jsonnet
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5.2.0
+        with:
+          commit_message: 'chore(deploy): pro=${{ needs.release.outputs.version }} [skip ci]'
+          file_pattern: deploy/pro/version.jsonnet

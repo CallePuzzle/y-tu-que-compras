@@ -72,3 +72,48 @@ postgres antes). Un test suelto:
 - Imports dentro del código de servidor: alias **`$lib/*`** (el nativo de SvelteKit; eslint lo
   impone: `#lib/*` está prohibido). Imports relativos con extensión `.js`
   (`import { sendEmail } from './sender.js'`).
+
+## Despliegue (clúster k0s, fase 3 de la issue #30 de villajilguero-oci-services)
+
+- La app corre en el clúster k0s de `jilguedev` (instancia OCI aarch64) gestionado por Terraform en
+  `villajilguero-oci-services/jilguedev/`, con GitOps (Argo CD + plugin `tanka-sops`). Publica en
+  `https://ytqc.callepuzzle.com` (Cloudflare proxied → LB OCI passthrough → Traefik).
+- **Este es el entorno de PRODUCCIÓN de la app**: el clúster se llama «dev» porque acoge
+  aplicaciones desarrolladas por nosotros, no por su ciclo de vida. El entorno Tanka se llama
+  `pro` (en `deploy/pro/`) porque es lo que es: la Application de Argo CD del repo de infra
+  (`y-tu-que-compras-dev`, nombre heredado del entorno de infra) renderiza `deploy/` con
+  `ENVIRONMENT=pro`, así que el CMP tanka-sops ejecuta `tk show pro`.
+- **`deploy/`** es un proyecto Tanka (patrón `Zytera/auth/deploy`): `lib/app.libsonnet` genera
+  Deployment/Service/Ingress + Secrets + el Cluster CNPG `ytqc-db` (Postgres en el clúster, con
+  backups barman a OCI Object Storage) y el `ScheduledBackup` diario. El init container
+  `db-migrate` ejecuta `prisma migrate deploy` antes de arrancar el servidor. El entorno `pro/`
+  lleva `spec.json`, `main.jsonnet` (host público), `version.jsonnet` (tag de imagen) y
+  `secrets.enc` (SOPS/age, misma clave age que el repo de infra; ver `~/projects/age-key.txt`).
+- **Release**: push a `main` → `.github/workflows/release.yml` construye la imagen `linux/arm64`
+  en el runner `ubuntu-24.04-arm` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de
+  GitHub Packages entra como secret de BuildKit, no como ARG), corta la release/tag y commitea
+  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El workflow se salta
+  los cambios de `deploy/**` (`paths-ignore` + `[skip ci]`).
+- **Runtime**: la imagen es todo bun, como `Zytera/auth`: build con `oven/bun:1.4.4` (exporta
+  `ADAPTER=node`, que hace que `svelte.config.js` elija adapter-node) y runtime
+  `oven/bun:1.4.4-distroless` ejecutando `bun run /app/build/index.js` (el output de adapter-node
+  es JS puro y el cliente de Prisma va con el driver adapter, sin binario Rust; solo el CLI usa el
+  schema-engine de `@prisma/engines`, para cuyas libs el Dockerfile copia `libssl3`/`libcrypto`/
+  brotli/zstd de bookworm al runtime — la imagen distroless de bun es estática y sin ellas
+  `prisma migrate deploy` muere con un «Schema engine error» vacío). `bun install --production`
+  NO poda devDeps (bug de bun 1.4.x), así que el stage `prune` los quita con `bun remove`,
+  excluyendo `svelte` y `@sveltejs/kit`: quedan como imports externos del servidor y aunque están
+  en devDependencies son necesarios en runtime. `prisma` y `dotenv` están en `dependencies` (no
+  dev) porque la imagen runtime necesita el CLI de Prisma y `prisma.config.ts` importa dotenv. El
+  servidor fija `ORIGIN`/`BETTER_AUTH_URL` al host público (ver `deploy/lib/app.libsonnet`):
+  detrás del proxy no se usan `PROTOCOL_HEADER`/`HOST_HEADER`.
+- **Dos adapters, uno por build**: SvelteKit solo admite uno y se elige al compilar. Con
+  `ADAPTER=node` (lo exporta el Dockerfile) → `@sveltejs/adapter-node` (`build/`, el clúster k0s).
+  Sin esa variable → `@sveltejs/adapter-vercel` (`.vercel/output`), que es como sigue compilando
+  el despliegue de staging de Vercel, conectado a un origen GitLab propio: su proyecto no necesita
+  ningún cambio. `vite preview` (e2e) no usa el output del adapter, así que da igual el que toque.
+- Render local del deploy (mismo flujo que el CMP tanka-sops):
+  `cd deploy && jb install && sops -d --input-type json --output-type json --output pro/secrets.json pro/secrets.enc && tk show pro --dangerous-allow-redirect`
+  (con `SOPS_AGE_KEY_FILE` apuntando a la clave age; borrar `pro/secrets.json` al acabar).
+- Desarrollo local: nada de esto aplica — `bun run dev` + Postgres local (`DATABASE_URL` de
+  `.env.example`).

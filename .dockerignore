@@ -1,0 +1,25 @@
+# Contexto del Dockerfile: solo código fuente y config que consumen
+# `bun install` y `vite build`. Nunca copiar .env (token de GitHub Packages y
+# secretos locales): el NPM_TOKEN entra al build como secret de BuildKit.
+.git
+.env
+.env.*
+!.env.example
+node_modules
+build
+.output
+.svelte-kit
+src/lib/generated
+src/lib/paraglide
+project.inlang/cache
+test-results
+playwright-report
+.codegraph
+.playwright-mcp
+.vscode
+docs
+# Manifiestos GitOps y secretos (cifrados) del clúster: nada del contexto de
+# build los consume, y no deben colarse en ninguna capa.
+deploy
+Dockerfile
+.dockerignore
