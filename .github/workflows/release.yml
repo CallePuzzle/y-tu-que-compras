@@ -135,18 +135,24 @@ jobs:
   # ArgoCD Application (villajilguero-oci-services/jilguedev/app-of-apps) picks
   # it up. [skip ci] so this push doesn't re-trigger the release workflow
   # (paths-ignore on deploy/** is the second guard).
+  #
+  # El push va por SSH con la deploy key de escritura `bump-pro release (CI)`
+  # (secret BUMP_DEPLOY_KEY): el ruleset de main exige los checks de CI y el
+  # GITHUB_TOKEN no los tiene (el push del #v0.0.1 lo rechazó), mientras que
+  # la key es bypass actor de ese ruleset. git-auto-commit-action no vale
+  # aquí: pushea por HTTPS con el token del checkout.
   bump-pro:
     needs: release
     runs-on: ubuntu-24.04-arm
+    # El push ya no usa el GITHUB_TOKEN: solo lectura para el checkout.
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
-          # Sin persist-credentials: false — git-auto-commit-push necesita el
-          # token en .git/config para hacer push del commit de versión.
+          persist-credentials: false
 
       - name: Write version.jsonnet
         env:
@@ -154,8 +160,20 @@ jobs:
         run: |
           printf "{\n  version: '%s',\n}\n" "$VERSION" > deploy/pro/version.jsonnet
 
-      - name: Commit version.jsonnet
-        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5.2.0
-        with:
-          commit_message: 'chore(deploy): pro=${{ needs.release.outputs.version }} [skip ci]'
-          file_pattern: deploy/pro/version.jsonnet
+      - name: Commit and push version.jsonnet
+        env:
+          SSH_KEY: ${{ secrets.BUMP_DEPLOY_KEY }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Host key de github.com, publicada en
+          # https://docs.github.com/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+          printf 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n' > ~/.ssh/known_hosts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/pro/version.jsonnet
+          git commit -m "chore(deploy): pro=${VERSION} [skip ci]"
+          git remote set-url origin git@github.com:CallePuzzle/y-tu-que-compras.git
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes' git push origin HEAD:main
