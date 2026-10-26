@@ -119,11 +119,11 @@ y en la issue [#30](https://github.com/CallePuzzle/villajilguero-oci-services/is
 
 El release (`.github/workflows/release.yml`) se dispara al mergear a `main`: construye la imagen
 `linux/arm64` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`, con `NPM_TOKEN` como secret de
-BuildKit), corta la release con tag y commitea el nuevo tag en `deploy/dev/version.jsonnet`, lo
+BuildKit), corta la release con tag y commitea el nuevo tag en `deploy/pro/version.jsonnet`, lo
 que dispara el sync de Argo CD. Las migraciones las aplica el init container `db-migrate`
 (`prisma migrate deploy`) en cada despliegue; no hace falta ejecutarlas a mano.
 
-Secretos del despliegue: `deploy/dev/secrets.enc` (cifrado con SOPS, clave age del repo de
+Secretos del despliegue: `deploy/pro/secrets.enc` (cifrado con SOPS, clave age del repo de
 infra). Sin `SMTP_HOST`/`SMPT_*` la app arranca, pero el login OTP falla al enviar el correo.
 
 ## Seguridad

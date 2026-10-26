@@ -79,20 +79,20 @@ postgres antes). Un test suelto:
   `villajilguero-oci-services/jilguedev/`, con GitOps (Argo CD + plugin `tanka-sops`). Publica en
   `https://ytqc.callepuzzle.com` (Cloudflare proxied → LB OCI passthrough → Traefik).
 - **Este es el entorno de PRODUCCIÓN de la app**: el clúster se llama «dev» porque acoge
-  aplicaciones desarrolladas por nosotros, no por su ciclo de vida. El directorio Tanka se llama
-  `deploy/dev/` porque el nombre lo toma del entorno `dev` del repo de infra (la Application de
-  Argo CD es `y-tu-que-compras-dev` y el plugin `tanka-sops` renderiza ese entorno), no porque lo
-  sea la app.
+  aplicaciones desarrolladas por nosotros, no por su ciclo de vida. El entorno Tanka se llama
+  `pro` (en `deploy/pro/`) porque es lo que es: la Application de Argo CD del repo de infra
+  (`y-tu-que-compras-dev`, nombre heredado del entorno de infra) renderiza `deploy/` con
+  `ENVIRONMENT=pro`, así que el CMP tanka-sops ejecuta `tk show pro`.
 - **`deploy/`** es un proyecto Tanka (patrón `Zytera/auth/deploy`): `lib/app.libsonnet` genera
   Deployment/Service/Ingress + Secrets + el Cluster CNPG `ytqc-db` (Postgres en el clúster, con
   backups barman a OCI Object Storage) y el `ScheduledBackup` diario. El init container
-  `db-migrate` ejecuta `prisma migrate deploy` antes de arrancar el servidor. El entorno `dev/`
+  `db-migrate` ejecuta `prisma migrate deploy` antes de arrancar el servidor. El entorno `pro/`
   lleva `spec.json`, `main.jsonnet` (host público), `version.jsonnet` (tag de imagen) y
   `secrets.enc` (SOPS/age, misma clave age que el repo de infra; ver `~/projects/age-key.txt`).
 - **Release**: push a `main` → `.github/workflows/release.yml` construye la imagen `linux/arm64`
   en el runner `ubuntu-24.04-arm` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de
   GitHub Packages entra como secret de BuildKit, no como ARG), corta la release/tag y commitea
-  `deploy/dev/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El workflow se salta
+  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El workflow se salta
   los cambios de `deploy/**` (`paths-ignore` + `[skip ci]`).
 - **Runtime**: la imagen es todo bun, como `Zytera/auth`: build con `oven/bun:1.4.4` (exporta
   `ADAPTER=node`, que hace que `svelte.config.js` elija adapter-node) y runtime
@@ -113,7 +113,7 @@ postgres antes). Un test suelto:
   el despliegue de staging de Vercel, conectado a un origen GitLab propio: su proyecto no necesita
   ningún cambio. `vite preview` (e2e) no usa el output del adapter, así que da igual el que toque.
 - Render local del deploy (mismo flujo que el CMP tanka-sops):
-  `cd deploy && jb install && sops -d --input-type json --output-type json --output dev/secrets.json dev/secrets.enc && tk show dev --dangerous-allow-redirect`
-  (con `SOPS_AGE_KEY_FILE` apuntando a la clave age; borrar `dev/secrets.json` al acabar).
+  `cd deploy && jb install && sops -d --input-type json --output-type json --output pro/secrets.json pro/secrets.enc && tk show pro --dangerous-allow-redirect`
+  (con `SOPS_AGE_KEY_FILE` apuntando a la clave age; borrar `pro/secrets.json` al acabar).
 - Desarrollo local: nada de esto aplica — `bun run dev` + Postgres local (`DATABASE_URL` de
   `.env.example`).

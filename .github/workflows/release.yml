@@ -1,9 +1,9 @@
 name: Release
 
 # Merge a main: construye la imagen estable (linux/arm64, el clúster k0s es
-# aarch64), corta la release/tag en el commit y mueve deploy/dev/version.jsonnet
-# en main, de modo que ArgoCD (autoSync, plugin tanka-sops) despliegue en el
-# entorno dev. Fase 3 de la issue #30 de villajilguero-oci-services.
+# aarch64), corta la release/tag en el commit y mueve deploy/pro/version.jsonnet
+# en main, de modo que ArgoCD (autoSync, plugin tanka-sops) despliegue en pro.
+# Fase 3 de la issue #30 de villajilguero-oci-services.
 on:
   push:
     branches: [main]
@@ -131,11 +131,11 @@ jobs:
           echo "::error::Image ghcr.io/${repo}:${tag} still not pullable after 3 minutes"
           exit 1
 
-  # Point dev at the new version: the commit lands on main and the autoSync'd
+  # Point pro at the new version: the commit lands on main and the autoSync'd
   # ArgoCD Application (villajilguero-oci-services/jilguedev/app-of-apps) picks
   # it up. [skip ci] so this push doesn't re-trigger the release workflow
   # (paths-ignore on deploy/** is the second guard).
-  bump-dev:
+  bump-pro:
     needs: release
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -152,10 +152,10 @@ jobs:
         env:
           VERSION: ${{ needs.release.outputs.version }}
         run: |
-          printf "{\n  version: '%s',\n}\n" "$VERSION" > deploy/dev/version.jsonnet
+          printf "{\n  version: '%s',\n}\n" "$VERSION" > deploy/pro/version.jsonnet
 
       - name: Commit version.jsonnet
         uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5.2.0
         with:
-          commit_message: 'chore(deploy): dev=${{ needs.release.outputs.version }} [skip ci]'
-          file_pattern: deploy/dev/version.jsonnet
+          commit_message: 'chore(deploy): pro=${{ needs.release.outputs.version }} [skip ci]'
+          file_pattern: deploy/pro/version.jsonnet
