@@ -627,6 +627,22 @@ const requireNotLastFamilyAdminOnRoleChange: EndpointAuthHook = async (context) 
 };
 
 /**
+ * El plugin comparte esta clave de configuración (`member.updateRole`) entre
+ * DOS endpoints: `role/update` y `metadata/update` (`members.js` reutiliza el
+ * hook para los metadatos, y no hay clave propia que denegar). La app no usa
+ * metadatos de miembros, y dejarlos pasar haría que el guard del último admin
+ * interpretara el body sin `roleId` como «se queda sin rol»: tocar los
+ * metadatos del último admin fallaría con un 400 sin sentido. Como el esquema
+ * zod de `role/update` exige `roleId` (corta antes de llegar al hook), un body
+ * sin `roleId` solo puede ser la petición de metadatos: denegada.
+ */
+const denyMemberMetadataUpdate: EndpointAuthHook = async (context) => {
+	if (typeof context.ctx.body?.roleId !== 'string') {
+		await denyEndpoint(context);
+	}
+};
+
+/**
  * La invitación del body, resuelta por token o por código: la misma resolución
  * que hacen los endpoints `invitation/accept` y `invitation/decline` del
  * plugin, para que el hook evalúe siempre la invitación que aquellos van a usar.
@@ -731,7 +747,10 @@ export const tenancyConfig: TenancyConfig = {
 			// quita al último admin: debe promover a otro o borrar la familia.
 			remove: combineHooks(allowSelfRemoveOrAdmin, requireNotLastFamilyAdminOnRemove),
 			// Promover (#62): solo admin, y sin dejar a la familia sin admines.
+			// El guard de metadatos va primero: el plugin comparte esta clave con
+			// `member/metadata/update`, que la app no expone (ver `denyMemberMetadataUpdate`).
 			updateRole: combineHooks(
+				denyMemberMetadataUpdate,
 				requireFamilyStatement('member:update', fromResolvedResource),
 				requireNotLastFamilyAdminOnRoleChange
 			),

@@ -547,6 +547,30 @@ describe('promover: hook de member/role/update (#62)', () => {
 			)
 		).resolves.toBeUndefined();
 	});
+
+	it('metadata/update (body sin roleId) se deniega, aunque lo pida el último admin', async () => {
+		// El plugin comparte la clave `updateRole` con `member/metadata/update`,
+		// que llega aquí sin `roleId` (el esquema de `role/update` lo exige, así
+		// que sin roleId solo puede ser metadatos). Denegado ANTES del statement:
+		// el admin tiene `member:update` y aun así recibe el 403 de endpoint
+		// desactivado, y el guard del último admin ya no llega a interpretar el
+		// body sin rol como «se queda sin admin».
+		await expect(
+			callHook(
+				updateRole,
+				adapterWithAdmins(1),
+				{
+					body: { id: 'membership-1', metadata: { nota: 'cualquiera' } },
+					resource: {
+						contextType: 'organization',
+						contextId: 'fam-1',
+						data: { userId: 'admin-1', roleId: 'role-admin' }
+					}
+				},
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow('disabled');
+	});
 });
 
 describe('tenancyConfig.endpoints denegados (administración del plugin)', () => {
@@ -620,13 +644,14 @@ describe('perímetro del plugin (surface real de endpoints)', () => {
 		['/tenancy/organization/delete', 'organization:delete'],
 		['/tenancy/organization/list', 'filterOrganizations (pertenencia)'],
 		// member: la clave `list` guarda también el GET por id, y `updateRole`
-		// guarda el cambio de metadatos (así lo cablea el plugin).
+		// guarda el cambio de metadatos (así lo cablea el plugin): esa petición
+		// —sin `roleId` en el body— se deniega.
 		['/tenancy/member/list', 'organization:get'],
 		['/tenancy/member/:id', 'organization:get (clave member.list)'],
 		['/tenancy/member/add', 'member:invite'],
 		['/tenancy/member/remove', 'admin o el propio miembro; el último admin protegido (#62)'],
 		['/tenancy/member/role/update', 'member:update (promover; último admin protegido, #62)'],
-		['/tenancy/member/metadata/update', 'member:update (clave member.updateRole)'],
+		['/tenancy/member/metadata/update', 'denegado (clave member.updateRole compartida)'],
 		['/tenancy/member/check', 'self-scoped en el plugin (requireSelfOr)'],
 		['/tenancy/member/user/memberships', 'self-scoped en el plugin (requireSelfOr)'],
 		// invitation: token = credenciales de la invitación; responderla exige,

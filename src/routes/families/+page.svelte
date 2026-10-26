@@ -90,8 +90,15 @@
 			if (result.type === 'success') {
 				// La invitación ya está creada y el correo enviado (si el envío
 				// falla, el hook del plugin deshace la invitación y llega failure):
-				// aviso fuera del modal y el email a aire para la siguiente.
-				exito = m.families_invite_success({ email: $inviteData.email });
+				// aviso fuera del modal; el formulario queda a aire para la
+				// siguiente (superforms lo resetea al aplicar el resultado).
+				//
+				// El email del aviso viaja en el RESULTADO de la acción (`message()`
+				// lo deja en `form.message`) y no se lee de `$inviteData`: hasta
+				// después de `onResult` superforms no aplica el resultado ni
+				// resetea el formulario, y el aviso no debe depender de ese orden.
+				const data = result.data as { form?: { message?: string } } | undefined;
+				exito = data?.form?.message ?? m.families_invite_success({ email: $inviteData.email });
 				inviteModal?.close();
 			} else if (result.type === 'failure') {
 				exito = null;
