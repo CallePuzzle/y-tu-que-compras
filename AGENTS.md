@@ -92,7 +92,10 @@ postgres antes). Un test suelto:
 - **Release**: push a `main` → `.github/workflows/release.yml` construye la imagen `linux/arm64`
   en el runner `ubuntu-24.04-arm` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de
   GitHub Packages entra como secret de BuildKit, no como ARG), corta la release/tag y commitea
-  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El job `docker` de
+  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El push del bump va
+  por SSH con la deploy key de escritura `bump-pro release (CI)` (secret `BUMP_DEPLOY_KEY`): el
+  ruleset de `main` exige los checks de CI a los pushes humanos y la key es bypass actor
+  (el `GITHUB_TOKEN` del workflow no puede pushear — lo rechazó en la v0.0.1). El job `docker` de
   `ci.yml` construye la misma imagen (mismo runner ARM) en cada PR para que lo que construye la
   release no se estrene en main. El workflow se salta
   los cambios de `deploy/**` (`paths-ignore` + `[skip ci]`).
