@@ -120,3 +120,30 @@ jobs:
           echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
           tar xzf gitleaks.tar.gz gitleaks
           ./gitleaks git --redact --no-banner --exit-code 1 .
+
+  # Construye la imagen que publica release.yml (linux/arm64 en runner ARM
+  # nativo, mismas instrucciones del Dockerfile): sin esto, lo que la release
+  # construye solo se prueba al mergear a main — la primera release falló
+  # justo por un path de libs que solo existía en amd64. Build sin push.
+  docker:
+    name: build imagen linux/arm64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build (sin push)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          # Mismo mecanismo que release.yml: resuelve @callepuzzle/* de GitHub Packages.
+          secrets: |
+            npm_token=${{ secrets.GITHUB_TOKEN }}
+          # Lee la caché que escribe la release en main; este job no escribe.
+          cache-from: type=gha

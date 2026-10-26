@@ -81,7 +81,7 @@ postgres antes). Un test suelto:
 - **Este es el entorno de PRODUCCIÓN de la app**: el clúster se llama «dev» porque acoge
   aplicaciones desarrolladas por nosotros, no por su ciclo de vida. El entorno Tanka se llama
   `pro` (en `deploy/pro/`) porque es lo que es: la Application de Argo CD del repo de infra
-  (`y-tu-que-compras-dev`, nombre heredado del entorno de infra) renderiza `deploy/` con
+  (`y-tu-que-compras-pro`) renderiza `deploy/` con
   `ENVIRONMENT=pro`, así que el CMP tanka-sops ejecuta `tk show pro`.
 - **`deploy/`** es un proyecto Tanka (patrón `Zytera/auth/deploy`): `lib/app.libsonnet` genera
   Deployment/Service/Ingress + Secrets + el Cluster CNPG `ytqc-db` (Postgres en el clúster, con
@@ -92,7 +92,9 @@ postgres antes). Un test suelto:
 - **Release**: push a `main` → `.github/workflows/release.yml` construye la imagen `linux/arm64`
   en el runner `ubuntu-24.04-arm` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de
   GitHub Packages entra como secret de BuildKit, no como ARG), corta la release/tag y commitea
-  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El workflow se salta
+  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El job `docker` de
+  `ci.yml` construye la misma imagen (mismo runner ARM) en cada PR para que lo que construye la
+  release no se estrene en main. El workflow se salta
   los cambios de `deploy/**` (`paths-ignore` + `[skip ci]`).
 - **Runtime**: la imagen es todo bun, como `Zytera/auth`: build con `oven/bun:1.4.4` (exporta
   `ADAPTER=node`, que hace que `svelte.config.js` elija adapter-node) y runtime
