@@ -75,16 +75,20 @@ postgres antes). Un test suelto:
 
 ## Despliegue (clúster k0s, fase 3 de la issue #30 de villajilguero-oci-services)
 
-- La app corre en el clúster k0s dev (instancia OCI aarch64) gestionado por Terraform en
+- La app corre en el clúster k0s de `jilguedev` (instancia OCI aarch64) gestionado por Terraform en
   `villajilguero-oci-services/jilguedev/`, con GitOps (Argo CD + plugin `tanka-sops`). Publica en
   `https://ytqc.callepuzzle.com` (Cloudflare proxied → LB OCI passthrough → Traefik).
+- **Este es el entorno de PRODUCCIÓN de la app**: el clúster se llama «dev» porque acoge
+  aplicaciones desarrolladas por nosotros, no por su ciclo de vida. El directorio Tanka se llama
+  `deploy/dev/` porque el nombre lo toma del entorno `dev` del repo de infra (la Application de
+  Argo CD es `y-tu-que-compras-dev` y el plugin `tanka-sops` renderiza ese entorno), no porque lo
+  sea la app.
 - **`deploy/`** es un proyecto Tanka (patrón `Zytera/auth/deploy`): `lib/app.libsonnet` genera
   Deployment/Service/Ingress + Secrets + el Cluster CNPG `ytqc-db` (Postgres en el clúster, con
   backups barman a OCI Object Storage) y el `ScheduledBackup` diario. El init container
   `db-migrate` ejecuta `prisma migrate deploy` antes de arrancar el servidor. El entorno `dev/`
   lleva `spec.json`, `main.jsonnet` (host público), `version.jsonnet` (tag de imagen) y
-  `secrets.enc` (SOPS/age, misma clave age que el repo de infra; claves vacías pendientes:
-  `SMTP_HOST`/`SMPT_*` = credenciales OCI Email Delivery).
+  `secrets.enc` (SOPS/age, misma clave age que el repo de infra; ver `~/projects/age-key.txt`).
 - **Release**: push a `main` → `.github/workflows/release.yml` construye la imagen `linux/arm64`
   en el runner `ubuntu-24.04-arm` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de
   GitHub Packages entra como secret de BuildKit, no como ARG), corta la release/tag y commitea

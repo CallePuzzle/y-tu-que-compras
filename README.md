@@ -113,7 +113,8 @@ y los correos llegan sin caer en spam por políticas de autenticación.
 
 GitOps con Argo CD: el app-of-apps de `villajilguero-oci-services/jilguedev/app-of-apps/` apunta
 al directorio `deploy/` de este repo (proyecto Tanka) y sincroniza en el namespace
-`callepuzzle-dev` del clúster dev. Detalles de la arquitectura y de los secretos en el `AGENTS.md`
+`callepuzzle-dev` del clúster de `jilguedev` — que es la producción de la app, pese al nombre
+«dev» (ver `AGENTS.md`). Detalles de la arquitectura y de los secretos en el `AGENTS.md`
 y en la issue [#30](https://github.com/CallePuzzle/villajilguero-oci-services/issues/30).
 
 El release (`.github/workflows/release.yml`) se dispara al mergear a `main`: construye la imagen
