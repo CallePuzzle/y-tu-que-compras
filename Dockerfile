@@ -59,6 +59,19 @@ FROM debian:12-slim AS enginelibs
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libssl3 libbrotli1 \
     && rm -rf /var/lib/apt/lists/*
+# Se reúnen en /out porque el directorio multiarch depende de la arquitectura
+# del build: x86_64-linux-gnu en un build amd64 y aarch64-linux-gnu en el
+# runner arm64 de release (la primera release falló al copiar las rutas
+# x86_64 a pelo). /lib es symlink de /usr/lib (usrmerge), así que el glob
+# *-linux-* cubre ambas arquitecturas; `cp -L` aplana enlaces.
+RUN mkdir -p /out && \
+    cp -L /usr/lib/*-linux-*/libssl.so.3 \
+          /usr/lib/*-linux-*/libcrypto.so.3 \
+          /usr/lib/*-linux-*/libgcc_s.so.1 \
+          /usr/lib/*-linux-*/libz.so.1 \
+          /usr/lib/*-linux-*/libzstd.so.1 \
+          /usr/lib/*-linux-*/libbrotli*.so.1 \
+          /out/
 
 # Distroless: sin shell ni package manager. No vale `RUN` y `bun run <script>`
 # (scripts de package.json) falla con MissingShell; ejecutar archivos con
@@ -83,21 +96,11 @@ COPY package.json ./
 # /app/node_modules/@prisma/engines" si viene como root (en distroless no hay
 # RUN para chown).
 COPY --from=prune --chown=65532:65532 /app/node_modules ./node_modules
-# Libs para el schema-engine (ver stage enginelibs). libssl/libcrypto van en
-# las dos rutas: /usr/lib/x86_64-linux-gnu (la busca el loader y la detección
-# específica de Prisma) y /usr/lib plano (fallback de esa detección cuando no
-# hay `uname`, que en distroless es el caso; parsea "libssl.so.3" → flavor
-# debian-openssl-3.0.x). El resto, al multiarch que el loader mira por defecto.
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/libssl.so.3
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/libcrypto.so.3
-COPY --from=enginelibs /lib/x86_64-linux-gnu/libgcc_s.so.1 /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
-COPY --from=enginelibs /lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libz.so.1
-COPY --from=enginelibs /lib/x86_64-linux-gnu/libzstd.so.1 /usr/lib/x86_64-linux-gnu/libzstd.so.1
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libbrotlicommon.so.1 /usr/lib/x86_64-linux-gnu/libbrotlicommon.so.1
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libbrotlidec.so.1 /usr/lib/x86_64-linux-gnu/libbrotlidec.so.1
-COPY --from=enginelibs /usr/lib/x86_64-linux-gnu/libbrotlienc.so.1 /usr/lib/x86_64-linux-gnu/libbrotlienc.so.1
+# Libs para el schema-engine (ver stage enginelibs), a /usr/lib: el loader de
+# glibc lo trae entre sus rutas por defecto y la detección de flavor de
+# Prisma lo usa como fallback cuando no hay `uname` (en distroless es el
+# caso; parsea "libssl.so.3" → flavor debian-openssl-3.0.x).
+COPY --from=enginelibs /out/ /usr/lib/
 EXPOSE 8080/tcp
 USER nonroot
 ENTRYPOINT [ "bun", "run", "/app/build/index.js" ]
