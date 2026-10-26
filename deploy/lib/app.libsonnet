@@ -71,7 +71,10 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
        pullPolicy: $.values.pullPolicy,
      } }).this,
   ],
-  app: _app {
+  // La app completa (workload + service + ingress), en un local de objeto para
+  // poder referenciar desde el campo `app` los objetos que genera la lib
+  // (un `super` dentro de arrays/objetos anidados no resuelve).
+  local app = _app {
     values+:: container_values {
       containersInit: initContainer,
       requestCpu: '50m',
@@ -104,6 +107,33 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
       },
       ingress+: {
         metadata+: { annotations+: { 'argocd.argoproj.io/sync-wave': '50' } },
+      },
+    },
+  },
+  app: app {
+    app+: {
+      service+: {
+        // La lib nombra el puerto `<app>-<portName>` («y-tu-que-compras-http»,
+        // 21 caracteres), pero un nombre de puerto debe caber en IANA_SVC_NAME
+        // (máx. 15): el Service llega a crearse, pero el API server rechaza el
+        // Ingress que lo referencia. Acortarlo a `http` y alinear con él el
+        // backend del Ingress (abajo).
+        spec+: { ports: [p { name: 'http' } for p in app.app.service.spec.ports] },
+      },
+      ingress+: {
+        spec+: {
+          rules: [
+            r {
+              http+: {
+                paths: [
+                  pa { backend+: { service+: { port+: { name: 'http' } } } }
+                  for pa in r.http.paths
+                ],
+              },
+            }
+            for r in app.app.ingress.spec.rules
+          ],
+        },
       },
     },
   },
