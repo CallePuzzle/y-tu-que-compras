@@ -1,4 +1,5 @@
-import adapter from '@sveltejs/adapter-vercel';
+import adapterNode from '@sveltejs/adapter-node';
+import adapterVercel from '@sveltejs/adapter-vercel';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -6,10 +7,18 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		// Despliegue en Vercel (funciones serverless Node). El runtime va explícito: sin él,
-		// el adapter lo deduce de la versión de Node que hace el build y falla con las que
-		// Vercel no soporta. Mantenerlo alineado con `.tool-versions` y `engines.node`.
-		adapter: adapter({ runtime: 'nodejs24.x' }),
+		// Dos adapters, uno por build (SvelteKit solo admite uno y se elige al
+		// compilar): el build del Dockerfile exporta ADAPTER=node y genera
+		// `build/`, el servidor autocontenido de adapter-node que corre en el
+		// clúster k0s sobre bun (fase 3 de la issue #30 de
+		// villajilguero-oci-services; las 5.x de adapter-node son la línea
+		// compatible con kit 2, la 6 exige kit 3). Sin ADAPTER (build de Vercel,
+		// que entra por su origen GitLab propio; y `bun run build` local) se usa
+		// adapter-vercel, igual que hasta ahora: el proyecto de Vercel no
+		// necesita ningún cambio. El origen público (tras Cloudflare → Traefik)
+		// lo fija `ORIGIN` en runtime, no aquí: ver deploy/ y el Dockerfile.
+		adapter:
+			process.env.ADAPTER === 'node' ? adapterNode() : adapterVercel({ runtime: 'nodejs24.x' }),
 
 		// CSP con nonces/hashes generados por SvelteKit para sus scripts inline.
 		// `style-src 'unsafe-inline'`: las transiciones de Svelte y los `style=` de los

@@ -10,3 +10,10 @@ bun.lockb
 
 # Paraglide / inlang (postinstall regenera project.inlang; solo settings.json se versiona)
 project.inlang/
+
+# Tanka: dependencias vendidas (jb install) y ficheros jsonnet sin parser en prettier
+deploy/vendor/
+deploy/lib/
+deploy/pro/main.jsonnet
+deploy/pro/version.jsonnet
+deploy/jsonnetfile.lock.json

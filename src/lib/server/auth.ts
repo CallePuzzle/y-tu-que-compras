@@ -61,9 +61,13 @@ function createAuth() {
 		],
 
 		advanced: {
-			// Vercel sobrescribe `x-real-ip` con la IP real del cliente; `x-forwarded-for`
-			// (la cabecera por defecto) la puede falsear el cliente en otros entornos.
-			ipAddress: { ipAddressHeaders: ['x-real-ip'] },
+			// IP real del cliente para el rate limit: detrás del proxy público la
+			// fija Cloudflare en `cf-connecting-ip` (siempre presente y
+			// sobrescrito por CF; Traefik la reenvía intacta). `x-real-ip` era la
+			// cabecera de Vercel, de donde viene la app, y queda como segundo
+			// candidato. Si no hay ninguna (local: rate limit desactivado),
+			// better-auth no ve IP y solo aplican las reglas por email.
+			ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-real-ip'] },
 			// No depender del protocolo de BETTER_AUTH_URL: un `http://` mal puesto en
 			// producción emitiría las cookies de sesión sin `Secure`.
 			useSecureCookies: !dev

@@ -1,0 +1,7 @@
+# Vendored (jb install) y dependencias descargadas
+/vendor
+/lib/github.com
+
+# Secretos en claro: los entrega el CMP tanka-sops descifrando
+# <entorno>/secrets.enc (SOPS). El .enc cifrado SÍ se versiona.
+secrets.json
