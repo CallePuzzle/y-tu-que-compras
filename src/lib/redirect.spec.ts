@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isInternalPath, sanitizeRedirectTo } from './redirect.js';
+import { isInternalPath, sanitizeInvitedEmail, sanitizeRedirectTo } from './redirect.js';
 
 describe('isInternalPath', () => {
 	it('acepta rutas relativas al origen, con o sin query', () => {
@@ -33,5 +33,23 @@ describe('sanitizeRedirectTo', () => {
 	it('devuelve undefined si no lo es, para caer al destino por defecto', () => {
 		expect(sanitizeRedirectTo('//malicioso.example')).toBeUndefined();
 		expect(sanitizeRedirectTo(null)).toBeUndefined();
+	});
+});
+
+describe('sanitizeInvitedEmail', () => {
+	it('devuelve el email del enlace de invitación si tiene forma de email', () => {
+		expect(sanitizeInvitedEmail('invitada@example.com')).toBe('invitada@example.com');
+		// Suficiente para un prefill: no se pretende validar identidad.
+		expect(sanitizeInvitedEmail('a@b.c')).toBe('a@b.c');
+	});
+
+	it('ignora lo vacío y lo que no sea un email', () => {
+		expect(sanitizeInvitedEmail(undefined)).toBeUndefined();
+		expect(sanitizeInvitedEmail(null)).toBeUndefined();
+		expect(sanitizeInvitedEmail('')).toBeUndefined();
+		expect(sanitizeInvitedEmail('javascript:alert(1)')).toBeUndefined();
+		expect(sanitizeInvitedEmail('no-es-un-email')).toBeUndefined();
+		// Con espacios no hay email que valga (y un `Location` limpio no los lleva).
+		expect(sanitizeInvitedEmail(' con espacios@example.com')).toBeUndefined();
 	});
 });

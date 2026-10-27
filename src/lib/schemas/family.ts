@@ -37,3 +37,35 @@ export type CreateFamilySchema = ReturnType<typeof createFamilySchema>;
 
 /** Los datos validados por el schema. */
 export type CreateFamilyData = z.infer<CreateFamilySchema>;
+
+/** Textos inyectables del schema de invitar a una familia. Defaults: ninguno. */
+export type InviteFamilySchemaStrings = {
+	emailError?: string;
+	emailLabel?: string;
+	emailPlaceholder?: string;
+};
+
+/**
+ * Factoría del schema de invitar por email: misma regla i18n que el de crear
+ * (textos inyectables, nunca compilados en scope de módulo).
+ *
+ * Solo pide el email: el rol de entrada es siempre `member` (issue #60) y la
+ * familia va en la query de la acción, no en el formulario.
+ *
+ * `emailLabel` y `emailPlaceholder` viajan en `.meta()`: `zodToFieldsJsonSchema`
+ * los vuelca al `Field` (con `format: 'email'` → `<input type="email">`) y
+ * `FormFields` los pinta.
+ */
+export function inviteFamilySchema(strings?: InviteFamilySchemaStrings) {
+	return z.object({
+		email: z
+			.email(strings?.emailError)
+			.meta({ description: strings?.emailLabel, placeholder: strings?.emailPlaceholder })
+	});
+}
+
+/** El schema de invitar (para los adaptadores de superforms). */
+export type InviteFamilySchema = ReturnType<typeof inviteFamilySchema>;
+
+/** Los datos validados por el schema de invitar. */
+export type InviteFamilyData = z.infer<InviteFamilySchema>;

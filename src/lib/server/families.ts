@@ -1,13 +1,29 @@
 import { randomUUID } from 'node:crypto';
 import type { RequestEvent } from '@sveltejs/kit';
+import type { InvitationStatus } from '@zytera/better-auth-tenancy';
+import { APIError } from 'better-auth/api';
 
 import { auth } from '$lib/server/auth.js';
-import { MAX_FAMILIES_PER_USER, isFamilyLimitReached } from '$lib/server/tenancy.js';
+import prisma from '$lib/server/prisma.js';
+import {
+	FAMILY_ADMIN_ROLE,
+	FAMILY_MEMBER_ROLE,
+	MAX_FAMILIES_PER_USER,
+	MAX_FAMILY_MEMBERS,
+	isAlreadyFamilyMember,
+	isFamilyInvitationPending,
+	isFamilyLimitReached,
+	isFamilyMembersLimitReached,
+	isInvitationNotForAccount,
+	isLastFamilyAdmin
+} from '$lib/server/tenancy.js';
 
 /** Familia con los campos que la UI necesita (el plugin devuelve más). */
 export interface Family {
 	id: string;
 	name: string;
+	/** ¿Puede el usuario de la sesión invitar en esta familia? (solo admin, #60). */
+	canInvite: boolean;
 }
 
 /** El usuario ya pertenece a `FAMILIES_MAX` familias: no puede crear otra. */
@@ -20,6 +36,77 @@ export class FamilyLimitReachedError extends Error {
 
 /** Tope de familias por usuario, para los mensajes de la UI. */
 export const FAMILIES_MAX = MAX_FAMILIES_PER_USER;
+
+/** La familia ya tiene `FAMILY_MEMBERS_MAX` miembros: no caben más invitados. */
+export class FamilyMemberLimitReachedError extends Error {
+	constructor() {
+		super(`Max ${MAX_FAMILY_MEMBERS} members per family`);
+		this.name = 'FamilyMemberLimitReachedError';
+	}
+}
+
+/** Tope de miembros por familia, para los mensajes de la UI. */
+export const FAMILY_MEMBERS_MAX = MAX_FAMILY_MEMBERS;
+
+/** Ya se invitó a este email y la invitación sigue pendiente de respuesta. */
+export class FamilyInvitationPendingError extends Error {
+	constructor(public readonly email: string) {
+		super(`Pending invitation for ${email}`);
+		this.name = 'FamilyInvitationPendingError';
+	}
+}
+
+/** El email invitado ya pertenece a la familia (no se puede invitar dos veces). */
+export class AlreadyFamilyMemberError extends Error {
+	constructor(public readonly email: string) {
+		super(`Already a member: ${email}`);
+		this.name = 'AlreadyFamilyMemberError';
+	}
+}
+
+/**
+ * La invitación ya no puede responderse: usada, cancelada, caducada o
+ * directamente inexistente (checklist #61 «invitación expirada o ya usada»).
+ * Cubre los 400/404 del plugin al aceptar o rechazar.
+ */
+export class FamilyInvitationUnavailableError extends Error {
+	constructor() {
+		super('Family invitation is no longer available');
+		this.name = 'FamilyInvitationUnavailableError';
+	}
+}
+
+/** La sesión con la que se intenta responder no es la del email invitado. */
+export class FamilyInvitationNotForAccountError extends Error {
+	constructor(public readonly email: string) {
+		super(`Invitation is not for this account: ${email}`);
+		this.name = 'FamilyInvitationNotForAccountError';
+	}
+}
+
+/** El miembro es el último admin: no puede salir ni ser expulsado (issue #62). */
+export class FamilyLastAdminError extends Error {
+	constructor() {
+		super('Cannot remove the last admin of the family');
+		this.name = 'FamilyLastAdminError';
+	}
+}
+
+/** El miembro apuntado ya no está (lo expulsaron antes, carrera con la UI). */
+export class FamilyMemberGoneError extends Error {
+	constructor() {
+		super('Family member no longer exists');
+		this.name = 'FamilyMemberGoneError';
+	}
+}
+
+/** La familia ya no existe (la borraron antes desde otro dispositivo, p. ej.). */
+export class FamilyGoneError extends Error {
+	constructor() {
+		super('Family no longer exists');
+		this.name = 'FamilyGoneError';
+	}
+}
 
 /**
  * Las familias del usuario, vía el endpoint del plugin: su hook de filtrado
@@ -38,7 +125,23 @@ export async function listFamilies(event: RequestEvent): Promise<Family[]> {
 		headers: event.request.headers,
 		query: {}
 	});
-	return items.map(({ id, name }) => ({ id, name }));
+
+	// Quién puede invitar en cada familia (#60): solo el admin, y lo dice su
+	// membresía con rol admin. Los ids de familias administradas vienen de una
+	// única consulta con el join member→role; el resto son solo miembros.
+	const user = event.locals.user;
+	if (!user) return [];
+	const adminMemberships = await prisma.member.findMany({
+		where: {
+			userId: user.id,
+			contextType: 'organization',
+			role: { name: FAMILY_ADMIN_ROLE }
+		},
+		select: { contextId: true }
+	});
+	const adminFamilyIds = new Set(adminMemberships.map((membership) => membership.contextId));
+
+	return items.map(({ id, name }) => ({ id, name, canInvite: adminFamilyIds.has(id) }));
 }
 
 /**
@@ -68,6 +171,356 @@ export async function createFamily(
 		if (isFamilyLimitReached(error)) {
 			throw new FamilyLimitReachedError();
 		}
+		throw error;
+	}
+}
+
+/**
+ * Invita por email a la familia (issue #60): crea la invitación vía el plugin
+ * con el rol básico (`member`), y su hook `invitation/create` envía el correo
+ * con el token (ver `$lib/server/tenancy.ts` y `invitations.ts`).
+ *
+ * Si falla el envío, el propio plugin deshace la invitación y el error sube
+ * hasta aquí: no quedan invitaciones registradas sin correo enviado.
+ *
+ * Las validaciones de duplicados y tope (checklist #60) viven en los hooks de
+ * `tenancy.ts` — miembro existente y familia llena— y en el propio plugin
+ * —invitación pendiente duplicada—; aquí solo se traducen a errores tipados
+ * para que la acción del formulario dé a cada uno su mensaje concreto.
+ */
+export async function inviteFamily(
+	event: RequestEvent,
+	{ familyId, email }: { familyId: string; email: string }
+): Promise<void> {
+	// El email se normaliza aquí, además de en el hook del plugin: mejor una
+	// invitación guardada ya minúscula que depender del body del formulario.
+	const identifier = email.trim().toLowerCase();
+	try {
+		// Rol `member` de la familia (lo siembra `onEntityCreated` con cada
+		// familia): la invitación nace ya con el rol de entrada de la #60. Si no
+		// existiera (familia a medio sembrar), `roleId: undefined` hace que el
+		// plugin la guarde sin rol y la aceptación fallará de forma visible.
+		const memberRole = await prisma.role.findFirst({
+			where: {
+				contextType: 'organization',
+				contextId: familyId,
+				name: FAMILY_MEMBER_ROLE
+			},
+			select: { id: true }
+		});
+
+		await auth.api.createInvitation({
+			body: {
+				identifier,
+				contextType: 'organization',
+				contextId: familyId,
+				roleId: memberRole?.id,
+				// `metadata: undefined` es solo tipado, igual que en `createFamily`:
+				// el tipo de entrada del plugin (3.2.2) lo declara requerido aunque
+				// el zod del endpoint lo tenga opcional (ver
+				// Zytera/better-auth-tenancy#26).
+				metadata: undefined
+			},
+			headers: event.request.headers
+		});
+	} catch (error) {
+		if (isAlreadyFamilyMember(error)) {
+			throw new AlreadyFamilyMemberError(identifier);
+		}
+		if (isFamilyMembersLimitReached(error)) {
+			throw new FamilyMemberLimitReachedError();
+		}
+		if (isFamilyInvitationPending(error)) {
+			throw new FamilyInvitationPendingError(identifier);
+		}
+		throw error;
+	}
+}
+
+/**
+ * Vista de una invitación de familia por token: lo que la página
+ * `/invitations/[token]` muestra (issues #60 y #61). `null` si el token no
+ * existe, no es de una familia (los teams no tienen vista) o la familia ya no
+ * existe: en todos esos casos la página da la invitación por inválida.
+ *
+ * Una invitación `pending` pero con `expiresAt` pasado se devuelve como
+ * `expired`: el cron de cleanup marcará el estado en la base, pero el invitado
+ * no tiene por qué esperar a ese barrido para ver el estado real.
+ */
+export interface FamilyInvitationView {
+	status: InvitationStatus;
+	identifier: string | null;
+	familyName: string;
+	/** Nombre visible de quien invita (su nombre, o su email a falta de él). */
+	invitedBy: string;
+}
+
+export async function familyInvitationView(token: string): Promise<FamilyInvitationView | null> {
+	const invitation = await prisma.invitation.findUnique({
+		where: { token },
+		select: {
+			status: true,
+			identifier: true,
+			expiresAt: true,
+			contextType: true,
+			contextId: true,
+			invitedByUser: { select: { name: true, email: true } }
+		}
+	});
+
+	// Solo las invitaciones a familias tienen vista en la app (los teams no se
+	// usan), y siempre cuelgan de una organización viva.
+	if (!invitation || invitation.contextType !== 'organization') {
+		return null;
+	}
+	const family = await prisma.organization.findUnique({
+		where: { id: invitation.contextId },
+		select: { name: true }
+	});
+	if (!family) {
+		return null;
+	}
+
+	// Pendiente y caducada: ver comentario de `FamilyInvitationView`.
+	const expired =
+		invitation.status === 'pending' &&
+		invitation.expiresAt !== null &&
+		invitation.expiresAt < new Date();
+
+	return {
+		// El modelo solo guarda los estados de `InvitationStatus` (los escribe
+		// el plugin); el `as` solo recupera el literal tras venir de Prisma.
+		status: (expired ? 'expired' : invitation.status) as InvitationStatus,
+		identifier: invitation.identifier,
+		familyName: family.name,
+		invitedBy: invitation.invitedByUser?.name?.trim() || invitation.invitedByUser?.email || ''
+	};
+}
+
+/**
+ * Traduce los errores del plugin al aceptar o rechazar en los tipados de la
+ * UI. Los 400/404 del endpoint (invitación inexistente, ya usada, caducada…
+ * ver `canUseInvitation` del plugin) son todos «ya no disponible»: la página
+ * ya solo ofrece responder sobre una `pending` vigente, así que aquí solo
+ * llegan por carrera con otro dispositivo o con la UI rancia.
+ */
+function invitationResponseError(error: unknown): Error | undefined {
+	if (isFamilyMembersLimitReached(error)) {
+		// La familia se llenó desde que se envió la invitación: el alta la
+		// deshizo `onInvitationAccepted` y la invitación sigue pendiente.
+		return new FamilyMemberLimitReachedError();
+	}
+	if (isInvitationNotForAccount(error)) {
+		// El hook `invitation/accept`/`decline` (`tenancy.ts`) no vio el email
+		// de la sesión entre los invitados.
+		return new FamilyInvitationNotForAccountError('');
+	}
+	if (
+		error instanceof APIError &&
+		(error.status === 'BAD_REQUEST' || error.status === 'NOT_FOUND')
+	) {
+		return new FamilyInvitationUnavailableError();
+	}
+	return undefined;
+}
+
+/**
+ * Acepta la invitación (issue #61): el plugin marca la invitación como
+ * aceptada y `actions.onInvitationAccepted` (`tenancy.ts`) da de alta al
+ * invitado como miembro con el rol de la invitación. Autorización (sesión con
+ * el email invitado) y validaciones de estado las aplican los hooks del
+ * endpoint; aquí solo se traducen los fallos para la UI.
+ *
+ * Al éxito, el invitado es miembro y ve la familia en su selector (criterio
+ * de aceptación: `listFamilies` la lista por pertenencia).
+ */
+export async function acceptFamilyInvitation(event: RequestEvent, token: string): Promise<void> {
+	try {
+		await auth.api.acceptInvitation({ body: { token }, headers: event.request.headers });
+	} catch (error) {
+		const mapped = invitationResponseError(error);
+		if (mapped) throw mapped;
+		throw error;
+	}
+}
+
+/** Rechaza la invitación (issue #61): la marca como `rejected` y no hay alta. */
+export async function rejectFamilyInvitation(event: RequestEvent, token: string): Promise<void> {
+	try {
+		await auth.api.rejectInvitation({ body: { token }, headers: event.request.headers });
+	} catch (error) {
+		const mapped = invitationResponseError(error);
+		if (mapped) throw mapped;
+		throw error;
+	}
+}
+
+// ===========================================================================
+// Gestionar miembros (issue #62): listar, expulsar, abandonar, promover.
+// ===========================================================================
+
+/** Un miembro de la familia, tal y como la UI de gestión lo muestra. */
+export interface FamilyMember {
+	/** Id de la fila `member`: lo que viaja en expulsar/promover/abandonar. */
+	id: string;
+	userId: string;
+	name: string;
+	email: string;
+	/** ¿Lleva el rol admin de la familia? (el nombre de programa, no el traducido). */
+	isAdmin: boolean;
+	joinedAt: Date;
+}
+
+/** Vista de gestión de una familia: sus miembros y qué puede hacer quien mira. */
+export interface FamilyDetailView {
+	id: string;
+	name: string;
+	members: FamilyMember[];
+	/** El usuario de la sesión; `null` si no pertenece (la ruta redirige). */
+	viewer: { memberId: string; isAdmin: boolean } | null;
+}
+
+/**
+ * Vista de gestión de una familia (issue #62): miembros con su rol y la
+ * pertenencia del usuario de la sesión.
+ *
+ * La lectura se hace por Prisma (el endpoint `member/list` del plugin trae el
+ * rol YA traducido a la locale, y la UI necesita el nombre de programa para
+ * decidir sus acciones). El guard de lectura es el mismo del endpoint: solo
+ * entra quien pertenece — aquí, devolviendo `null` y sin revelar nada más.
+ */
+export async function familyDetailView(
+	event: RequestEvent,
+	familyId: string
+): Promise<FamilyDetailView | null> {
+	const user = event.locals.user;
+	if (!user) return null;
+
+	const family = await prisma.organization.findUnique({
+		where: { id: familyId },
+		select: { id: true, name: true }
+	});
+	if (!family) return null;
+
+	const memberships = await prisma.member.findMany({
+		where: { contextType: 'organization', contextId: familyId },
+		select: {
+			id: true,
+			userId: true,
+			createdAt: true,
+			role: { select: { name: true } },
+			user: { select: { name: true, email: true } }
+		},
+		orderBy: { createdAt: 'asc' }
+	});
+
+	// Quien no pertenece no ve ni los miembros (traen emails de terceros): la
+	// pertenencia del viewer es aquí el guard, igual que el statement
+	// `organization:get` lo es en los endpoints del plugin.
+	const viewerMembership = memberships.find((membership) => membership.userId === user.id);
+	if (!viewerMembership) return null;
+
+	return {
+		id: family.id,
+		name: family.name,
+		members: memberships.map((membership) => ({
+			id: membership.id,
+			userId: membership.userId,
+			name: membership.user.name,
+			email: membership.user.email,
+			isAdmin: membership.role?.name === FAMILY_ADMIN_ROLE,
+			joinedAt: membership.createdAt
+		})),
+		viewer: {
+			memberId: viewerMembership.id,
+			isAdmin: viewerMembership.role?.name === FAMILY_ADMIN_ROLE
+		}
+	};
+}
+
+/** ¿Es este el 404 de un recurso que ya no está (miembro o familia borrados)? */
+function isNotFoundError(error: unknown): boolean {
+	return error instanceof APIError && error.status === 'NOT_FOUND';
+}
+
+/**
+ * Expulsa a un miembro (issue #62) vía `member/remove`. El guard del endpoint
+ * abre la puerta al admin de la familia o al propio miembro — abandonar la
+ * familia es `leaveFamily`, el mismo endpoint — y protege al último admin;
+ * aquí solo se traducen los fallos a errores tipados para la UI.
+ */
+export async function removeFamilyMember(event: RequestEvent, memberId: string): Promise<void> {
+	try {
+		await auth.api.removeMember({ body: { id: memberId }, headers: event.request.headers });
+	} catch (error) {
+		if (isLastFamilyAdmin(error)) throw new FamilyLastAdminError();
+		if (isNotFoundError(error)) throw new FamilyMemberGoneError();
+		throw error;
+	}
+}
+
+/**
+ * Abandona la familia (issue #62): es `member/remove` sobre el propio miembro,
+ * que el guard del endpoint permite a cualquiera sobre sí mismo — con la
+ * excepción del último admin, que debe promover a otro o borrar la familia.
+ */
+export async function leaveFamily(event: RequestEvent, memberId: string): Promise<void> {
+	await removeFamilyMember(event, memberId);
+}
+
+/**
+ * Promueve a un miembro a admin (issue #62) vía `member/role/update`: solo el
+ * admin puede (statement `member:update`) y nunca deja a la familia sin
+ * admines (promover solo los añade).
+ */
+export async function promoteFamilyMember(
+	event: RequestEvent,
+	familyId: string,
+	memberId: string
+): Promise<void> {
+	// El miembro ha de pertenecer a ESTA familia: `memberId` viene del
+	// formulario, y el rol admin ha de ser el de la misma familia que el
+	// miembro (el guard del endpoint autoriza sobre la familia del miembro).
+	const membership = await prisma.member.findFirst({
+		where: { id: memberId, contextType: 'organization', contextId: familyId },
+		select: { id: true }
+	});
+	if (!membership) throw new FamilyMemberGoneError();
+
+	// El rol admin lo sembró `onEntityCreated` con la familia; no encontrarlo
+	// es un estado roto que no debería ocurrir: fallar de forma visible.
+	const adminRole = await prisma.role.findFirst({
+		where: { contextType: 'organization', contextId: familyId, name: FAMILY_ADMIN_ROLE },
+		select: { id: true }
+	});
+	if (!adminRole) {
+		throw new Error(`Family admin role not found: ${familyId}`);
+	}
+
+	try {
+		await auth.api.updateMemberRole({
+			body: { id: memberId, roleId: adminRole.id },
+			headers: event.request.headers
+		});
+	} catch (error) {
+		if (isNotFoundError(error)) throw new FamilyMemberGoneError();
+		throw error;
+	}
+}
+
+/**
+ * Borra la familia (issue #62): solo el admin (`organization:delete`) y en
+ * cascada el plugin se lleva miembros, invitaciones, roles y permisos. Las
+ * listas, la despensa y el historial colgarán de la familia por FK cuando
+ * existan (issues #65, #72 y #76): ahí añadirán su propio borrado en cascada.
+ */
+export async function deleteFamily(event: RequestEvent, familyId: string): Promise<void> {
+	try {
+		await auth.api.deleteOrganization({ body: { id: familyId }, headers: event.request.headers });
+	} catch (error) {
+		// Ya borrada (doble envío, otro dispositivo): el estado deseado se ha
+		// alcanzado, pero se distingue para que la ruta redirija sin ruido.
+		if (isNotFoundError(error)) throw new FamilyGoneError();
 		throw error;
 	}
 }

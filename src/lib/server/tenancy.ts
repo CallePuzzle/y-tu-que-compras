@@ -1,5 +1,9 @@
 import type { AuthContext, GenericEndpointContext } from '@better-auth/core';
-import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
+import type {
+	EntityCreatedEvent,
+	InvitationAcceptedEvent,
+	InvitationCreatedEvent
+} from '@zytera/better-auth-tenancy';
 import type {
 	ContextType,
 	EndpointAuthContext,
@@ -10,6 +14,8 @@ import type {
 } from '@zytera/better-auth-tenancy/server';
 import { resolvePermission } from '@zytera/better-auth-tenancy/server';
 import { APIError, getSessionFromCtx } from 'better-auth/api';
+
+import { sendFamilyInvitationEmailFor } from './invitations.js';
 
 // El plugin de tenancy mapea la jerarquía de better-auth sobre el dominio de la
 // app: **familia = organization**. Los equipos (teams) no se usan de momento.
@@ -297,6 +303,77 @@ async function filterOrganizations<T extends { id: string }>(
 export const MAX_FAMILIES_PER_USER = 5;
 
 /**
+ * Máximo de miembros por familia. El plugin lo respeta al DAR de alta a un
+ * miembro (`limits.maxMembersPerOrganization`, que se aplica al aceptar una
+ * invitación), pero no al INVITAR, y una invitación ya cuesta un correo: se
+ * comprueba también aquí, para que el admin lo vea como error de formulario y
+ * no como un registro que fallará después (issue #60).
+ */
+export const MAX_FAMILY_MEMBERS = 20;
+
+/**
+ * Mensaje del 400 que lanza el endpoint `invitation/create` con la familia
+ * llena. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
+ * de formulario (`FamilyMemberLimitReachedError`); no cambiarlo sin ajustar allí.
+ */
+export const FAMILY_MEMBERS_LIMIT_MESSAGE = `Family members limit reached: max ${MAX_FAMILY_MEMBERS}.`;
+
+/** ¿Es este el error de familia llena que lanza el hook de invitar? */
+export function isFamilyMembersLimitReached(error: unknown): boolean {
+	return error instanceof APIError && error.message === FAMILY_MEMBERS_LIMIT_MESSAGE;
+}
+
+/** Mensaje del 400 para invitar a quien ya es miembro de la familia. */
+export const ALREADY_FAMILY_MEMBER_MESSAGE = 'Already a member of the family';
+
+/** ¿Es este el error de invitar a alguien que ya es miembro? */
+export function isAlreadyFamilyMember(error: unknown): boolean {
+	return error instanceof APIError && error.message === ALREADY_FAMILY_MEMBER_MESSAGE;
+}
+
+/**
+ * Prefijo del 400 que lanza el PROPIO plugin (`invitation/create`) al encontrar
+ * ya una invitación pendiente para el mismo email en la familia: el duplicado
+ * que la lista «validación de duplicados» de la issue #60 exige vigilar.
+ */
+export const FAMILY_INVITATION_PENDING_PREFIX = 'Pending invitation already exists';
+
+/** ¿Es este el error de invitación pendiente duplicada del plugin? */
+export function isFamilyInvitationPending(error: unknown): boolean {
+	return (
+		error instanceof APIError && (error.message ?? '').startsWith(FAMILY_INVITATION_PENDING_PREFIX)
+	);
+}
+
+/**
+ * Mensaje del 403 que lanzan los hooks de `invitation/accept` y
+ * `invitation/decline` cuando el email de la sesión no es el del invitado
+ * (checklist de la issue #61). Es un contrato con `$lib/server/families.ts`,
+ * que lo traduce al error de formulario (`FamilyInvitationNotForAccountError`);
+ * no cambiarlo sin ajustar allí.
+ */
+export const INVITATION_NOT_FOR_ACCOUNT_MESSAGE = 'Invitation is not for this account';
+
+/** ¿Es este el error de aceptar o rechazar una invitación ajena? */
+export function isInvitationNotForAccount(error: unknown): boolean {
+	return error instanceof APIError && error.message === INVITATION_NOT_FOR_ACCOUNT_MESSAGE;
+}
+
+/**
+ * Mensaje del 400 que lanzan los hooks de `member/remove` y
+ * `member/role/update` cuando la operación dejaría a la familia sin su único
+ * admin (issue #62). Es un contrato con `$lib/server/families.ts`, que lo
+ * traduce al error de formulario (`FamilyLastAdminError`); no cambiarlo sin
+ * ajustar allí.
+ */
+export const LAST_FAMILY_ADMIN_MESSAGE = 'Cannot remove the last admin of the family';
+
+/** ¿Es este el error de quitar al último admin de la familia? */
+export function isLastFamilyAdmin(error: unknown): boolean {
+	return error instanceof APIError && error.message === LAST_FAMILY_ADMIN_MESSAGE;
+}
+
+/**
  * Mensaje del 403 que lanza el endpoint `organization/create` al superar el
  * tope. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
  * de formulario (`FamilyLimitReachedError`); no cambiarlo sin ajustar allí.
@@ -343,6 +420,283 @@ const requireBelowFamilyLimit: EndpointAuthHook = async ({ ctx, session }) => {
 };
 
 /**
+ * Combina hooks de autorización en uno: se ejecutan en orden y el primero que
+ * lanza corta (el plugin solo consulta UN hook por endpoint).
+ */
+function combineHooks(...hooks: EndpointAuthHook[]): EndpointAuthHook {
+	return async (context) => {
+		for (const hook of hooks) {
+			await hook(context);
+		}
+	};
+}
+
+/** Sesión del endpoint; los hooks del plugin la traen ya resuelta. */
+async function endpointSession(
+	ctx: GenericEndpointContext,
+	session: EndpointAuthContext['session']
+) {
+	// Mismo fallback que `requireFamilyStatement` y `requireBelowFamilyLimit`.
+	const current = session ?? (await getSessionFromCtx(ctx).catch(() => null));
+	if (!current?.user) {
+		throw new APIError('UNAUTHORIZED', {
+			message: 'Authentication required. Please provide valid credentials.'
+		});
+	}
+	return current;
+}
+
+/**
+ * El email del invitado, normalizado como better-auth guarda los correos
+ * (en minúsculas; el body del plugin no lo normaliza). `undefined` si no viene.
+ */
+function invitedEmail(ctx: GenericEndpointContext): string | undefined {
+	const identifier = ctx.body?.identifier;
+	return typeof identifier === 'string' && identifier ? identifier.trim().toLowerCase() : undefined;
+}
+
+/**
+ * Invitar a quien ya es miembro (400): el plugin solo evita invitaciones
+ * pendientes duplicadas, así que un miembro actual seguiría recibiendo (y
+ * pudiendo aceptar) invitaciones nuevas. Sin cuenta no puede ser miembro: se
+ * deja pasar sin comprobar, porque la invitación es justo lo que lo traerá.
+ */
+const requireNotAlreadyFamilyMember: EndpointAuthHook = async ({ ctx, session }) => {
+	await endpointSession(ctx, session);
+	const contextId = ctx.body?.contextId;
+	if (typeof contextId !== 'string' || !contextId) {
+		// Solo al PokeYolo de una petición hecha a mano: el statement del plugin
+		// (primero en el orden de `combineHooks`) ya deniega el body sin familia.
+		return;
+	}
+	const email = invitedEmail(ctx);
+	if (!email) return;
+
+	const user = await ctx.context.adapter.findOne({
+		model: 'user',
+		where: [{ field: 'email', value: email }]
+	});
+	if (!user) return;
+
+	const memberships = await ctx.context.adapter.findMany({
+		model: 'member',
+		where: [
+			{ field: 'userId', value: user.id },
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: contextId }
+		]
+	});
+	if (memberships.length > 0) {
+		throw new APIError('BAD_REQUEST', { message: ALREADY_FAMILY_MEMBER_MESSAGE });
+	}
+};
+
+/**
+ * Invitar con la familia llena (400): el plugin ya deniega el ALTA de miembros
+ * pasados el tope (`limits.maxMembersPerOrganization`), pero no la invitación;
+ * fallar aquí ahorra un correo imposible de usar.
+ */
+const requireBelowFamilyMemberLimit: EndpointAuthHook = async ({ ctx, session }) => {
+	await endpointSession(ctx, session);
+	const contextId = ctx.body?.contextId;
+	if (typeof contextId !== 'string' || !contextId) return;
+
+	const members = await ctx.context.adapter.findMany({
+		model: 'member',
+		where: [
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: contextId }
+		]
+	});
+	if (members.length >= MAX_FAMILY_MEMBERS) {
+		throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
+	}
+};
+
+// ===========================================================================
+// Gestionar miembros (issue #62): expulsar, abandonar y promover.
+// ===========================================================================
+
+/**
+ * El miembro que el plugin ya resolvió y cuelga de `resource.data`
+ * (`findMemberContext` de `members.js` trae la fila completa). `undefined` si
+ * no viene: peticiones hechas a mano que el statement denegará por su cuenta.
+ */
+function resolvedMemberOf(context: EndpointAuthContext):
+	| {
+			userId: string;
+			roleId: string | null;
+	  }
+	| undefined {
+	// El plugin inyecta el recurso en el ctx que pasa al hook
+	// (`applyEndpointAuth(hook, { ...ctx, resource }, session)`).
+	const data = (context.ctx as { resource?: ResourceContext }).resource?.data as
+		{ userId?: unknown; roleId?: unknown } | undefined;
+	if (!data || typeof data.userId !== 'string' || !data.userId) return undefined;
+	return { userId: data.userId, roleId: typeof data.roleId === 'string' ? data.roleId : null };
+}
+
+/**
+ * El rol admin de una familia y cuántos miembros lo llevan. `null` si la
+ * familia no tiene rol admin sembrado (familia a medio deshacer): nada que
+ * proteger y el statement del actor decide por su cuenta.
+ */
+async function familyAdminRoleWithCount(
+	adapter: Adapter,
+	familyId: string
+): Promise<{ id: string; admins: number } | null> {
+	const role = (await adapter.findOne({
+		model: 'role',
+		where: [
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: familyId },
+			{ field: 'name', value: FAMILY_ADMIN_ROLE }
+		]
+	})) as { id: string } | null;
+	if (!role) return null;
+
+	const admins = await adapter.findMany({
+		model: 'member',
+		where: [
+			{ field: 'contextType', value: 'organization' },
+			{ field: 'contextId', value: familyId },
+			{ field: 'roleId', value: role.id }
+		]
+	});
+	return { id: role.id, admins: admins.length };
+}
+
+/**
+ * Quita al miembro su administración si con ello la familia se queda sin
+ * admines: `nextRoleId` es el rol que le quedaría (el mismo al expulsar; el
+ * del body al cambiar el rol). Promover NO corta: el rol destino es otro.
+ */
+async function rejectIfLastFamilyAdmin(
+	context: EndpointAuthContext,
+	currentRoleId: string | null,
+	nextRoleId: string | null = currentRoleId
+): Promise<void> {
+	if (!currentRoleId) return;
+	// Mismo lugar que `resolvedMemberOf`: el plugin inyecta el recurso en ctx.
+	const resource = (context.ctx as { resource?: ResourceContext }).resource;
+	if (!resource) return;
+
+	const adminRole = await familyAdminRoleWithCount(context.ctx.context.adapter, resource.contextId);
+	if (!adminRole || currentRoleId !== adminRole.id) return;
+	// Sigue admin después del cambio: nada que proteger.
+	if (nextRoleId === adminRole.id) return;
+	if (adminRole.admins <= 1) {
+		throw new APIError('BAD_REQUEST', { message: LAST_FAMILY_ADMIN_MESSAGE });
+	}
+}
+
+/**
+ * Expulsar o abandonar (issue #62): puede el admin (statement `member:remove`)
+ * o el PROPIO miembro apuntado, que es justo «abandonar la familia» — el
+ * plugin no tiene endpoint de salida y `member/remove` es la única puerta. Sin
+ * los datos del miembro (peticiones a mano) cae al statement: la vía
+ * conservadora, que solo abre el admin.
+ */
+const allowSelfRemoveOrAdmin: EndpointAuthHook = async (context) => {
+	const current = await endpointSession(context.ctx, context.session);
+	if (resolvedMemberOf(context)?.userId === current.user.id) return;
+	await requireFamilyStatement('member:remove', fromResolvedResource)(context);
+};
+
+/** Expulsar o abandonar no puede dejar a la familia sin su último admin. */
+const requireNotLastFamilyAdminOnRemove: EndpointAuthHook = async (context) => {
+	await endpointSession(context.ctx, context.session);
+	const member = resolvedMemberOf(context);
+	if (!member) return;
+	// Al quitar al miembro se queda SIN rol: si era el único admin, no hay
+	// salida posible sin promover a otro o borrar la familia.
+	await rejectIfLastFamilyAdmin(context, member.roleId, null);
+};
+
+/**
+ * Cambiar el rol (promover, issue #62) tampoco puede dejar a la familia sin
+ * admines: degradar al único admin sería abandonar la administración por la
+ * puerta de atrás y dejaría la familia sin nadie que invite, expulse o borre.
+ */
+const requireNotLastFamilyAdminOnRoleChange: EndpointAuthHook = async (context) => {
+	await endpointSession(context.ctx, context.session);
+	const member = resolvedMemberOf(context);
+	if (!member) return;
+	const nextRoleId = typeof context.ctx.body?.roleId === 'string' ? context.ctx.body.roleId : null;
+	await rejectIfLastFamilyAdmin(context, member.roleId, nextRoleId);
+};
+
+/**
+ * El plugin comparte esta clave de configuración (`member.updateRole`) entre
+ * DOS endpoints: `role/update` y `metadata/update` (`members.js` reutiliza el
+ * hook para los metadatos, y no hay clave propia que denegar). La app no usa
+ * metadatos de miembros, y dejarlos pasar haría que el guard del último admin
+ * interpretara el body sin `roleId` como «se queda sin rol»: tocar los
+ * metadatos del último admin fallaría con un 400 sin sentido. Como el esquema
+ * zod de `role/update` exige `roleId` (corta antes de llegar al hook), un body
+ * sin `roleId` solo puede ser la petición de metadatos: denegada.
+ */
+const denyMemberMetadataUpdate: EndpointAuthHook = async (context) => {
+	if (typeof context.ctx.body?.roleId !== 'string') {
+		await denyEndpoint(context);
+	}
+};
+
+/**
+ * La invitación del body, resuelta por token o por código: la misma resolución
+ * que hacen los endpoints `invitation/accept` y `invitation/decline` del
+ * plugin, para que el hook evalúe siempre la invitación que aquellos van a usar.
+ */
+async function invitationFromBody(
+	adapter: Adapter,
+	body: Record<string, unknown> | undefined
+): Promise<{ identifier: string | null } | null> {
+	const token = typeof body?.token === 'string' && body.token ? body.token : undefined;
+	const code =
+		typeof body?.invitationCode === 'string' && body.invitationCode
+			? body.invitationCode.toUpperCase()
+			: undefined;
+	if (!token && !code) {
+		// El plugin responderá 400 («Either token or invitationCode…»): sin
+		// invitación que casar no hay nada que autorizar aquí.
+		return null;
+	}
+
+	if (token) {
+		return adapter.findOne<{ identifier: string | null }>({
+			model: 'invitation',
+			where: [{ field: 'token', value: token }]
+		});
+	}
+	// Solo se llega con código: el guard de arriba cortó si no había ninguno.
+	return adapter.findOne<{ identifier: string | null }>({
+		model: 'invitation',
+		where: [{ field: 'invitationCode', value: code as string }]
+	});
+}
+
+/**
+ * Aceptar o rechazar (issue #61) exige sesión y que el email del invitado sea
+ * el del usuario de la sesión: el token viaja por correo, pero quien tenga
+ * acceso al enlace no debe poder usar la invitación desde otra cuenta (y sin
+ * hook, el plugin deja pasar `accept`/`decline` a quien solo tenga el token).
+ *
+ * El match es case-insensitive: better-auth guarda los correos en minúsculas y
+ * `inviteFamily` normaliza el identifier, pero no se depende de ello.
+ */
+const requireInvitationForSessionEmail: EndpointAuthHook = async ({ ctx, session }) => {
+	const current = await endpointSession(ctx, session);
+	const invitation = await invitationFromBody(ctx.context.adapter, ctx.body);
+	// Invitación inexistente: el plugin dará su 404; aquí no se revela nada.
+	if (!invitation) return;
+
+	const invited = invitation.identifier?.trim().toLowerCase();
+	if (!invited || invited !== current.user.email.trim().toLowerCase()) {
+		throw new APIError('FORBIDDEN', { message: INVITATION_NOT_FOR_ACCOUNT_MESSAGE });
+	}
+};
+
+/**
  * Configuración del plugin `tenancy` para `getBetterAuth` (`src/lib/server/
  * auth.ts`).
  *
@@ -358,6 +712,11 @@ export const tenancyConfig: TenancyConfig = {
 	// Paraglide vía el cliente: ver `src/lib/auth-client.ts`).
 	i18n: { defaultLocale: 'es' },
 
+	// Un miembro no entra en una familia llena: el plugin aplica este tope al
+	// invitar (`requireBelowFamilyMemberLimit`, abajo) y el alta real por
+	// invitación lo replica en `actions.onInvitationAccepted` (issue #61).
+	limits: { maxMembersPerOrganization: MAX_FAMILY_MEMBERS },
+
 	// Autorización por statements (issue #59): el plugin NO comprueba los
 	// statements por sí solo — los consulta a través de estos hooks. Cada
 	// statement de admin guarda la operación que ejecuta; la lectura de la
@@ -369,9 +728,10 @@ export const tenancyConfig: TenancyConfig = {
 	// Todo lo que la app no usa se deniega en bloque: el plugin monta por
 	// defecto endpoints de administración (roles, statements, permisos, teams)
 	// que solo exigen sesión, y por ahí un usuario cualquiera podría escalarse
-	// permisos en cualquier familia. Las invitaciones se aceptan con su token,
-	// así que `accept`/`decline`/`getByToken` no necesitan hook; en cambio su
-	// listado (emails de invitados) es cosa del admin.
+	// permisos en cualquier familia. `accept`/`decline` llevan el hook de
+	// sesión+email de la issue #61; `getByToken` queda sin hook porque la vista
+	// de invitación lee por su cuenta de Prisma (el token es la credencial de
+	// la invitación: ver `src/routes/invitations/[token]`).
 	endpoints: {
 		// `create` pide sesión y tope de familias por usuario (`MAX_FAMILIES_PER_USER`):
 		// crear la propia familia sí que está abierto al mundo con sesión.
@@ -383,14 +743,35 @@ export const tenancyConfig: TenancyConfig = {
 		},
 		member: {
 			add: requireFamilyStatement('member:invite', fromBodyContext),
-			remove: requireFamilyStatement('member:remove', fromResolvedResource),
-			updateRole: requireFamilyStatement('member:update', fromResolvedResource),
+			// Expulsar (#62): el admin, o el propio miembro (abandonar). Y nadie
+			// quita al último admin: debe promover a otro o borrar la familia.
+			remove: combineHooks(allowSelfRemoveOrAdmin, requireNotLastFamilyAdminOnRemove),
+			// Promover (#62): solo admin, y sin dejar a la familia sin admines.
+			// El guard de metadatos va primero: el plugin comparte esta clave con
+			// `member/metadata/update`, que la app no expone (ver `denyMemberMetadataUpdate`).
+			updateRole: combineHooks(
+				denyMemberMetadataUpdate,
+				requireFamilyStatement('member:update', fromResolvedResource),
+				requireNotLastFamilyAdminOnRoleChange
+			),
 			// Ver quiénes son los miembros: cualquiera de la familia.
 			list: requireFamilyStatement('organization:get', fromMemberRef),
 			...denyEndpoints(['bulkAdd', 'bulkRemove', 'transfer'])
 		},
 		invitation: {
-			create: requireFamilyStatement('member:invite', fromBodyContext),
+			// Flujo de invitar (#60): primero el statement (403 a quien no
+			// administra la familia) y después las validaciones (400), con la
+			// más específica delante.
+			create: combineHooks(
+				requireFamilyStatement('member:invite', fromBodyContext),
+				requireNotAlreadyFamilyMember,
+				requireBelowFamilyMemberLimit
+			),
+			// Flujo de responder (#61): solo el invitado (email de la sesión)
+			// puede aceptar o rechazar; el plugin a su vez valida estado y
+			// caducidad, y `actions.onInvitationAccepted` da el alta real.
+			accept: requireInvitationForSessionEmail,
+			decline: requireInvitationForSessionEmail,
 			revoke: requireFamilyStatement('invitation:cancel', fromResolvedResource),
 			// Las invitaciones pendientes llevan emails de terceros: solo admin.
 			list: requireFamilyStatement('member:invite', fromQueryContext),
@@ -458,6 +839,100 @@ export const tenancyConfig: TenancyConfig = {
 					contextId: event.entityId,
 					userId: event.createdBy,
 					roleId: adminRoleId,
+					createdAt: new Date(),
+					updatedAt: new Date()
+				}
+			});
+		},
+
+		// El email de invitación es parte del flujo de invitar (issue #60, con el
+		// proveedor de la #80): el plugin solo registra la invitación y el correo
+		// con su token sale de aquí. Lanzar deshace la invitación dentro del
+		// plugin, así que no queda nunca una invitación registrada sin correo.
+		onInvitationCreated: async (event: InvitationCreatedEvent, ctx) => {
+			if (event.contextType !== 'organization') return;
+			await sendFamilyInvitationEmailFor(event, ctx);
+		},
+
+		// Aceptar una invitación (issue #61): el plugin SOLO marca la invitación
+		// como aceptada — el alta del miembro la hace este hook. Lanzar la
+		// deshace (el plugin devuelve la invitación a `pending`), así que no hay
+		// aceptaciones «a medias» sin pertenencia. El hook `invitation/accept`
+		// (`requireInvitationForSessionEmail`) ya garantizó que el email del
+		// invitado es el del usuario de la sesión.
+		onInvitationAccepted: async (event: InvitationAcceptedEvent, ctx) => {
+			if (event.contextType !== 'organization') return;
+			const adapter = ctx.context.adapter;
+
+			// El usuario de la sesión: una sesión implica fila en `user`, pero el
+			// lookup es por email (el identifier de la invitación) y mejor fallar
+			// de forma explícita — y reversible — si no apareciera. (El `ctx` de
+			// las acciones no lleva el tipo del adaptador: los casts son suyos.)
+			const email = event.identifier.trim().toLowerCase();
+			const user = (await adapter.findOne({
+				model: 'user',
+				where: [{ field: 'email', value: email }]
+			})) as { id: string } | null;
+			if (!user) {
+				throw new APIError('BAD_REQUEST', { message: `User not found: ${email}` });
+			}
+
+			// Ya miembro (doble envío, carrera): idempotente, no hay nada que dar
+			// de alta y lanzar aquí desharía una aceptación válida.
+			const existing = await adapter.findMany({
+				model: 'member',
+				where: [
+					{ field: 'contextType', value: 'organization' },
+					{ field: 'contextId', value: event.contextId },
+					{ field: 'userId', value: user.id }
+				]
+			});
+			if (existing.length > 0) return;
+
+			// Familia llena al aceptar: la invitación se envió con sitio libre,
+			// pero otras aceptaciones pudieron llenarla mientras tanto. Lanzar
+			// devuelve la invitación a `pending` (400 arriba, con este mensaje
+			// como contrato de `$lib/server/families.ts`).
+			const members = await adapter.findMany({
+				model: 'member',
+				where: [
+					{ field: 'contextType', value: 'organization' },
+					{ field: 'contextId', value: event.contextId }
+				]
+			});
+			if (members.length >= MAX_FAMILY_MEMBERS) {
+				throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
+			}
+
+			// Rol de entrada: el que lleva la invitación (siempre `member`, lo
+			// fija `inviteFamily`); si la invitación viniera sin rol, el rol
+			// básico de la familia. Sin ninguno de los dos, mejor fallar que
+			// entrar a alguien sin rol.
+			let roleId = event.roleId;
+			if (!roleId) {
+				const memberRoles = (await adapter.findMany({
+					model: 'role',
+					where: [
+						{ field: 'contextType', value: 'organization' },
+						{ field: 'contextId', value: event.contextId },
+						{ field: 'name', value: FAMILY_MEMBER_ROLE }
+					]
+				})) as { id: string }[];
+				roleId = memberRoles[0]?.id ?? null;
+			}
+			if (!roleId) {
+				throw new APIError('BAD_REQUEST', {
+					message: `Family member role not found: ${event.contextId}`
+				});
+			}
+
+			await adapter.create({
+				model: 'member',
+				data: {
+					contextType: 'organization',
+					contextId: event.contextId,
+					userId: user.id,
+					roleId,
 					createdAt: new Date(),
 					updatedAt: new Date()
 				}

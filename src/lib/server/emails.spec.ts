@@ -37,11 +37,12 @@ describe('plantillas de email', () => {
 		expect(es.text).not.toBe(en.text);
 	});
 
-	it('envia la invitacion a la familia en español', async () => {
+	it('envia la invitacion a la familia en español, con familia e invitador', async () => {
 		await sendFamilyInvitationEmail({
 			to: 'invitado@example.com',
 			inviter: 'César',
-			url: 'https://y-tu-que-compras.example.com/invitacion/token',
+			family: 'Los Pérez',
+			url: 'https://y-tu-que-compras.example.com/invitaciones/token',
 			locale: 'es'
 		});
 
@@ -49,35 +50,39 @@ describe('plantillas de email', () => {
 		const email = capturedEmailsForTests()[0];
 		expect(email.to).toBe('invitado@example.com');
 		expect(email.subject).toContain('César');
-		expect(email.text).toContain('César');
-		expect(email.text).toContain('https://y-tu-que-compras.example.com/invitacion/token');
+		expect(email.subject).toContain('Los Pérez');
+		expect(email.text).toContain('Los Pérez');
+		expect(email.text).toContain('https://y-tu-que-compras.example.com/invitaciones/token');
 	});
 
-	it('envia la invitacion a la familia en inglés', async () => {
+	it('envia la invitacion a la familia en inglés, con familia e invitador', async () => {
 		await sendFamilyInvitationEmail({
 			to: 'guest@example.com',
 			inviter: 'César',
-			url: 'https://y-tu-que-compras.example.com/invitation/token',
+			family: 'Los Pérez',
+			url: 'https://y-tu-que-compras.example.com/invitaciones/token',
 			locale: 'en'
 		});
 
 		expect(capturedEmailsForTests()).toHaveLength(1);
 		const email = capturedEmailsForTests()[0];
 		expect(email.to).toBe('guest@example.com');
-		expect(email.subject).toContain('César');
-		expect(email.text).toContain('https://y-tu-que-compras.example.com/invitation/token');
+		expect(email.subject).toContain('Los Pérez');
+		expect(email.text).toContain('https://y-tu-que-compras.example.com/invitaciones/token');
 	});
 
 	it('la plantilla de invitacion es distinta en cada idioma', async () => {
 		await sendFamilyInvitationEmail({
 			to: 'invitado@example.com',
 			inviter: 'César',
+			family: 'Los Pérez',
 			url: 'https://example.com/token',
 			locale: 'es'
 		});
 		await sendFamilyInvitationEmail({
 			to: 'invitado@example.com',
 			inviter: 'César',
+			family: 'Los Pérez',
 			url: 'https://example.com/token',
 			locale: 'en'
 		});

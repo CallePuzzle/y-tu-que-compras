@@ -18,6 +18,12 @@ export function isPublicPathname(pathname: string): boolean {
 		pathname === '/login' ||
 		pathname.startsWith('/login/') ||
 		pathname.startsWith('/api/auth/') ||
+		// Vista de una invitación por token (issue #61): el token del enlace es
+		// la credencial, y quien llega sin sesión debe poder VER que la
+		// invitación existe (o que ya caducó) antes de crear cuenta. Responderla
+		// sí exige sesión: lo aplica la propia página, que manda a
+		// `/login?…&email=` a quien quiera aceptar o rechazar sin ella.
+		pathname.startsWith('/invitations/') ||
 		pathname === '/robots.txt'
 	);
 }
