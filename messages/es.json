@@ -83,6 +83,7 @@
 	"families_member_gone": "Ese miembro ya no pertenece a la familia.",
 	"families_members_error": "No se ha podido realizar la operación. Inténtalo de nuevo.",
 	"ui_close": "Cerrar",
+	"ui_cancel": "Cancelar",
 
 	"routes_lists": "Listas",
 	"lists_title": "Tus listas",
@@ -145,6 +146,8 @@
 	"items_section_pending": "Pendientes",
 	"items_section_purchased": "Comprados",
 	"purchases_finalize": "Finalizar compra",
+	"purchases_modal_summary": "Resumen de la compra",
+	"purchases_modal_description": "Los items comprados pasarán a la despensa de la familia y saldrán de la lista. Los pendientes se quedan como están.",
 	"purchases_success": "Compra finalizada: los items comprados ya están en la despensa.",
 	"purchases_empty": "No hay items comprados que finalizar. Marca al menos uno como comprado.",
 	"purchases_error": "No se pudo finalizar la compra. Inténtalo de nuevo más tarde.",

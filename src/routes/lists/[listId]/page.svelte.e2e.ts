@@ -229,3 +229,120 @@ test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => 
 	// Y en la BD todo borrado en cascada.
 	await expect(prisma.item.findUnique({ where: { id: item.id } })).resolves.toBeNull();
 });
+
+test('sin items comprados no se ofrece finalizar la compra', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: lista.id, name: 'Pan', order: 0 });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// Sin comprados no hay compra que cerrar (#70): el CTA no aparece.
+	await expect(page.getByRole('button', { name: 'Finalizar compra' })).toHaveCount(0);
+});
+
+test('finalizar compra: resumen en el modal, total a mano y entrada en el historial', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	const leche = await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
+	await createItem({ listId: lista.id, name: 'Pan', order: 1 });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// El resumen del modal trae SOLO los comprados: la leche (con su
+	// cantidad) está; el pan, pendiente, no. (Exactos: el texto de la fila
+	// del resumen es «nombre» y «cantidad unidad», y así no casan ancestros.)
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByRole('heading', { name: 'Finalizar compra' })).toBeVisible();
+	await expect(dialog.getByText('Resumen de la compra')).toBeVisible();
+	await expect(dialog.getByText('Leche', { exact: true })).toBeVisible();
+	await expect(dialog.getByText('1 ud', { exact: true })).toBeVisible();
+	await expect(dialog.getByText('Pan', { exact: true })).toHaveCount(0);
+
+	// Sin total no hay envío: el schema lo corta en cliente, sin historial.
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+	await expect(dialog.getByText('Escribe un total válido (cero o más).')).toBeVisible();
+	await expect(
+		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
+	).resolves.toBeNull();
+
+	// Tampoco pasa un total negativo.
+	await dialog.locator('#finalize-total').fill('-1');
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+	await expect(dialog.getByText('Escribe un total válido (cero o más).')).toBeVisible();
+	await expect(
+		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
+	).resolves.toBeNull();
+
+	// Total válido: cierra el modal, avisa y la lista queda con los
+	// pendientes — la leche desaparece y con ella el CTA de finalizar.
+	await dialog.locator('#finalize-total').fill('23.45');
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+
+	await expect(page.getByRole('status')).toContainText('Compra finalizada');
+	await expect(page.locator('li', { hasText: 'Leche' })).toHaveCount(0);
+	await expect(page.locator('li', { hasText: 'Pan' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Finalizar compra' })).toHaveCount(0);
+
+	// El historial quedó en la BD (#75): snapshot de lista, items, total y
+	// quién lo confirmó. Y el item comprado salió de la lista.
+	const record = await prisma.purchaseRecord.findFirstOrThrow({
+		where: { listId: lista.id },
+		include: { items: true }
+	});
+	expect(record.listName).toBe('Super');
+	expect(record.total.toString()).toBe('23.45');
+	expect(record.userId).toBe(user.id);
+	expect(record.items.map((row) => row.name)).toEqual(['Leche']);
+	await expect(prisma.item.findUnique({ where: { id: leche.id } })).resolves.toBeNull();
+});
+
+test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	const item = await createItem({ listId: lista.id, name: 'Leche', purchased: true });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.locator('#finalize-total').fill('10');
+	await dialog.getByRole('button', { name: 'Cancelar' }).click();
+
+	// Nada se cerró: el item sigue comprado (en pantalla y en la BD) y no hay
+	// historial.
+	await expect(page.locator('li', { hasText: 'Leche' })).toBeVisible();
+	const row = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
+	expect(row.purchased).toBe(true);
+	await expect(
+		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
+	).resolves.toBeNull();
+
+	// Al reabrir, el total empieza EN BLANCO (el 0 default del schema no se
+	// pinta, y lo tecleado antes no se arrastra).
+	//
+	// PERO daisyUI oculta el modal cerrado con `visibility` y una transición
+	// `allow-discrete`: ~300ms tras `close()` el contenido SIGUE expuesto en
+	// el árbol de accesibilidad (el atributo `open` ya se ha retirado, pero
+	// el CSS del autor pisa el `display: none` del UA). Esperar a que el
+	// botón del modal salga del árbol, o reabrir ahora mismo sería ambiguo
+	// (dos «Finalizar compra» y strict mode en click).
+	await expect(page.getByRole('button', { name: 'Finalizar compra' })).toHaveCount(1);
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+	await expect(page.locator('dialog[open]')).toBeVisible();
+	await expect(page.locator('#finalize-total')).toHaveValue('');
+});

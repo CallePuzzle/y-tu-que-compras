@@ -11,6 +11,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
 	import { UNITS, itemSchema, type ItemData, type Unit } from '$lib/schemas/item.js';
+	import { purchaseSchema } from '$lib/schemas/purchase.js';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
@@ -145,6 +146,53 @@
 		borrarError = null;
 		itemBorrado = item;
 		borrarModal?.showModal();
+	}
+
+	// ---- Finalizar compra (modal con resumen y total a mano, checklist #71) ----
+	// La acción `?/finalize` (#70) hace todo el trabajo en el servidor; el
+	// formulario solo lleva el total del ticket, validado por el MISMO schema
+	// que usa el action. Construido EN RENDER, como los demás (regla i18n).
+	const finalizeSchema = purchaseSchema({
+		totalError: m.schema_purchase_total_error(),
+		totalLabel: m.schema_purchase_total_label()
+	});
+
+	let finalizarModal: { showModal(): void; close(): void } | undefined = $state();
+
+	// svelte-ignore state_referenced_locally
+	const finalizeForm = superForm(data.finalizeForm, {
+		validators: zod4Client(finalizeSchema),
+		invalidateAll: 'pessimistic',
+		onResult({ result }) {
+			if (result.type === 'success') {
+				// El texto concreto lo decide la acción y viaja en el resultado
+				// (`message()`), como en el modal de edición. El load pesimista
+				// trae la lista ya depurada: los comprados desaparecen de ella.
+				const data = result.data as { form?: { message?: string } } | undefined;
+				exito = data?.form?.message ?? m.purchases_success();
+				finalizarModal?.close();
+			}
+		}
+	});
+	const {
+		form: finalizeFormData,
+		enhance: finalizeEnhance,
+		delayed: finalizeDelayed,
+		message: finalizeMessage,
+		errors: finalizeErrors
+	} = finalizeForm;
+
+	/** Abre el modal de finalizar con el total EN BLANCO para escribirlo. */
+	function abrirFinalizacion() {
+		exito = null;
+		finalizeMessage.set(undefined);
+		finalizeErrors.clear();
+		// El 0 que trae el formulario del load es el default del schema, no un
+		// total real: el campo empieza vacío para que el total no se confirme
+		// sin mirar. El cast es el mismo truco de `abrirEdicion`: undefined no
+		// es un `number`, pero superforms lo acepta y zod lo exige al enviar.
+		finalizeFormData.set({ total: undefined as unknown as number });
+		finalizarModal?.showModal();
 	}
 
 	// ---- Comprado (checklist #69): checkbox con actualización OPTIMISTA. ----
@@ -449,6 +497,13 @@
 					{@render filaItem(item)}
 				{/each}
 			</ol>
+
+			<!-- CTA de finalizar (checklist #71): solo con algo comprado — sin
+			     comprados no hay compra que cerrar y el action lo rechazaría. -->
+			<button type="button" class="btn btn-primary mt-6 w-full" onclick={abrirFinalizacion}>
+				<ShoppingBasket aria-hidden="true" />
+				{m.purchases_finalize()}
+			</button>
 		{/if}
 	{/if}
 </section>
@@ -568,5 +623,86 @@
 	>
 		<input type="hidden" name="item" value={itemBorrado?.id ?? ''} />
 		<button type="submit" class="btn btn-error">{m.items_delete_confirm()}</button>
+	</form>
+</Modal>
+
+<!-- Finalizar compra (checklist #71): resumen de los items comprados y el
+     total del ticket escrito a mano. La confirmación envía `?/finalize`
+     (#70), que crea el historial y actualiza la despensa en UNA transacción.
+     Con SU formulario de superforms (id «finalize-purchase», lo pone el
+     load) para no pisar al alta rápida ni al de edición. -->
+<Modal
+	bind:this={finalizarModal}
+	type="X"
+	showButton={false}
+	boxClass="modal-box max-w-md"
+	strings={{ close: m.ui_close() }}
+>
+	<h2 class="text-lg font-bold">{m.purchases_finalize()}</h2>
+	<p class="mt-1 text-sm opacity-70">{m.purchases_modal_description()}</p>
+
+	<!-- Resumen de lo comprado: lo mismo que se va a la despensa. Se lee de
+	     `comprados` (el derivado con el toggle optimista), así que refleja
+	     lo que el usuario ve, no un snapshot del servidor. Divs y no una
+	     lista: los `li` del modal quedan en el DOM aunque el diálogo esté
+	     cerrado y ensuciarían cualquier búsqueda de filas de items de la
+	     página (los tests e2e localizan filas por `li` suelto). -->
+	<h3 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
+		{m.purchases_modal_summary()}
+	</h3>
+	<div class="mt-2 flex flex-col gap-1">
+		{#each comprados as item (item.id)}
+			<div class="flex items-center justify-between gap-3 text-sm">
+				<span class="min-w-0 truncate font-medium">{item.name}</span>
+				<span class="badge badge-ghost shrink-0 tabular-nums">
+					{item.quantity}
+					{UNIT_LABEL[item.unit]}
+				</span>
+			</div>
+		{/each}
+	</div>
+
+	<form method="POST" action="?/finalize" use:finalizeEnhance class="mt-4 flex flex-col gap-4">
+		<div class="flex flex-col gap-1">
+			<label class="fieldset-label" for="finalize-total">{m.schema_purchase_total_label()}</label>
+			<!-- Sin `required` ni `min` nativos: el vacío y el negativo los
+			     corta zod en cliente con el error del schema (igual que la
+			     cantidad del alta rápida; sin JS el modal ni siquiera puede
+			     abrirse). `step` guía los céntimos del importe. -->
+			<input
+				bind:value={$finalizeFormData.total}
+				aria-invalid={textoError($finalizeErrors.total) ? 'true' : undefined}
+				id="finalize-total"
+				name="total"
+				type="number"
+				class="input w-full"
+				step="0.01"
+				inputmode="decimal"
+				placeholder="0.00"
+			/>
+			{#if textoError($finalizeErrors.total)}
+				<p class="fieldset-label text-error" role="alert">{textoError($finalizeErrors.total)}</p>
+			{/if}
+		</div>
+
+		<!-- Los fallos del action (lista ajena, otro miembro se llevó los
+		     comprados, error de servidor) se cuentan aquí dentro. -->
+		{#if $finalizeMessage}
+			<div class="alert alert-error text-sm" role="alert">
+				{$finalizeMessage}
+			</div>
+		{/if}
+
+		<div class="flex justify-end gap-2">
+			<button type="button" class="btn btn-ghost" onclick={() => finalizarModal?.close()}>
+				{m.ui_cancel()}
+			</button>
+			<button type="submit" class="btn btn-primary" disabled={$finalizeDelayed}>
+				{#if $finalizeDelayed}
+					<span class="loading loading-spinner"></span>
+				{/if}
+				{m.purchases_finalize()}
+			</button>
+		</div>
 	</form>
 </Modal>
