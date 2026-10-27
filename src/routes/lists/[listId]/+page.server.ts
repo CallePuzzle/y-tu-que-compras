@@ -1,9 +1,9 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { RequestEvent } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { m } from '$lib/paraglide/messages.js';
 import { itemSchema } from '$lib/schemas/item.js';
+import { purchaseSchema } from '$lib/schemas/purchase.js';
 import { requireActiveFamily } from '$lib/server/family-context.js';
 import {
 	createItem,
@@ -13,6 +13,7 @@ import {
 	updateItem
 } from '$lib/server/items.js';
 import { getList } from '$lib/server/lists.js';
+import { finalizePurchase } from '$lib/server/purchases.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -31,6 +32,13 @@ function itemFormSchema() {
 	});
 }
 
+function purchaseFormSchema() {
+	return purchaseSchema({
+		totalError: m.schema_purchase_total_error(),
+		totalLabel: m.schema_purchase_total_label()
+	});
+}
+
 /**
  * Valores iniciales del alta rápida: cantidad 1 y unidad «ud», lo más común
  * en la compra, para que añadir cueste lo menos posible desde el móvil.
@@ -39,8 +47,10 @@ const EMPTY_ITEM = { name: '', quantity: 1, unit: 'unit' } as const;
 
 // El alta rápida y el modal de edición llevan cada uno SU formulario de
 // superforms (en la página hay dos a la vez): ids distintos para que cada uno
-// aplique solo el resultado de su acción.
+// aplique solo el resultado de su acción. El modal de finalizar (#71) usa el
+// suyo propio, y el action `finalize` valida con el mismo id.
 const EDIT_FORM_ID = 'edit-item';
+const FINALIZE_FORM_ID = 'finalize-purchase';
 
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
@@ -56,16 +66,21 @@ export const load: PageServerLoad = async (event) => {
 		list,
 		items: await listItems(family.id, event.params.listId),
 		form: await superValidate(EMPTY_ITEM, zod4(itemFormSchema())),
-		editForm: await superValidate(EMPTY_ITEM, zod4(itemFormSchema()), { id: EDIT_FORM_ID })
+		editForm: await superValidate(EMPTY_ITEM, zod4(itemFormSchema()), { id: EDIT_FORM_ID }),
+		finalizeForm: await superValidate(zod4(purchaseFormSchema()), { id: FINALIZE_FORM_ID })
 	};
 };
 
 /**
  * El id del item que viaja en el formulario (input hidden de editar y
  * borrar). `null` si falta: UI rancia o petición hecha a mano.
+ *
+ * Recibe el FormData YA LEÍDO: `request.formData()` solo se puede consumir
+ * una vez, y la acción de editar llama también a `superValidate` con él —
+ * dos lecturas lanzan «Body already used» y la acción entera cae con un 500.
  */
-async function itemIdOf(event: RequestEvent): Promise<string | null> {
-	const id = (await event.request.formData()).get('item');
+function itemIdOf(data: FormData): string | null {
+	const id = data.get('item');
 	return typeof id === 'string' && id ? id : null;
 }
 
@@ -93,19 +108,22 @@ export const actions: Actions = {
 	},
 
 	// Editar (checklist #68): mismo schema que crear (los campos son los
-	// mismos). `updateItem` solo toca items de listas DE LA FAMILIA ACTIVA: un
-	// id ajeno o ya borrado llega como «no existe», sin revelar si está en
+	// mismos). El FormData se lee UNA vez y alimenta al superforms y al id
+	// oculto (el body del request no se puede consumir dos veces).
+	// `updateItem` solo toca items de listas DE LA FAMILIA ACTIVA: un id
+	// ajeno o ya borrado llega como «no existe», sin revelar si está en
 	// otra familia.
 	update: async (event) => {
 		const family = requireActiveFamily(event);
-		const form = await superValidate(event.request, zod4(itemFormSchema()), {
+		const data = await event.request.formData();
+		const form = await superValidate(data, zod4(itemFormSchema()), {
 			id: EDIT_FORM_ID
 		});
 		if (!form.valid) {
 			return fail(400, { form });
 		}
 
-		const id = await itemIdOf(event);
+		const id = itemIdOf(data);
 		if (!id) {
 			return message(form, m.items_gone(), { status: 400 });
 		}
@@ -127,7 +145,7 @@ export const actions: Actions = {
 	// (solo el id oculto), como el borrado de listas.
 	delete: async (event) => {
 		const family = requireActiveFamily(event);
-		const id = await itemIdOf(event);
+		const id = itemIdOf(await event.request.formData());
 		if (!id) {
 			return fail(400, { error: m.items_error() });
 		}
@@ -171,5 +189,47 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	// Finalizar compra (checklist #70): cierra la compra con los items
+	// marcados. El total del ticket lo escribe el usuario en el modal (#71) y
+	// viaja validado por `purchaseSchema`; la transacción de servidor (#70)
+	// hace el resto atómicamente. Sin items comprados —o si otro miembro se
+	// los llevó a la vez— la compra no se cierra y se explica en el modal.
+	finalize: async (event) => {
+		const family = requireActiveFamily(event);
+		const form = await superValidate(event.request, zod4(purchaseFormSchema()), {
+			id: FINALIZE_FORM_ID
+		});
+		if (!form.valid) {
+			return fail(400, { form });
+		}
+
+		// `requireActiveFamily` garantiza sesión, pero el tipo de `locals.user`
+		// es opcional: la guardia es para TypeScript, no para la práctica.
+		const user = event.locals.user;
+		if (!user) {
+			return fail(401, { form });
+		}
+
+		try {
+			const outcome = await finalizePurchase(
+				family.id,
+				event.params.listId,
+				form.data.total,
+				user.id
+			);
+			if (outcome === 'list-gone') {
+				return message(form, m.lists_gone(), { status: 400 });
+			}
+			if (outcome === 'nothing-purchased') {
+				return message(form, m.purchases_empty(), { status: 400 });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al finalizar la compra');
+			return message(form, m.purchases_error(), { status: 400 });
+		}
+
+		return message(form, m.purchases_success());
 	}
 };

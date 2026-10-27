@@ -33,13 +33,13 @@ bun run lint        # prettier --check + eslint (formato: bun run format)
 bun run check       # svelte-check (typecheck)
 bun run test:unit -- --run   # vitest en modo run (sin --run queda en watch)
 bun run test:integration     # vitest proyecto `integration` (necesita DATABASE_URL con migraciones aplicadas)
-bun run test:e2e    # playwright (hace build + preview en :4173 antes)
+bun run test:e2e    # playwright (necesita la BD de e2e: bun run db:test:up antes)
 bun run test        # unit + integration + e2e
 ```
 
-Orden en CI (`lint → check → test:unit → test:integration → build → e2e`; los e2e re-hacen el build
-dentro del webServer de Playwright, y `test:integration` aplica las migraciones al service de
-postgres antes). Un test suelto:
+Orden en CI (`lint → check → test:unit → test:integration → build → e2e`; `test:integration` aplica
+las migraciones al service de postgres y el paso e2e levanta su propio PostgreSQL con compose
+antes). Un test suelto:
 `bun run test:unit -- --run src/lib/server/emails.spec.ts`; e2e suelto: `bunx playwright test <fichero>`.
 
 ## Tests
@@ -49,6 +49,14 @@ postgres antes). Un test suelto:
   **server** corre el resto en node (sin base de datos) y **integration** corre `*.int.spec.ts`
   contra Postgres real (en local: postgres en :5432 + `bun run db:migrate`; en CI hay un service).
   Los tests de `src/lib/server/**` son siempre de servidor.
+- **e2e (Playwright)**: los specs viven junto a su ruta como `*.e2e.ts` y los helpers compartidos en
+  `e2e/` (`helpers/` con `auth` — sesión sembrada + login OTP real leyendo la tabla `verification` —,
+  `seed` — familias con roles sembrados como los siembra el plugin —, `db` y `env`). Van full-stack:
+  el webServer es `vite dev` en :4174 contra el PostgreSQL de `docker-compose.yml` (:55433,
+  `bun run db:test:up`; migraciones las aplica `e2e/global-setup.ts`). Sin paralelismo (workers 1):
+  cada spec trunca la BD (`resetDb`). En dev no sale ningún email real y better-auth no activa el
+  rate limit, así que el flujo OTP es repetible. En CI el compose se levanta en su paso del
+  workflow.
 - `requireAssertions: true`: un test sin assertions falla.
 - **En dev/test no sale ningún email real**: `sendEmail` lo imprime en el log y lo deja capturado en
   `capturedEmailsForTests` (ver `src/lib/server/emails.ts`) para asertarlo.

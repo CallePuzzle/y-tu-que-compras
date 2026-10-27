@@ -31,6 +31,7 @@ model User {
   permissionDenies       PermissionDeny[]  @relation("PermissionDeniesReceived")
   permissionDeniesIssued PermissionDeny[]  @relation("PermissionDeniesIssued")
   invitations            Invitation[]
+  purchases              PurchaseRecord[]
 
   @@unique([email])
   @@map("user")
@@ -109,16 +110,20 @@ model RateLimit {
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
 //
-// La relación `lists` es de la app (no del plugin, que la ignora): al borrar la
-// familia, sus listas de la compra mueren con ella (Cascade en List).
+// Las relaciones `lists`, `purchases` y `pantryItems` son de la app (no del
+// plugin, que las ignora): al borrar la familia mueren con ella sus listas de
+// la compra (Cascade en List), su historial de compras (Cascade en
+// PurchaseRecord) y su despensa (Cascade en PantryItem).
 model Organization {
-  id        String   @id
-  name      String
-  slug      String   @unique
-  metadata  Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  lists     List[]
+  id          String           @id
+  name        String
+  slug        String           @unique
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  lists       List[]
+  purchases   PurchaseRecord[]
+  pantryItems PantryItem[]
 
   @@map("organization")
 }
@@ -231,9 +236,9 @@ model Member {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([contextType, contextId, userId])
   @@index([userId])
   @@index([contextType, contextId])
-  @@unique([contextType, contextId, userId])
   @@map("member")
 }
 
@@ -308,15 +313,16 @@ model Invitation {
 // la semántica de daisyUI (LIST_COLORS) y el icono un nombre del set lucide
 // (LIST_ICONS), ambos validados en `$lib/schemas/list`.
 model List {
-  id             String       @id @default(cuid())
+  id             String           @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   color          String
   icon           String
   items          Item[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  purchases      PurchaseRecord[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   @@index([organizationId])
   @@map("list")
@@ -362,4 +368,75 @@ enum Unit {
   dozen
 
   @@map("unit")
+}
+
+// Registro histórico de una compra finalizada (issue #75): snapshot inmutable
+// que crea la transacción de «finalizar compra» (#43). La familia es la dueña
+// (Cascade, como las listas). La lista de origen es nullable con SetNull: el
+// historial sobrevive a que se borre la lista, por eso el nombre va snapshotado
+// en `listName`. `total` es DECIMAL(10,2) — euros con céntimos — y lo escribe a
+// mano el usuario en el modal al finalizar (moneda única EUR, sin campo). La
+// fecha de la compra es el `createdAt`: el registro se crea exactamente al
+// finalizar, no tiene vida posterior (inmutable). El usuario que finaliza
+// también va con SetNull: que borre su cuenta no debe romper el historial.
+model PurchaseRecord {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  listId         String?
+  list           List?          @relation(fields: [listId], references: [id], onDelete: SetNull)
+  listName       String
+  total          Decimal        @db.Decimal(10, 2)
+  userId         String?
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items          PurchaseItem[]
+  createdAt      DateTime       @default(now())
+
+  @@index([organizationId])
+  @@map("purchaseRecord")
+}
+
+// Snapshot inmutable de cada item comprado (issue #75). Misma precisión que el
+// `Item` de origen (DECIMAL(10,3), ver Item.quantity) y el mismo enum `unit`
+// para que el snapshot conserve íntegro lo que sabía la lista.
+model PurchaseItem {
+  id               String         @id @default(cuid())
+  purchaseRecordId String
+  purchaseRecord   PurchaseRecord @relation(fields: [purchaseRecordId], references: [id], onDelete: Cascade)
+  name             String
+  quantity         Decimal        @db.Decimal(10, 3)
+  unit             Unit
+
+  @@index([purchaseRecordId])
+  @@map("purchaseItem")
+}
+
+// Item de la despensa de la familia (issue #70): donde aterrizan los items
+// comprados al finalizar una compra. La familia es la dueña (Cascade, como las
+// listas). `name` es el nombre visible del item tal y como se escribió en la
+// lista; `normalizedName` es el nombre CANÓNICO de búsqueda (trim, minúsculas
+// y sin acentos, ver `normalizeItemName` en `$lib/server/purchases`) — no se
+// muestra, existe para que «Leche Entera» y «leche entera» sean el mismo
+// producto de la despensa. `quantity` se acumula: cada compra suma sobre lo que
+// ya había, con la misma precisión que el `Item` de origen (DECIMAL(10,3)) y el
+// mismo enum `unit`.
+//
+// El único (familia, nombre normalizado, unidad) ES el contrato de «mismo
+// producto»: convierte la suma en un upsert atómico (INSERT ON CONFLICT de
+// Postgres, dos compras concurrentes nunca lo parten) y sirve de índice para
+// las consultas de la familia — con `organizationId` delante, la propia
+// restricción indexa el listado de la despensa.
+model PantryItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  quantity       Decimal      @db.Decimal(10, 3)
+  unit           Unit
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, normalizedName, unit])
+  @@map("pantryItem")
 }

@@ -83,6 +83,7 @@
 	"families_member_gone": "That member no longer belongs to the family.",
 	"families_members_error": "The operation could not be completed. Please try again.",
 	"ui_close": "Close",
+	"ui_cancel": "Cancel",
 
 	"routes_lists": "Lists",
 	"lists_title": "Your lists",
@@ -144,6 +145,14 @@
 	"items_mark_pending": "Mark as pending",
 	"items_section_pending": "Pending",
 	"items_section_purchased": "Purchased",
+	"purchases_finalize": "Finalize purchase",
+	"purchases_modal_summary": "Purchase summary",
+	"purchases_modal_description": "Purchased items will move to the family pantry and leave the list. Pending items stay as they are.",
+	"purchases_success": "Purchase finalized: the purchased items are now in your pantry.",
+	"purchases_empty": "There are no purchased items to finalize. Mark at least one as purchased.",
+	"purchases_error": "The purchase could not be finalized. Please try again later.",
+	"schema_purchase_total_label": "Ticket total (€)",
+	"schema_purchase_total_error": "Enter a valid total (zero or greater).",
 
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",

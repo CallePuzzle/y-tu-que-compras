@@ -18,8 +18,9 @@ jobs:
   quality:
     name: lint + check + test + build + e2e
     runs-on: ubuntu-latest
-    # Postgres solo para el proyecto `integration` de vitest (seed de familias
-    # contra el adaptador Prisma real). El resto de la suite no lo toca.
+    # Postgres para el proyecto `integration` de vitest (seed de familias
+    # contra el adaptador Prisma real). Los e2e llevan su propio PostgreSQL
+    # (docker-compose.yml, puerto 55433): se levanta en su paso.
     services:
       postgres:
         image: postgres:17-alpine
@@ -86,7 +87,12 @@ jobs:
       - name: Build
         run: bun run build
 
-      # Vuelve a construir dentro del webServer de Playwright (ver playwright.config.ts).
+      # Levanta el PostgreSQL dedicado de los e2e (docker-compose.yml, puerto
+      # 55433): el globalSetup de Playwright le aplica las migraciones y el
+      # webServer arranca el dev server contra él (ver playwright.config.ts).
+      - name: Levantar la BD de e2e
+        run: docker compose up -d postgres-test
+
       - name: Test e2e
         run: bun run test:e2e
 

@@ -1,5 +1,4 @@
 import { fail } from '@sveltejs/kit';
-import type { RequestEvent } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { m } from '$lib/paraglide/messages.js';
@@ -45,9 +44,13 @@ export const load: PageServerLoad = async (event) => {
 /**
  * El id de la lista que viaja en el formulario (input hidden de editar y
  * borrar). `null` si falta: UI rancia o petición hecha a mano.
+ *
+ * Recibe el FormData YA LEÍDO: `request.formData()` solo se puede consumir
+ * una vez, y la acción de editar llama también a `superValidate` con él —
+ * dos lecturas lanzan «Body already used» y la acción entera cae con un 500.
  */
-async function listIdOf(event: RequestEvent): Promise<string | null> {
-	const id = (await event.request.formData()).get('lista');
+function listIdOf(data: FormData): string | null {
+	const id = data.get('lista');
 	return typeof id === 'string' && id ? id : null;
 }
 
@@ -72,16 +75,19 @@ export const actions: Actions = {
 	},
 
 	// Editar (checklist #66): mismo schema que crear (los campos son los
-	// mismos). `updateList` solo toca listas DE LA FAMILIA ACTIVA: un id ajeno
-	// o ya borrado llega como «no existe», sin revelar si está en otra familia.
+	// mismos). El FormData se lee UNA vez y alimenta al superforms y al id
+	// oculto (el body del request no se puede consumir dos veces). `updateList`
+	// solo toca listas DE LA FAMILIA ACTIVA: un id ajeno o ya borrado llega
+	// como «no existe», sin revelar si está en otra familia.
 	update: async (event) => {
 		const family = requireActiveFamily(event);
-		const form = await superValidate(event.request, zod4(listFormSchema()));
+		const data = await event.request.formData();
+		const form = await superValidate(data, zod4(listFormSchema()));
 		if (!form.valid) {
 			return fail(400, { form });
 		}
 
-		const id = await listIdOf(event);
+		const id = listIdOf(data);
 		if (!id) {
 			return message(form, m.lists_gone(), { status: 400 });
 		}
@@ -103,7 +109,7 @@ export const actions: Actions = {
 	// FK cuando existan (issue #67). Mismo trato de «no existe aquí» que editar.
 	delete: async (event) => {
 		const family = requireActiveFamily(event);
-		const id = await listIdOf(event);
+		const id = listIdOf(await event.request.formData());
 		if (!id) {
 			return fail(400, { error: m.lists_error() });
 		}

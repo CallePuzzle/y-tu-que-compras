@@ -29,10 +29,16 @@
 	// o desaparece (tras el login/logout), p. ej. para ocultar «Acceder» de los menús.
 	const routes = $derived(getRoutes(Boolean(data.user)));
 
-	// El login es público: su contenido no exige sesión. En el resto de rutas, si
-	// no hay usuario se muestra el aviso (defensiva: el guard de hooks ya redirige
-	// a /login; esto cubre p. ej. una sesión que muere entre navegaciones).
-	const showContent = $derived(Boolean(data.user) || page.route.id === '/login');
+	// El login es público: su contenido no exige sesión. La vista de una
+	// invitación por token también (issue #61): el token del enlace es la
+	// credencial y quien llega sin cuenta debe poder LEER su estado («no es
+	// válida», «caducada», «aceptada»…), igual que lo permite el guard de
+	// hooks (`isPublicPathname`). En el resto de rutas, si no hay usuario se
+	// muestra el aviso (defensiva: el guard de hooks ya redirige a /login;
+	// esto cubre p. ej. una sesión que muere entre navegaciones).
+	const showContent = $derived(
+		Boolean(data.user) || page.route.id === '/login' || page.route.id === '/invitations/[token]'
+	);
 
 	// Tras `signOut()` la cookie ya no vale, pero SvelteKit NO reejecuta el load
 	// del layout al navegar (no depende de url/params): sin esta invalidación la
