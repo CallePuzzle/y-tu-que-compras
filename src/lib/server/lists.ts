@@ -14,19 +14,57 @@ export interface ListView {
 	color: string;
 	/** Nombre de icono lucide (catálogo `LIST_ICONS`); la UI lo traduce a componente. */
 	icon: string;
+	/** Número de items de la lista (el contador del listado, issue #68). */
+	itemCount: number;
+}
+
+const LIST_SELECT = {
+	id: true,
+	name: true,
+	color: true,
+	icon: true,
+	_count: { select: { items: true } }
+} as const;
+
+/** De la fila con `_count` a la vista: el contador se aplana a `itemCount`. */
+function toListView(list: {
+	id: string;
+	name: string;
+	color: string;
+	icon: string;
+	_count: { items: number };
+}): ListView {
+	const { _count, ...rest } = list;
+	return { ...rest, itemCount: _count.items };
 }
 
 /** Las listas de la familia, por orden de creación (las primeras arriba). */
 export async function listLists(familyId: string): Promise<ListView[]> {
-	return prisma.list.findMany({
+	const lists = await prisma.list.findMany({
 		where: { organizationId: familyId },
-		select: { id: true, name: true, color: true, icon: true },
+		select: LIST_SELECT,
 		orderBy: { createdAt: 'asc' }
 	});
+	return lists.map(toListView);
+}
+
+/**
+ * Una lista de la familia por id, o `null` si no existe EN ESA FAMILIA (un id
+ * ajeno es «no existe»: no se revela si vive en otra familia).
+ */
+export async function getList(familyId: string, id: string): Promise<ListView | null> {
+	const list = await prisma.list.findFirst({
+		where: { id, organizationId: familyId },
+		select: LIST_SELECT
+	});
+	return list ? toListView(list) : null;
 }
 
 /** Crea una lista en la familia con los datos ya validados por `listSchema`. */
-export async function createList(familyId: string, data: ListData): Promise<ListView> {
+export async function createList(
+	familyId: string,
+	data: ListData
+): Promise<Omit<ListView, 'itemCount'>> {
 	return prisma.list.create({
 		data: { organizationId: familyId, name: data.name, color: data.color, icon: data.icon },
 		select: { id: true, name: true, color: true, icon: true }
@@ -49,8 +87,7 @@ export async function updateList(familyId: string, id: string, data: ListData): 
 
 /**
  * Borra una lista de la familia; `false` si ya no estaba (doble envío) o era
- * de otra familia. Sus items colgarán de ella por FK y morirán en cascada
- * cuando existan (issue #67); hoy la lista va sola.
+ * de otra familia. Sus items mueren en cascada por la FK (issue #67).
  */
 export async function deleteList(familyId: string, id: string): Promise<boolean> {
 	const result = await prisma.list.deleteMany({

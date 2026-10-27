@@ -123,6 +123,22 @@
 	"unit_can": "can",
 	"unit_dozen": "dozen",
 
+	"lists_items_count": "{count} in the list",
+
+	"items_add": "Add",
+	"items_empty": "This list is empty. Add the first item with the form above.",
+	"items_edit": "Edit item",
+	"items_save": "Save changes",
+	"items_success": "Item added to the list.",
+	"items_updated": "Item updated.",
+	"items_deleted": "Item deleted.",
+	"items_error": "The operation could not be completed. Please try again later.",
+	"items_gone": "That item no longer exists.",
+	"items_delete": "Delete",
+	"items_delete_title": "Delete “{name}”?",
+	"items_delete_description": "The item will be removed from the list. This cannot be undone.",
+	"items_delete_confirm": "Delete permanently",
+
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",
 	"invitations_invalid": "This invitation is not valid or has expired.",
