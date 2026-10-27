@@ -18,6 +18,8 @@
 		"db:deploy": "prisma migrate deploy",
 		"db:status": "prisma migrate status",
 		"db:studio": "prisma studio",
+		"db:test:up": "docker compose up -d postgres-test",
+		"db:test:down": "docker compose stop postgres-test",
 		"test:unit": "vitest --project client --project server",
 		"test:integration": "vitest --run --project integration",
 		"test": "bun run test:unit -- --run && bun run test:integration && bun run test:e2e",

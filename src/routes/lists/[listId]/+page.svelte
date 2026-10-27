@@ -79,9 +79,7 @@
 		enhance: addEnhance,
 		delayed: addDelayed,
 		message: addMessage,
-		errors: addErrors,
-		// Qué campos del alta rápida están tocados sin guardar (ver `alVolver`).
-		tainted: addTainted
+		errors: addErrors
 	} = addForm;
 
 	let addNameInput: HTMLInputElement | undefined = $state();
@@ -199,12 +197,14 @@
 	// PERO superforms rehace los formularios con el `form`/`editForm` que trae
 	// el load en cuanto se actualizan los datos de página: revalidar ahora
 	// mismo MACHACARÍA lo que el usuario tenga a medias. El refresco espera a
-	// una vuelta sin ningún `<dialog>` abierto y con el alta rápida intacta
-	// (el `tainted` de superforms se desmarca solo al volver al valor base).
+	// una vuelta sin ningún `<dialog>` abierto y con el alta rápida intacta.
+	// Ojo con `isTainted()` (y no el store `tainted`, que es un OBJETO —
+	// `{}` incluido, truthy siempre que se haya tecleado algo): es la
+	// consulta oficial de superforms, que mira si queda algín campo sucio.
 	$effect(() => {
 		function alVolver() {
 			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]') || $addTainted) return;
+			if (document.querySelector('dialog[open]') || addForm.isTainted()) return;
 			void invalidateAll();
 		}
 		document.addEventListener('visibilitychange', alVolver);
@@ -368,9 +368,29 @@
 						onchange={(event) => {
 							// Optimista ANTES del envío: la UI responde al toque; si
 							// la acción falla, `alComprar` lo revierte.
-							compras.set(item.id, event.currentTarget.checked);
+							//
+							// PERO el toggle nativo se deshace aquí mismo: el click
+							// cambia la propiedad `checked` a espaldas de Svelte, y
+							// al conmutar entre pendientes y comprados Svelte puede
+							// reciclar la fila (las dos secciones comparten
+							// plantilla) — `set_checked` no reasigna cuando su cache
+							// ya coincide con el destino, así que la casilla podía
+							// volver MARCADA a Pendientes tras un fallo. Con la
+							// propiedad devuelta a `comprado`, cache y DOM quedan
+							// alineados: el estado es quien pinta cada valor.
+							// El valor NUEVO no se pierde: pasa al hidden, que es lo
+							// que lee la acción (?/purchased) tanto con JS como en
+							// un envío nativo sin JS.
+							const input = event.currentTarget;
+							const nuevo = input.checked;
+							input.checked = comprado;
+							const hidden = input.form?.querySelector<HTMLInputElement>(
+								'input[name="purchased"][type="hidden"]'
+							);
+							if (hidden) hidden.value = String(nuevo);
+							compras.set(item.id, nuevo);
 							falloCompra = null;
-							event.currentTarget.form?.requestSubmit();
+							input.form?.requestSubmit();
 						}}
 					/>
 				</form>

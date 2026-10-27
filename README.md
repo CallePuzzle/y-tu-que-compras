@@ -66,8 +66,11 @@ bun run audit     # vulnerabilidades conocidas en dependencias
 ```
 
 Los e2e usan Chromium de Playwright; la primera vez instálalo con `bun run test:e2e:install`.
-Levantan el build con `BETTER_AUTH_URL`/`BETTER_AUTH_SECRET` de prueba (ver
-`playwright.config.ts`) y no necesitan base de datos.
+Son full-stack: levantan el dev server contra un PostgreSQL dedicado (puerto 55433, ver
+`docker-compose.yml`) con las migraciones aplicadas, hacen login OTP real leyendo el código de la
+BD y ejercitan las páginas con sesión. Antes de lanzarlos, sube la BD de test con
+`bun run db:test:up` (y bájala con `bun run db:test:down`). El entorno del e2e vive en
+`.env.test`.
 
 El CI (`.github/workflows/ci.yml`) ejecuta todo lo anterior y además
 [gitleaks](https://github.com/gitleaks/gitleaks) sobre el historial completo.
