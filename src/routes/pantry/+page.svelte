@@ -2,20 +2,31 @@
 	import { invalidateAll } from '$app/navigation';
 	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import { Modal } from '@callepuzzle/svelte-ui';
 	import Minus from '@lucide/svelte/icons/minus';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
+	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
 	import { m } from '$lib/paraglide/messages.js';
 	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
+	import { readdSchema } from '$lib/schemas/pantry.js';
 	import type { Unit } from '$lib/schemas/item.js';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { zod4Client } from 'sveltekit-superforms/adapters';
+	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';
 
 	let { data, form: actionData }: PageProps = $props();
 
 	/** Una fila de despensa (la trae el load). */
 	type PantryRow = PageProps['data']['items'][number];
+
+	/** Une el formato de error de superforms (string o lista) a texto plano. */
+	function textoError(error: string | string[] | undefined): string | undefined {
+		if (!error) return undefined;
+		return Array.isArray(error) ? error.join(' ') : error;
+	}
 
 	/**
 	 * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal
@@ -32,22 +43,6 @@
 		can: m.unit_can(),
 		dozen: m.unit_dozen()
 	};
-
-	// Refresco al volver a la pestaña: la despensa la mueven las compras y los
-	// consumos de CUALQUIER miembro y la v1 no tiene tiempo real, así que lo
-	// barato y suficiente es revalidar al volver a mirar — el criterio
-	// «actualizada tras cada acción» de la #44. La única peticiones en vuelo
-	// posibles al volver son ajustes (−/+) propios, cuyo optimista pinta
-	// ENCIMA de los datos: repintar la verdad del servidor a mitad de ajuste
-	// es inofensivo, el resultado del ajuste llega un instante después.
-	$effect(() => {
-		function alVolver() {
-			if (document.visibilityState !== 'visible') return;
-			void invalidateAll();
-		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
-	});
 
 	// ---- Consumir / devolver (checklist #73): stepper −/+ por fila con
 	// actualización OPTIMISTA, la misma técnica del toggle de comprado. ----
@@ -106,6 +101,86 @@
 			};
 	}
 
+	// ---- Re-añadir a la compra (checklist #74): modal con SU formulario de
+	// superforms (id «readd-item», lo pone el load) para no pisar al ajuste.
+	// El schema se construye EN RENDER, como los demás (regla i18n). ----
+	const readdSchemaCompiled = readdSchema({
+		listIdError: m.schema_readd_list_error(),
+		listIdLabel: m.schema_readd_list_label(),
+		quantityError: m.schema_items_quantity_error(),
+		quantityLabel: m.pantry_readd_quantity_label(),
+		pantryModeError: m.schema_readd_mode_error(),
+		pantryModeLabel: m.pantry_readd_pantry_label(),
+		newQuantityError: m.schema_readd_new_quantity_error(),
+		newQuantityLabel: m.schema_readd_new_quantity_label()
+	});
+
+	// Aviso de éxito del re-añadido, fuera del modal (como editar en la lista).
+	let exito: string | null = $state(null);
+
+	/** El producto que se quiere re-añadir: fija título, id y cantidad por defecto. */
+	let itemReAnadir: PantryRow | undefined = $state();
+	let readdModal: { showModal(): void; close(): void } | undefined = $state();
+
+	// svelte-ignore state_referenced_locally
+	const readdForm = superForm(data.readdForm, {
+		validators: zod4Client(readdSchemaCompiled),
+		// Pesimista: el modal cierra cuando el load trae la lista con el item
+		// y la despensa ya ajustadas, igual que el modal de edición.
+		invalidateAll: 'pessimistic',
+		onResult({ result }) {
+			if (result.type === 'success') {
+				// El texto concreto lo decide la acción y viaja en el resultado
+				// (`message()`), como en los modales de la lista.
+				const data = result.data as { form?: { message?: string } } | undefined;
+				exito = data?.form?.message ?? m.pantry_readd_success();
+				readdModal?.close();
+			}
+		}
+	});
+	const {
+		form: readdFormData,
+		enhance: readdEnhance,
+		delayed: readdDelayed,
+		message: readdMessage,
+		errors: readdErrors
+	} = readdForm;
+
+	/** Abre el modal con el producto cargado y la primera lista por defecto. */
+	function abrirReAnadir(item: PantryRow) {
+		exito = null;
+		itemReAnadir = item;
+		readdMessage.set(undefined);
+		readdErrors.clear();
+		readdFormData.set({
+			listId: data.lists[0]?.id ?? '',
+			// La cantidad por defecto para la lista es la que hay en despensa:
+			// «quiero lo mismo que me queda» es lo habitual.
+			quantity: item.quantity,
+			pantryMode: 'keep',
+			newQuantity: undefined
+		});
+		readdModal?.showModal();
+	}
+
+	// Refresco al volver a la pestaña: la despensa la mueven las compras, los
+	// consumos y los re-añadidos de CUALQUIER miembro y la v1 no tiene tiempo
+	// real, así que lo barato y suficiente es revalidar al volver a mirar — el
+	// criterio «actualizada tras cada acción» de la #44. PERO el modal de
+	// re-añadir lleva su formulario de superforms, que el load reharía con lo
+	// que traiga: el refresco espera a una vuelta sin ningún `<dialog>`
+	// abierto y con el formulario intacto (`isTainted`), igual que en la
+	// vista de lista.
+	$effect(() => {
+		function alVolver() {
+			if (document.visibilityState !== 'visible') return;
+			if (document.querySelector('dialog[open]') || readdForm.isTainted()) return;
+			void invalidateAll();
+		}
+		document.addEventListener('visibilitychange', alVolver);
+		return () => document.removeEventListener('visibilitychange', alVolver);
+	});
+
 	/** La etiqueta del botón lleva el paso exacto: «Consumir 0.25 kg». */
 	function etiquetaPaso(
 		item: PantryRow,
@@ -133,6 +208,12 @@
 	{#if falloAjuste}
 		<div class="alert alert-warning mt-4 text-sm" role="alert">
 			{falloAjuste}
+		</div>
+	{/if}
+
+	{#if exito}
+		<div class="alert alert-success mt-4 text-sm" role="status">
+			{exito}
 		</div>
 	{/if}
 
@@ -189,8 +270,172 @@
 							<Plus aria-hidden="true" />
 						</button>
 					</form>
+					<!-- Re-añadir a la compra (checklist #74): abre el modal con el
+					     selector de lista y el ajuste de despensa. -->
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						title={m.pantry_readd()}
+						aria-label={m.pantry_readd()}
+						onclick={() => abrirReAnadir(item)}
+					>
+						<ShoppingCart aria-hidden="true" />
+					</button>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 </section>
+
+<!-- Re-añadir a la compra (checklist #74): una modal compartida; cada botón
+     de fila fija a qué producto se re-añade antes de abrirla. Con SU
+     formulario de superforms (id «readd-item») para no pisar al ajuste. Los
+     fallos del action (producto consumido por otro a la vez, lista borrada,
+     error de servidor) se cuentan aquí dentro. -->
+<Modal
+	bind:this={readdModal}
+	type="X"
+	showButton={false}
+	boxClass="modal-box max-w-md"
+	strings={{ close: m.ui_close() }}
+>
+	<h2 class="text-lg font-bold">{m.pantry_readd_title({ name: itemReAnadir?.name ?? '' })}</h2>
+	<p class="mt-1 text-sm opacity-70">{m.pantry_readd_description()}</p>
+
+	{#if data.lists.length === 0}
+		<!-- Sin listas no hay destino posible: se explica y se manda a crearlas. -->
+		<div class="mt-4 flex flex-col items-center gap-3 text-center">
+			<p class="opacity-70">{m.pantry_readd_no_lists()}</p>
+			<a href={resolve('/lists')} class="btn btn-primary">{m.pantry_go_lists()}</a>
+		</div>
+	{:else}
+		<form method="POST" action="?/readd" use:readdEnhance class="mt-4 flex flex-col gap-4">
+			<!-- El id del producto de despensa viaja con el formulario. -->
+			<input type="hidden" name="pantry" value={itemReAnadir?.id ?? ''} />
+
+			<div class="flex flex-col gap-1">
+				<label class="fieldset-label" for="readd-list">{m.schema_readd_list_label()}</label>
+				<select
+					bind:value={$readdFormData.listId}
+					aria-invalid={textoError($readdErrors.listId) ? 'true' : undefined}
+					id="readd-list"
+					name="listId"
+					class="select w-full"
+					required
+				>
+					{#each data.lists as lista (lista.id)}
+						<option value={lista.id}>{lista.name}</option>
+					{/each}
+				</select>
+				{#if textoError($readdErrors.listId)}
+					<p class="fieldset-label text-error" role="alert">{textoError($readdErrors.listId)}</p>
+				{/if}
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<label class="fieldset-label" for="readd-quantity">{m.pantry_readd_quantity_label()}</label>
+				<!-- Por defecto, la cantidad que hay en despensa: «lo mismo que
+				     me queda». Sin `min` nativo: el corte lo hace zod en cliente
+				     con el error del schema (igual que el alta de items). -->
+				<input
+					bind:value={$readdFormData.quantity}
+					aria-invalid={textoError($readdErrors.quantity) ? 'true' : undefined}
+					id="readd-quantity"
+					name="quantity"
+					type="number"
+					class="input w-full"
+					step="any"
+					inputmode="decimal"
+					required
+				/>
+				{#if textoError($readdErrors.quantity)}
+					<p class="fieldset-label text-error" role="alert">
+						{textoError($readdErrors.quantity)}
+					</p>
+				{/if}
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<span class="fieldset-label">{m.pantry_readd_pantry_label()}</span>
+				<div class="flex flex-col gap-2">
+					<label class="flex cursor-pointer items-center gap-2 text-sm">
+						<input
+							type="radio"
+							class="radio radio-primary radio-sm"
+							name="pantryMode"
+							value="keep"
+							bind:group={$readdFormData.pantryMode}
+						/>
+						{m.pantry_readd_keep()}
+					</label>
+					<label class="flex cursor-pointer items-center gap-2 text-sm">
+						<input
+							type="radio"
+							class="radio radio-primary radio-sm"
+							name="pantryMode"
+							value="set"
+							bind:group={$readdFormData.pantryMode}
+						/>
+						{m.pantry_readd_set()}
+					</label>
+					{#if $readdFormData.pantryMode === 'set'}
+						<!-- Solo visible con «fijar nueva cantidad»: cuánto QUEDA. -->
+						<div class="flex flex-col gap-1 pl-6">
+							<label class="fieldset-label" for="readd-new-quantity"
+								>{m.schema_readd_new_quantity_label()}</label
+							>
+							<input
+								bind:value={$readdFormData.newQuantity}
+								aria-invalid={textoError($readdErrors.newQuantity) ? 'true' : undefined}
+								id="readd-new-quantity"
+								name="newQuantity"
+								type="number"
+								class="input w-full"
+								step="any"
+								inputmode="decimal"
+							/>
+							{#if textoError($readdErrors.newQuantity)}
+								<p class="fieldset-label text-error" role="alert">
+									{textoError($readdErrors.newQuantity)}
+								</p>
+							{/if}
+						</div>
+					{/if}
+					<label class="flex cursor-pointer items-center gap-2 text-sm">
+						<input
+							type="radio"
+							class="radio radio-primary radio-sm"
+							name="pantryMode"
+							value="remove"
+							bind:group={$readdFormData.pantryMode}
+						/>
+						{m.pantry_readd_remove()}
+					</label>
+				</div>
+				{#if textoError($readdErrors.pantryMode)}
+					<p class="fieldset-label text-error" role="alert">
+						{textoError($readdErrors.pantryMode)}
+					</p>
+				{/if}
+			</div>
+
+			{#if $readdMessage}
+				<div class="alert alert-error text-sm" role="alert">
+					{$readdMessage}
+				</div>
+			{/if}
+
+			<div class="flex justify-end gap-2">
+				<button type="button" class="btn btn-ghost" onclick={() => readdModal?.close()}>
+					{m.ui_cancel()}
+				</button>
+				<button type="submit" class="btn btn-primary" disabled={$readdDelayed}>
+					{#if $readdDelayed}
+						<span class="loading loading-spinner"></span>
+					{/if}
+					{m.pantry_readd()}
+				</button>
+			</div>
+		</form>
+	{/if}
+</Modal>

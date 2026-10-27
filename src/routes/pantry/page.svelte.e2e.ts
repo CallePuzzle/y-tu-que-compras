@@ -2,7 +2,14 @@ import { expect, test } from '@playwright/test';
 import { volverALaPestana } from '../../../e2e/helpers/browser';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
-import { createFamily, createPantryItem, createUser, resetDb } from '../../../e2e/helpers/seed';
+import {
+	createFamily,
+	createItem,
+	createList,
+	createPantryItem,
+	createUser,
+	resetDb
+} from '../../../e2e/helpers/seed';
 
 test.beforeEach(async () => {
 	await resetDb();
@@ -167,4 +174,113 @@ test('devolver (+) repone el paso consumido por error (#73)', async ({ page }) =
 
 	await cerveza.getByRole('button', { name: 'Devolver 1 ud' }).click();
 	await expect(cerveza.getByText('2 ud')).toBeVisible();
+});
+
+test('re-añade a la lista que elijas y la despensa queda igual por defecto (#74)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const listaA = await createList({ familyId: family.id, name: 'Super' });
+	const listaB = await createList({ familyId: family.id, name: 'Mercado' });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+	await leche.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByRole('heading', { name: 'Re-añadir «Leche entera»' })).toBeVisible();
+	// La cantidad por defecto para la lista es la que hay en despensa.
+	await expect(dialog.locator('#readd-quantity')).toHaveValue('2');
+	// El destino puede ser cualquiera: se elige la SEGUNDA lista.
+	await dialog.locator('#readd-list').selectOption({ label: 'Mercado' });
+	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	// El modal cierra, avisa y la despensa sigue igual (leave as is por defecto).
+	await expect(page.locator('dialog[open]')).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
+	await expect(leche.getByText('2 L')).toBeVisible();
+
+	// El item está en la lista elegida y no en la otra.
+	await page.goto(`/lists/${listaB.id}`);
+	await expect(
+		page.locator('section li', { hasText: 'Leche entera' }).getByText('2 L')
+	).toBeVisible();
+	await page.goto(`/lists/${listaA.id}`);
+	await expect(page.locator('section li', { hasText: 'Leche entera' })).toHaveCount(0);
+});
+
+test('re-añadir quitando el producto de la despensa lo saca de ella (#74)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+	await leche.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	const dialog = page.locator('dialog[open]');
+	await dialog.getByRole('radio', { name: 'Quitar de la despensa' }).check();
+	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
+	// La despensa queda vacía…
+	await expect(page.getByText(/La despensa está vacía/)).toBeVisible();
+	// …y el producto está en la lista con su cantidad.
+	await page.goto(`/lists/${lista.id}`);
+	await expect(
+		page.locator('section li', { hasText: 'Leche entera' }).getByText('2 L')
+	).toBeVisible();
+});
+
+test('re-añadir suma sobre el pendiente equivalente de la lista (#74)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: lista.id, name: 'leche entera', quantity: 0.5, unit: 'liter' });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+	await leche.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	const dialog = page.locator('dialog[open]');
+	// Cantidad para la lista distinta a la de despensa: 1 L.
+	await dialog.locator('#readd-quantity').fill('1');
+	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
+	// 0,5 + 1 = 1,5 sobre UNA fila (sin duplicado), conservando el nombre escrito.
+	await page.goto(`/lists/${lista.id}`);
+	await expect(
+		page.locator('section li', { hasText: 'leche entera' }).getByText('1.5 L')
+	).toBeVisible();
+	await expect(page.locator('section li')).toHaveCount(1);
+});
+
+test('sin listas el modal explica que hay que crear una (#74)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	await page
+		.locator('li', { hasText: 'Leche entera' })
+		.getByRole('button', { name: 'Re-añadir a la compra' })
+		.click();
+
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByText(/Esta familia no tiene listas/)).toBeVisible();
+	// Sin listas no hay formulario que enviar.
+	await expect(dialog.getByRole('button', { name: 'Re-añadir a la compra' })).toHaveCount(0);
 });

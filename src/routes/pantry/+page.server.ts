@@ -1,31 +1,72 @@
 import { fail } from '@sveltejs/kit';
+import { message, superValidate } from 'sveltekit-superforms/server';
+import { zod4 } from 'sveltekit-superforms/adapters';
 import { m } from '$lib/paraglide/messages.js';
+import { readdSchema } from '$lib/schemas/pantry.js';
 import { requireActiveFamily } from '$lib/server/family-context.js';
-import { adjustPantryItem, listPantryItems } from '$lib/server/pantry.js';
+import { listLists } from '$lib/server/lists.js';
+import { adjustPantryItem, listPantryItems, readdPantryItem } from '$lib/server/pantry.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
 
-// La despensa de la familia activa (issues #44 y #72): la consulta trae los
-// productos y la acción `adjust` consume/devuelve un paso por item (#73) —
-// re-añadir a la compra (#74) llegará con su propia tarea. La familia activa
-// es la puerta de la vista (issue #63): `requireActiveFamily` manda a
+// La despensa de la familia activa (issues #44, #72, #73 y #74): la consulta
+// trae los productos, la acción `adjust` consume/devuelve un paso por item y
+// la acción `readd` lo manda a la lista de la compra elegida. La familia
+// activa es la puerta de la vista (issue #63): `requireActiveFamily` manda a
 // `/families` a quien no tiene o no ha elegido, y su id — ya verificado contra
 // la membresía — es el que filtra la query.
+
+// Los schemas se construyen EN REQUEST, nunca en scope de módulo (regla i18n
+// de la librería): los textos de Paraglide se resuelven con la locale de la
+// petición.
+function readdFormSchema() {
+	return readdSchema({
+		listIdError: m.schema_readd_list_error(),
+		listIdLabel: m.schema_readd_list_label(),
+		quantityError: m.schema_items_quantity_error(),
+		quantityLabel: m.pantry_readd_quantity_label(),
+		pantryModeError: m.schema_readd_mode_error(),
+		pantryModeLabel: m.pantry_readd_pantry_label(),
+		newQuantityError: m.schema_readd_new_quantity_error(),
+		newQuantityLabel: m.schema_readd_new_quantity_label()
+	});
+}
+
+// El modal de re-añadir lleva SU formulario de superforms, con id propio para
+// que el resultado de su acción no pise al `adjust`.
+const READD_FORM_ID = 'readd-item';
+
+/** Valores iniciales del formulario: los reales los fija `abrirReAnadir` con el producto pulsado. */
+const EMPTY_READD = { listId: '', quantity: 1, pantryMode: 'keep' } as const;
+
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
 	return {
-		items: await listPantryItems(family.id)
+		items: await listPantryItems(family.id),
+		// Las listas de la familia alimentan el selector de destino del modal
+		// (#74): la lista puede ser cualquiera de las de la familia.
+		lists: await listLists(family.id),
+		readdForm: await superValidate(EMPTY_READD, zod4(readdFormSchema()), { id: READD_FORM_ID })
 	};
 };
 
 /**
- * Consume o devuelve un paso de un producto (checklist #73). Sin schema de
- * superforms — solo el id oculto y el signo del botón pulsado, como el toggle
- * de comprado en la lista: la CANTIDAD la fija el servidor con el paso de la
- * unidad guardada, y el cliente aplica el cambio de forma optimista
- * revirtiéndolo si la acción falla.
+ * El id del producto de despensa que viaja en el formulario (input hidden del
+ * modal de re-añadir). `null` si falta: UI rancia o petición hecha a mano.
+ * Recibe el FormData YA LEÍDO: `request.formData()` solo se puede consumir
+ * una vez y la acción llama también a `superValidate` con él.
  */
+function pantryIdOf(data: FormData): string | null {
+	const id = data.get('pantry');
+	return typeof id === 'string' && id ? id : null;
+}
+
 export const actions: Actions = {
+	// Consumir o devolver un paso de un producto (checklist #73). Sin schema de
+	// superforms — solo el id oculto y el signo del botón pulsado, como el
+	// toggle de comprado en la lista: la CANTIDAD la fija el servidor con el
+	// paso de la unidad guardada, y el cliente aplica el cambio de forma
+	// optimista revirtiéndolo si la acción falla.
 	adjust: async (event) => {
 		const family = requireActiveFamily(event);
 		const data = await event.request.formData();
@@ -53,5 +94,39 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	// Re-añadir a la compra (checklist #74): el modal manda lista destino,
+	// cantidad para la lista y qué hacer con la despensa. El FormData se lee
+	// UNA vez y alimenta al superforms y al id oculto (el body del request no
+	// se puede consumir dos veces). La transacción de `readdPantryItem` suma
+	// sobre el pendiente equivalente o crea el item, y ajusta la despensa.
+	readd: async (event) => {
+		const family = requireActiveFamily(event);
+		const data = await event.request.formData();
+		const form = await superValidate(data, zod4(readdFormSchema()), { id: READD_FORM_ID });
+		if (!form.valid) {
+			return fail(400, { readdForm: form });
+		}
+
+		const pantryId = pantryIdOf(data);
+		if (!pantryId) {
+			return message(form, m.pantry_gone(), { status: 400 });
+		}
+
+		try {
+			const outcome = await readdPantryItem(family.id, pantryId, form.data);
+			if (outcome === 'pantry-gone') {
+				return message(form, m.pantry_gone(), { status: 400 });
+			}
+			if (outcome === 'list-gone') {
+				return message(form, m.lists_gone(), { status: 400 });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al re-añadir el producto a la lista');
+			return message(form, m.pantry_readd_error(), { status: 400 });
+		}
+
+		return message(form, m.pantry_readd_success());
 	}
 };

@@ -1,5 +1,7 @@
 import { UNIT_STEP } from '$lib/pantry-steps.js';
 import prisma from '$lib/server/prisma.js';
+import { normalizeItemName } from '$lib/server/purchases.js';
+import type { ReaddData } from '$lib/schemas/pantry.js';
 import type { Unit } from '$lib/schemas/item.js';
 
 // Consulta y ciclo de vida de la despensa de la familia (issues #44, #72,
@@ -114,5 +116,110 @@ export async function adjustPantryItem(
 			});
 		}
 		return true;
+	});
+}
+
+/** Cómo acabó un re-añadido a la compra. */
+export type ReaddOutcome =
+	/** El producto entró (o sumó) en la lista y la despensa quedó ajustada. */
+	| 'added'
+	/** El producto de despensa ya no está en esa familia (id ajeno o rancio). */
+	| 'pantry-gone'
+	/** La lista destino no existe en esa familia (id ajeno o ya borrada). */
+	| 'list-gone';
+
+/**
+ * Re-añade un producto de la despensa a una lista DE LA FAMILIA (issues #46 y
+ * #74): la lista destino la elige el usuario (puede ser distinta a la de la
+ * última compra) y la despensa se ajusta según `pantryMode` — dejar igual,
+ * fijar una cantidad nueva o quitar el producto. Todo en UNA transacción: o
+ * entra en la lista y se ajusta la despensa, o no queda rastro de nada.
+ *
+ * Si en la lista ya hay un item PENDIENTE equivalente (mismo nombre
+ * normalizado y misma unidad), la cantidad se SUMA sobre él — los comprados
+ * no se tocan: ya se compraron — y su nombre escrito se conserva. Si no lo
+ * hay, se crea uno nuevo al final de la lista con el nombre canónico de la
+ * despensa (el de la primera compra), que es el que la familia reconoce.
+ */
+export async function readdPantryItem(
+	familyId: string,
+	pantryItemId: string,
+	data: ReaddData
+): Promise<ReaddOutcome> {
+	return prisma.$transaction(async (tx) => {
+		// Producto ajeno o ya consumido por otro miembro mientras se abría el
+		// modal: «no existe», sin revelar si vive en otra familia.
+		const producto = await tx.pantryItem.findFirst({
+			where: { id: pantryItemId, organizationId: familyId },
+			select: { id: true, name: true, normalizedName: true, unit: true }
+		});
+		if (!producto) {
+			return 'pantry-gone';
+		}
+
+		// Lista inexistente o ajena: id rancio o de otra familia — «no existe»
+		// en ambos casos, como en `finalizePurchase`.
+		const lista = await tx.list.findFirst({
+			where: { id: data.listId, organizationId: familyId },
+			select: { id: true }
+		});
+		if (!lista) {
+			return 'list-gone';
+		}
+
+		// ¿Hay pendiente equivalente? Mismo nombre normalizado (los acentos y
+		// las mayúsculas no hacen al producto) y misma unidad — la unidad va
+		// en el `where` y el nombre se compara canónico a canónico.
+		const pendientes = await tx.item.findMany({
+			where: { listId: lista.id, purchased: false, unit: producto.unit },
+			select: { id: true, name: true }
+		});
+		const equivalente = pendientes.find(
+			(row) => normalizeItemName(row.name) === producto.normalizedName
+		);
+
+		// La suma lleva `purchased: false` en el `where`: si otro miembro
+		// marcó el equivalente como comprado mientras tanto, no se toca y se
+		// crea un item nuevo (count 0).
+		const suma = equivalente
+			? await tx.item.updateMany({
+					where: { id: equivalente.id, purchased: false },
+					data: { quantity: { increment: data.quantity } }
+				})
+			: { count: 0 };
+
+		if (suma.count === 0) {
+			// El `order` lo calcula el SERVIDOR, como en `createItem`: al final
+			// de la lista.
+			const { _max } = await tx.item.aggregate({
+				where: { listId: lista.id },
+				_max: { order: true }
+			});
+			await tx.item.create({
+				data: {
+					listId: lista.id,
+					name: producto.name,
+					quantity: data.quantity,
+					unit: producto.unit,
+					order: (_max.order ?? -1) + 1
+				}
+			});
+		}
+
+		// El ajuste de despensa elegido en el modal, sobre la pertenencia en
+		// el `where`: si otro miembro lo consumió a cero mientras tanto, no
+		// hay nada que fijar ni quitar — el producto ya entró en la lista.
+		if (data.pantryMode === 'set') {
+			await tx.pantryItem.updateMany({
+				where: { id: producto.id, organizationId: familyId },
+				data: { quantity: data.newQuantity }
+			});
+		} else if (data.pantryMode === 'remove') {
+			await tx.pantryItem.deleteMany({
+				where: { id: producto.id, organizationId: familyId }
+			});
+		}
+
+		return 'added';
 	});
 }
