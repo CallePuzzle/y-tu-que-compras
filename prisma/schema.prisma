@@ -108,6 +108,9 @@ model RateLimit {
 
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
+//
+// La relación `lists` es de la app (no del plugin, que la ignora): al borrar la
+// familia, sus listas de la compra mueren con ella (Cascade en List).
 model Organization {
   id        String   @id
   name      String
@@ -115,6 +118,7 @@ model Organization {
   metadata  Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  lists     List[]
 
   @@map("organization")
 }
@@ -292,4 +296,27 @@ model Invitation {
   @@index([identifier])
   @@index([roleId])
   @@map("invitation")
+}
+
+// ============================================================================
+// Modelos propios de la app
+// ============================================================================
+
+// Lista de la compra de una familia (issue #65). La familia es la Organization
+// del plugin de tenancy: la FK en cascada para que al borrar aquélla no queden
+// listas huérfanas. `color` e `icon` guardan nombres, no estilos: la paleta es
+// la semántica de daisyUI (LIST_COLORS) y el icono un nombre del set lucide
+// (LIST_ICONS), ambos validados en `$lib/schemas/list`.
+model List {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  color          String
+  icon           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@map("list")
 }
