@@ -5,7 +5,13 @@ import { message, superValidate } from 'sveltekit-superforms/server';
 import { m } from '$lib/paraglide/messages.js';
 import { itemSchema } from '$lib/schemas/item.js';
 import { requireActiveFamily } from '$lib/server/family-context.js';
-import { createItem, deleteItem, listItems, updateItem } from '$lib/server/items.js';
+import {
+	createItem,
+	deleteItem,
+	listItems,
+	setItemPurchased,
+	updateItem
+} from '$lib/server/items.js';
 import { getList } from '$lib/server/lists.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
@@ -133,6 +139,34 @@ export const actions: Actions = {
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al borrar el item');
+			return fail(400, { error: m.items_error() });
+		}
+
+		return { success: true };
+	},
+
+	// Marcar/desmarcar comprado (checklist #69): el toggle del checkbox. Sin
+	// schema de superforms (el id oculto y el booleano del checkbox); el valor
+	// NUEVO viaja en el formulario — el checkbox lleva value «true» sobre un
+	// hidden «false», así que «true» solo aparece si venía marcado — y el
+	// servidor lo fija tal cual, sin leer-then-write. El cliente aplica el
+	// cambio de forma optimista y revierte si la acción falla.
+	purchased: async (event) => {
+		const family = requireActiveFamily(event);
+		const data = await event.request.formData();
+		const id = data.get('item');
+		if (typeof id !== 'string' || !id) {
+			return fail(400, { error: m.items_error() });
+		}
+		const purchased = data.getAll('purchased').includes('true');
+
+		try {
+			const ok = await setItemPurchased(family.id, event.params.listId, id, purchased);
+			if (!ok) {
+				return fail(400, { error: m.items_gone() });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al marcar el item');
 			return fail(400, { error: m.items_error() });
 		}
 

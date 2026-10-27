@@ -54,6 +54,31 @@ describe('CRUD de listas por familia (#66)', () => {
 		expect(lists[0]).toMatchObject({ name: 'Compra semanal' });
 	});
 
+	it('listLists cuenta los items pendientes de comprar (#69)', async () => {
+		const mia = await familyRow('Familia Contadora');
+		const vacia = await createList(mia, { ...LISTA, name: 'Vacía' });
+		const llena = await createList(mia, { ...LISTA, name: 'Llena' });
+
+		// Items directamente en la base: el spec de listas no depende del CRUD
+		// de items (eso lo ejercita `items.int.spec.ts`).
+		await prisma.item.createMany({
+			data: [
+				{ listId: llena.id, name: 'Leche', quantity: 2, unit: 'liter', order: 0 },
+				{ listId: llena.id, name: 'Pan', quantity: 1, unit: 'unit', order: 1, purchased: true }
+			]
+		});
+
+		const lists = await listLists(mia);
+		expect(lists.find((list) => list.id === vacia.id)).toMatchObject({
+			itemCount: 0,
+			pendingCount: 0
+		});
+		expect(lists.find((list) => list.id === llena.id)).toMatchObject({
+			itemCount: 2,
+			pendingCount: 1
+		});
+	});
+
 	it('updateList cambia una lista propia; con una ajena devuelve false y no la toca', async () => {
 		const mia = await familyRow('Familia Editora');
 		const ajena = await familyRow('Familia Intacta');

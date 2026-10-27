@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 // (de otra familia o de otra lista) no se pueden tocar ni por error.
 import type { ItemData } from '$lib/schemas/item.js';
 import prisma from './prisma.js';
-import { createItem, deleteItem, listItems, updateItem } from './items.js';
+import { createItem, deleteItem, listItems, setItemPurchased, updateItem } from './items.js';
 import { createList } from './lists.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
@@ -180,5 +180,61 @@ describe('CRUD de items por familia y lista (#68)', () => {
 		await prisma.list.delete({ where: { id: list.id } });
 
 		expect(await prisma.item.findMany({ where: { id: { in: [a.id, b.id] } } })).toHaveLength(0);
+	});
+});
+
+describe('Marcar item como comprado (#69)', () => {
+	it('setItemPurchased marca y desmarca un item propio, y persiste', async () => {
+		const familyId = await familyRow('Familia Compradora');
+		const list = await createList(familyId, LISTA);
+		const item = await createItemOrFail(familyId, list.id, ITEM);
+
+		expect(await setItemPurchased(familyId, list.id, item.id, true)).toBe(true);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).purchased).toBe(true);
+
+		// Desmarcar también persiste: el criterio de aceptación lo cubre entero
+		// («marco y desmarco items y el estado persiste entre recargas»).
+		expect(await setItemPurchased(familyId, list.id, item.id, false)).toBe(true);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).purchased).toBe(false);
+	});
+
+	it('setItemPurchased no toca items ajenos: otra familia, otra lista o id inexistente', async () => {
+		const mia = await familyRow('Familia Compradora');
+		const ajena = await familyRow('Familia Intacta');
+		const propia = await createList(mia, LISTA);
+		const externa = await createList(ajena, LISTA);
+		const ajeno = await createItemOrFail(ajena, externa.id, ITEM);
+		const parafarmacia = await createList(mia, { ...LISTA, name: 'Parafarmacia' });
+		const deOtraLista = await createItemOrFail(mia, parafarmacia.id, ITEM);
+
+		// El id de un item de OTRA familia no se puede marcar aunque se conozca.
+		expect(await setItemPurchased(mia, propia.id, ajeno.id, true)).toBe(false);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: ajeno.id } })).purchased).toBe(
+			false
+		);
+
+		// El filtro de lista acota también dentro de la misma familia.
+		expect(await setItemPurchased(mia, propia.id, deOtraLista.id, true)).toBe(false);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: deOtraLista.id } })).purchased).toBe(
+			false
+		);
+
+		expect(await setItemPurchased(mia, propia.id, randomUUID(), true)).toBe(false);
+	});
+
+	it('listItems trae el comprado y ordena pendientes antes que comprados', async () => {
+		const familyId = await familyRow('Familia con Carrito');
+		const list = await createList(familyId, LISTA);
+		const a = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Pan', unit: 'unit' });
+		const b = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Leche' });
+		const c = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Huevos', unit: 'dozen' });
+
+		await setItemPurchased(familyId, list.id, b.id, true);
+
+		// El orden visual agrupa: primero los pendientes en su `order`, luego
+		// los comprados — la separación de la issue, también sin JS.
+		const items = await listItems(familyId, list.id);
+		expect(items.map((item) => item.id)).toEqual([a.id, c.id, b.id]);
+		expect(items.map((item) => item.purchased)).toEqual([false, false, true]);
 	});
 });

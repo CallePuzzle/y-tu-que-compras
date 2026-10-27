@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
@@ -145,6 +146,62 @@
 		itemBorrado = item;
 		borrarModal?.showModal();
 	}
+
+	// ---- Comprado (checklist #69): checkbox con actualización OPTIMISTA. ----
+	// El valor que aún no ha confirmado el servidor viaja en `compras`
+	// (id -> valor): la UI lo pinta ENCIMA de `item.purchased` y lo retira
+	// cuando el load trae la verdad del servidor — o en cuanto falla la
+	// petición, que es la reversión prometida en el checklist.
+	const compras = $state(new Map<string, boolean>());
+	let falloCompra: string | null = $state(null);
+
+	/** El comprado mostrado: el optimista si lo hay; si no, el del servidor. */
+	function valorComprado(item: ItemRow): boolean {
+		return compras.get(item.id) ?? item.purchased;
+	}
+
+	// Separación visual (checklist #69): pendientes arriba y comprados debajo,
+	// atenuados y tachados. El orden ya trae el servidor los pendientes
+	// primero (`listItems`), así que partir `data.items` conserva el `order`.
+	const pendientes = $derived(data.items.filter((item) => !valorComprado(item)));
+	const comprados = $derived(data.items.filter((item) => valorComprado(item)));
+
+	/** Resultado del toggle: en fallo revierte y avisa; en éxito refresca. */
+	function alComprar(id: string): SubmitFunction {
+		return () =>
+			async ({ result, update }) => {
+				if (result.type === 'success') {
+					// El load traerá la verdad del servidor — incluidos los cambios
+					// de otros miembros —; el optimista se retira al terminar para
+					// que el checkbox no parpadee durante la recarga.
+					await update();
+				} else {
+					// Fallo (el servidor rechazó) o error (sin respuesta): la
+					// reversión es retirar el optimista, y el checkbox vuelve al
+					// estado que traen los datos. Sin `update` en fallo: el error
+					// se avisa aquí y no se duplica en el alert de `actionData`.
+					falloCompra =
+						result.type === 'failure'
+							? ((result.data as { error?: string } | undefined)?.error ?? m.items_error())
+							: m.items_error();
+				}
+				compras.delete(id);
+			};
+	}
+
+	// Refresco al volver a la pestaña (checklist #69): varios miembros pueden
+	// estar editando la misma lista y la v1 no tiene tiempo real, así que lo
+	// barato y suficiente es revalidar al volver a mirar. El efecto limpia su
+	// listener cuando la página se destruye.
+	$effect(() => {
+		function alVolver() {
+			if (document.visibilityState === 'visible') {
+				void invalidateAll();
+			}
+		}
+		document.addEventListener('visibilitychange', alVolver);
+		return () => document.removeEventListener('visibilitychange', alVolver);
+	});
 </script>
 
 <svelte:head>
@@ -176,6 +233,12 @@
 	{#if exito}
 		<div class="alert alert-success mt-4 text-sm" role="status">
 			{exito}
+		</div>
+	{/if}
+
+	{#if falloCompra}
+		<div class="alert alert-warning mt-4 text-sm" role="alert">
+			{falloCompra}
 		</div>
 	{/if}
 
@@ -273,39 +336,92 @@
 			</button>
 		</div>
 	{:else}
-		<!-- Orden visual (checklist #68): el `order` que calculó el servidor al
-		     crear; los primeros arriba. -->
-		<ol class="mt-4 flex list-none flex-col gap-2">
-			{#each data.items as item (item.id)}
-				<li class="bg-base-200 rounded-box flex items-center gap-3 px-4 py-3">
-					<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
-					<span class="badge badge-ghost shrink-0 tabular-nums">
-						{item.quantity}
-						{UNIT_LABEL[item.unit]}
-					</span>
-					<span class="flex items-center gap-1">
-						<button
-							type="button"
-							class="btn btn-ghost btn-sm"
-							title={m.items_edit()}
-							onclick={() => abrirEdicion(item)}
-						>
-							<Pencil aria-hidden="true" />
-							<span class="sr-only">{m.items_edit()}</span>
-						</button>
-						<button
-							type="button"
-							class="btn btn-ghost btn-sm"
-							title={m.items_delete()}
-							onclick={() => abrirBorrado(item)}
-						>
-							<Trash2 aria-hidden="true" />
-							<span class="sr-only">{m.items_delete()}</span>
-						</button>
-					</span>
-				</li>
-			{/each}
-		</ol>
+		<!-- Una fila de item (checklists #68 y #69): checkbox de comprado,
+		     nombre, cantidad y acciones. El snippet la comparten las dos
+		     secciones (pendientes y comprados). -->
+		{#snippet filaItem(item: ItemRow)}
+			{@const comprado = valorComprado(item)}
+			<li
+				class={`bg-base-200 rounded-box flex items-center gap-3 px-4 py-3 ${comprado ? 'opacity-60' : ''}`}
+			>
+				<!-- Checkbox de comprado (checklist #69): envía `?/purchased` con
+				     el id y el NUEVO valor. El hidden «false» + el checkbox
+				     «true» dejan el valor correcto también en un envío nativo. -->
+				<form method="POST" action="?/purchased" use:kitEnhance={alComprar(item.id)}>
+					<input type="hidden" name="item" value={item.id} />
+					<input type="hidden" name="purchased" value="false" />
+					<input
+						type="checkbox"
+						name="purchased"
+						value="true"
+						class="checkbox checkbox-primary"
+						checked={comprado}
+						aria-label={comprado ? m.items_mark_pending() : m.items_mark_purchased()}
+						onchange={(event) => {
+							// Optimista ANTES del envío: la UI responde al toque; si
+							// la acción falla, `alComprar` lo revierte.
+							compras.set(item.id, event.currentTarget.checked);
+							falloCompra = null;
+							event.currentTarget.form?.requestSubmit();
+						}}
+					/>
+				</form>
+				<p class={`min-w-0 flex-1 truncate font-medium ${comprado ? 'line-through' : ''}`}>
+					{item.name}
+				</p>
+				<span class="badge badge-ghost shrink-0 tabular-nums">
+					{item.quantity}
+					{UNIT_LABEL[item.unit]}
+				</span>
+				<span class="flex items-center gap-1">
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						title={m.items_edit()}
+						onclick={() => abrirEdicion(item)}
+					>
+						<Pencil aria-hidden="true" />
+						<span class="sr-only">{m.items_edit()}</span>
+					</button>
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						title={m.items_delete()}
+						onclick={() => abrirBorrado(item)}
+					>
+						<Trash2 aria-hidden="true" />
+						<span class="sr-only">{m.items_delete()}</span>
+					</button>
+				</span>
+			</li>
+		{/snippet}
+
+		<!-- Separación visual (checklist #69): pendientes arriba; los
+		     comprados, debajo, atenuados y tachados. La cabecera de
+		     «Pendientes» solo cuando hay comprados (si no, sobra). -->
+		{#if pendientes.length > 0}
+			{#if comprados.length > 0}
+				<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
+					{m.items_section_pending()}
+				</h2>
+			{/if}
+			<ol class="mt-4 flex list-none flex-col gap-2">
+				{#each pendientes as item (item.id)}
+					{@render filaItem(item)}
+				{/each}
+			</ol>
+		{/if}
+
+		{#if comprados.length > 0}
+			<h2 class="mt-6 text-sm font-semibold tracking-wide uppercase opacity-60">
+				{m.items_section_purchased()}
+			</h2>
+			<ol class="mt-2 flex list-none flex-col gap-2">
+				{#each comprados as item (item.id)}
+					{@render filaItem(item)}
+				{/each}
+			</ol>
+		{/if}
 	{/if}
 </section>
 

@@ -132,6 +132,19 @@
 		listaBorrada = lista;
 		borrarModal?.showModal();
 	}
+
+	// Refresco al volver a la pestaña (checklist #69): varios miembros pueden
+	// estar editando las listas (items marcados, altas y borrados) y la v1 no
+	// tiene tiempo real; al volver a mirar se revalidan los contadores.
+	$effect(() => {
+		function alVolver() {
+			if (document.visibilityState === 'visible') {
+				void invalidateAll();
+			}
+		}
+		document.addEventListener('visibilitychange', alVolver);
+		return () => document.removeEventListener('visibilitychange', alVolver);
+	});
 </script>
 
 <svelte:head>
@@ -184,7 +197,18 @@
 					     botones de editar y borrar quedan fuera del enlace. -->
 					<a href={resolve('/lists/[listId]', { listId: lista.id })} class="min-w-0 flex-1">
 						<p class="truncate font-medium">{lista.name}</p>
-						<p class="text-sm opacity-60">{m.lists_items_count({ count: lista.itemCount })}</p>
+						<!-- Contador de pendientes (checklist #69): lo que falta por
+						     comprar; una lista vacía sigue mostrando su total y una
+						     completada lo celebra. -->
+						<p class="text-sm opacity-60">
+							{#if lista.itemCount === 0}
+								{m.lists_items_count({ count: lista.itemCount })}
+							{:else if lista.pendingCount === 0}
+								{m.lists_all_purchased()}
+							{:else}
+								{m.lists_pending_count({ count: lista.pendingCount })}
+							{/if}
+						</p>
 					</a>
 					<span class="flex items-center gap-1">
 						<button

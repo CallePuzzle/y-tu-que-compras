@@ -124,6 +124,8 @@
 	"unit_dozen": "dozen",
 
 	"lists_items_count": "{count} in the list",
+	"lists_pending_count": "{count} pending",
+	"lists_all_purchased": "All bought",
 
 	"items_add": "Add",
 	"items_empty": "This list is empty. Add the first item with the form above.",
@@ -138,6 +140,10 @@
 	"items_delete_title": "Delete “{name}”?",
 	"items_delete_description": "The item will be removed from the list. This cannot be undone.",
 	"items_delete_confirm": "Delete permanently",
+	"items_mark_purchased": "Mark as purchased",
+	"items_mark_pending": "Mark as pending",
+	"items_section_pending": "Pending",
+	"items_section_purchased": "Purchased",
 
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",
