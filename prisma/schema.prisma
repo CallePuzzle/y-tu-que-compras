@@ -314,9 +314,52 @@ model List {
   name           String
   color          String
   icon           String
+  items          Item[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@index([organizationId])
   @@map("list")
+}
+
+// Item de una lista de la compra (issue #67). La FK a `list` es en cascada: al
+// borrar la lista mueren sus items (el de familia ya cascada a las listas).
+// `quantity` es Decimal — DECIMAL(10,3), hasta 9.999.999,999 — para no perder
+// precisión a redondeos de coma flotante; la regla > 0 vive en
+// `$lib/schemas/item`, junto al resto de validación del formulario. `unit` es
+// el enum nativo `unit`: sus valores son identificadores estables en inglés y
+// NUNCA se muestran tal cual — las etiquetas visibles las resuelve Paraglide
+// (claves `unit_*` en `messages/{es,en}.json`). `purchased` parte de false y
+// `order` fija la posición en la lista: lo calcula el servidor al crear, sin
+// default para que nadie inserte sin decir dónde.
+model Item {
+  id        String   @id @default(cuid())
+  listId    String
+  list      List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name      String
+  quantity  Decimal  @db.Decimal(10, 3)
+  unit      Unit
+  purchased Boolean  @default(false)
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([listId])
+  @@map("item")
+}
+
+// Unidades de un item (issue #67): ud, kg, g, L, ml, paquete, lata, docena.
+// Los valores replican el catálogo UNITS de `$lib/schemas/item`; un spec
+// garantiza que no se separan (validar y almacenar es el mismo contrato).
+enum Unit {
+  unit
+  kilogram
+  gram
+  liter
+  milliliter
+  package
+  can
+  dozen
+
+  @@map("unit")
 }
