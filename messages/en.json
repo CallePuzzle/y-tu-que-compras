@@ -160,6 +160,8 @@
 	"pantry_go_lists": "Go to lists",
 	"pantry_consume": "Consume {step} {unit}",
 	"pantry_restock": "Put back {step} {unit}",
+	"pantry_section_home": "At home",
+	"pantry_section_out": "Ran out",
 	"pantry_gone": "That item is no longer in the pantry.",
 	"pantry_error": "The pantry could not be updated. Please try again later.",
 	"pantry_readd": "Re-add to shopping list",

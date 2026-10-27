@@ -121,7 +121,7 @@ test('el menu de navegacion lleva a la despensa', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'Tu despensa' })).toBeVisible();
 });
 
-test('consumir quita el paso de la unidad y al llegar a 0 el producto desaparece (#73)', async ({
+test('consumir quita el paso y al llegar a 0 el producto baja a Agotados (#73)', async ({
 	page
 }) => {
 	const user = await createUser();
@@ -133,15 +133,25 @@ test('consumir quita el paso de la unidad y al llegar a 0 el producto desaparece
 	await waitForHydration(page);
 	const pan = page.locator('li', { hasText: 'Pan' });
 
-	// Dos consumos de 1 ud: 2 → 1 → fuera.
+	// Dos consumos de 1 ud: 2 → 1 → 0.
 	await pan.getByRole('button', { name: 'Consumir 1 ud' }).click();
 	await expect(pan.getByText('1 ud')).toBeVisible();
 	await pan.getByRole('button', { name: 'Consumir 1 ud' }).click();
-	await expect(page.locator('li', { hasText: 'Pan' })).toHaveCount(0);
-	await expect(page.getByText(/La despensa está vacía/)).toBeVisible();
+
+	// Agotado NO es borrado: la fila baja a la sección «Agotados», atenuada,
+	// sin botón de consumir (de 0 no se consume) y con el re-añadir a punto.
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+	await expect(pan.getByText('0 ud')).toBeVisible();
+	await expect(pan.getByRole('button', { name: 'Consumir 1 ud' })).toHaveCount(0);
+	await expect(pan.getByRole('button', { name: 'Re-añadir a la compra' })).toBeVisible();
+
+	// Y devolver un paso lo reponer: vuelve a «En casa» sin cabeceras que sobren.
+	await pan.getByRole('button', { name: 'Devolver 1 ud' }).click();
+	await expect(pan.getByText('1 ud')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toHaveCount(0);
 });
 
-test('los kilos bajan a cuartos: 0.5 kg, 0.25 kg y fuera (#73)', async ({ page }) => {
+test('los kilos bajan a cuartos hasta agotarse (#73)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	await createPantryItem({
@@ -159,7 +169,8 @@ test('los kilos bajan a cuartos: 0.5 kg, 0.25 kg y fuera (#73)', async ({ page }
 	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
 	await expect(leche.getByText('0.25 kg')).toBeVisible();
 	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
-	await expect(page.locator('li', { hasText: 'Leche entera' })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+	await expect(leche.getByText('0 kg')).toBeVisible();
 });
 
 test('devolver (+) repone el paso consumido por error (#73)', async ({ page }) => {
@@ -283,4 +294,36 @@ test('sin listas el modal explica que hay que crear una (#74)', async ({ page })
 	await expect(dialog.getByText(/Esta familia no tiene listas/)).toBeVisible();
 	// Sin listas no hay formulario que enviar.
 	await expect(dialog.getByRole('button', { name: 'Re-añadir a la compra' })).toHaveCount(0);
+});
+
+test('un agotado se re-añade a la compra y se queda en la despensa a cero (#74)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 1, unit: 'unit' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const pan = page.locator('li', { hasText: 'Pan' });
+
+	// Lo consumo hasta agotarlo…
+	await pan.getByRole('button', { name: 'Consumir 1 ud' }).click();
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+
+	// …y desde agotado lo mando a la lista: es la memoria de la compra.
+	await pan.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+	const dialog = page.locator('dialog[open]');
+	// El cero no puede ser la cantidad a comprar: se propone 1 paso.
+	await expect(dialog.locator('#readd-quantity')).toHaveValue('1');
+	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+
+	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
+	// El agotado sigue en la despensa…
+	await expect(pan.getByText('0 ud')).toBeVisible();
+	// …y el item espera en la lista.
+	await page.goto(`/lists/${lista.id}`);
+	await expect(page.locator('section li', { hasText: 'Pan' }).getByText('1 ud')).toBeVisible();
 });

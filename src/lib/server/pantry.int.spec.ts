@@ -114,23 +114,34 @@ describe('Consumir y devolver un paso (#73)', () => {
 		await expect(cantidadDe(arroz.id)).resolves.toBe(400);
 	});
 
-	it('al llegar a 0 el producto desaparece', async () => {
+	it('al llegar a 0 el producto SE QUEDA en la despensa, a cero', async () => {
 		const familyId = await familyRow('Familia Que Acaba');
 		const pan = await pantryRow(familyId, 'Pan', 1, 'unit');
 
 		await expect(adjustPantryItem(familyId, pan.id, -1)).resolves.toBe(true);
-		await expect(cantidadDe(pan.id)).resolves.toBeNull();
+		// Agotado no es borrado: la fila aguanta a 0, lista para re-añadirse.
+		await expect(cantidadDe(pan.id)).resolves.toBe(0);
 	});
 
-	it('clampa a 0 sin negativos: consumir más de lo que queda borra el producto', async () => {
+	it('clampa a 0 sin negativos: consumir más de lo que queda deja la cantidad en 0', async () => {
 		const familyId = await familyRow('Familia Corta');
 		const queso = await pantryRow(familyId, 'Queso', 0.1, 'kilogram');
 
-		// 0,1 kg − paso 0,25 quedaría en −0,15: el clamp lo deja en 0 y borra.
+		// 0,1 kg − paso 0,25 quedaría en −0,15: el clamp lo deja en 0.
 		await expect(adjustPantryItem(familyId, queso.id, -1)).resolves.toBe(true);
-		await expect(cantidadDe(queso.id)).resolves.toBeNull();
-		// Y la despensa de la familia queda sin él.
-		await expect(listPantryItems(familyId)).resolves.toEqual([]);
+		await expect(cantidadDe(queso.id)).resolves.toBe(0);
+		// Y sigue en el listado (agotado), que es la memoria para la compra.
+		const items = await listPantryItems(familyId);
+		expect(items).toHaveLength(1);
+		expect(items[0]).toMatchObject({ name: 'Queso', quantity: 0 });
+	});
+
+	it('desde agotado, devolver (+) repone un paso', async () => {
+		const familyId = await familyRow('Familia Que Repone');
+		const pan = await pantryRow(familyId, 'Pan', 0, 'unit');
+
+		await expect(adjustPantryItem(familyId, pan.id, 1)).resolves.toBe(true);
+		await expect(cantidadDe(pan.id)).resolves.toBe(1);
 	});
 
 	it('devolver (+) añade el paso de la unidad', async () => {
@@ -345,5 +356,24 @@ describe('Re-añadir a la compra (#74)', () => {
 		await expect(
 			readdPantryItem(familyId, 'no-existe', { ...READD_BASE, listId: lista.id, quantity: 1 })
 		).resolves.toBe('pantry-gone');
+	});
+
+	it('un agotado (a 0) también se puede re-añadir, y con «set» se rellena la despensa', async () => {
+		const familyId = await familyRow('Familia Agotada');
+		const lista = await createList(familyId, LISTA);
+		const producto = await pantryRow(familyId, 'Leche entera', 0, 'liter');
+
+		await expect(
+			readdPantryItem(familyId, producto.id, {
+				listId: lista.id,
+				quantity: 1,
+				pantryMode: 'set',
+				newQuantity: 2
+			})
+		).resolves.toBe('added');
+
+		// La lista recibe el item y la despensa vuelve a tener leche.
+		await expect(prisma.item.count({ where: { listId: lista.id } })).resolves.toBe(1);
+		await expect(cantidadDe(producto.id)).resolves.toBe(2);
 	});
 });

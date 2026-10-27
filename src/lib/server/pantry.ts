@@ -63,8 +63,12 @@ export async function listPantryItems(familyId: string): Promise<PantryItemView[
  * con `0,3 kg` se lo llevarían dos veces a `0,05`. En su lugar la base aplica
  * el paso sobre el valor comprometido más nuevo (el UPDATE espera al lock de
  * la fila) y el clamp a 0 va JUSTO después, dentro de la misma transacción:
- * quien llegue el último deja la cantidad en 0 y el producto se borra —
- * desaparece al agotarse, sin cantidades negativas ni residuos.
+ * quien llegue el último deja la cantidad en 0 y ya está — sin cantidades
+ * negativas. El producto a 0 SE QUEDA en la despensa (la vista lo lista como
+ * «agotado»): es la memoria de lo que se suele comprar, lista para
+ * re-añadirse a la compra (#74) o para sumarse de nuevo al finalizar una
+ * compra (el upsert de `purchases.ts` lo rellena). Borrarlo del todo es una
+ * decisión explícita: la opción «quitar de la despensa» del re-añadido.
  */
 export async function adjustPantryItem(
 	familyId: string,
@@ -83,8 +87,9 @@ export async function adjustPantryItem(
 		const step = UNIT_STEP[row.unit];
 
 		if (direction > 0) {
-			// Devolver un paso (+): el botón que corrige un − equivocado. Los
-			// incrementos conmutan, aquí no hay carrera que temer.
+			// Devolver un paso (+): el botón que corrige un − equivocado, y el
+			// que reponer desde agotado. Los incrementos conmutan, aquí no hay
+			// carrera que temer.
 			const subida = await tx.pantryItem.updateMany({
 				where: { id, organizationId: familyId },
 				data: { quantity: { increment: step } }
@@ -104,17 +109,13 @@ export async function adjustPantryItem(
 
 		// Clamp atómico con el decremento (misma transacción): si otro consumo
 		// concurrente ya había pasado la cantidad por debajo de cero, aquí se
-		// endereza a 0 y el producto muere. Nadie llega a VER un negativo: la
-		// transacción no se ha comprometido con el valor en manos.
-		const clamp = await tx.pantryItem.updateMany({
+		// endereza a 0. Nadie llega a VER un negativo: la transacción no se ha
+		// comprometido con el valor en manos. La fila aguanta: agotado no es
+		// borrado.
+		await tx.pantryItem.updateMany({
 			where: { id, organizationId: familyId, quantity: { lte: 0 } },
 			data: { quantity: 0 }
 		});
-		if (clamp.count > 0) {
-			await tx.pantryItem.deleteMany({
-				where: { id, organizationId: familyId, quantity: 0 }
-			});
-		}
 		return true;
 	});
 }

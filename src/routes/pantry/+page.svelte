@@ -63,16 +63,20 @@
 		return Math.max(0, redondearCantidad(base));
 	}
 
-	/** Las filas que se pintan: las consumidas hasta 0 en optimista ya no están. */
-	const itemsVisibles = $derived(data.items.filter((item) => cantidadVisible(item) > 0));
+	/**
+	 * Las dos secciones de la vista: lo que queda en casa y lo agotado. Un
+	 * producto consumido hasta 0 NO desaparece: baja a «Agotados» atenuado —
+	 * es la memoria de la compra habitual, con su botón de re-añadir a punto —
+	 * y solo se va de la despensa si se quita explícitamente (#74).
+	 */
+	const enCasa = $derived(data.items.filter((item) => cantidadVisible(item) > 0));
+	const agotados = $derived(data.items.filter((item) => cantidadVisible(item) === 0));
 
 	/** Anota el delta del botón pulsado como ajuste en vuelo (optimista). */
 	function anotarAjuste(id: string, delta: 1 | -1) {
 		ajustes.set(id, redondearCantidad((ajustes.get(id) ?? 0) + delta));
 		falloAjuste = null;
-	}
-
-	/**
+	} /**
 	 * Resultado de un ajuste: en fallo revierte y avisa; en éxito refresca.
 	 * El optimista se retira ANTES de pedir el load: si se quitara después
 	 * del `await update()`, la mutación cae en la misma continuación asíncrona
@@ -155,8 +159,10 @@
 		readdFormData.set({
 			listId: data.lists[0]?.id ?? '',
 			// La cantidad por defecto para la lista es la que hay en despensa:
-			// «quiero lo mismo que me queda» es lo habitual.
-			quantity: item.quantity,
+			// «quiero lo mismo que me queda». Un agotado (a 0) no puede pedir
+			// cero: se propone un paso de su unidad — 1 en las cuentas enteras
+			// y 100 en g/ml; en kg/L manda el 1, que es como se compra.
+			quantity: item.quantity > 0 ? item.quantity : Math.max(1, UNIT_STEP[item.unit]),
 			pantryMode: 'keep',
 			newQuantity: undefined
 		});
@@ -229,20 +235,24 @@
 			</a>
 		</div>
 	{:else}
-		<!-- Los productos con su stepper −/+ (checklist #73): consumir quita un
-		     paso y devuelve lo añade; al llegar a 0 el producto desaparece (el
-		     servidor lo borra y el optimista lo esconde mientras tanto). -->
-		<ul class="mt-4 flex list-none flex-col gap-2">
-			{#each itemsVisibles as item (item.id)}
-				<li class="bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4">
-					<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
-					<form
-						method="POST"
-						action="?/adjust"
-						use:kitEnhance={alAjustar(item.id)}
-						class="flex shrink-0 items-center gap-1"
-					>
-						<input type="hidden" name="item" value={item.id} />
+		<!-- Una fila de producto: stepper −/+ (checklist #73) y botón de
+		     re-añadir (checklist #74). El snippet lo comparten las dos
+		     secciones («En casa» y «Agotados»); un agotado no pinta el −: de
+		     cero no se puede consumir más, solo reponer o re-añadir. -->
+		{#snippet filaProducto(item: PantryRow)}
+			{@const cantidad = cantidadVisible(item)}
+			<li
+				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${cantidad === 0 ? 'opacity-60' : ''}`}
+			>
+				<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
+				<form
+					method="POST"
+					action="?/adjust"
+					use:kitEnhance={alAjustar(item.id)}
+					class="flex shrink-0 items-center gap-1"
+				>
+					<input type="hidden" name="item" value={item.id} />
+					{#if cantidad > 0}
 						<button
 							type="submit"
 							name="delta"
@@ -254,36 +264,67 @@
 						>
 							<Minus aria-hidden="true" />
 						</button>
-						<span class="badge badge-ghost tabular-nums">
-							{cantidadVisible(item)}
-							{UNIT_LABEL[item.unit]}
-						</span>
-						<button
-							type="submit"
-							name="delta"
-							value="1"
-							class="btn btn-ghost btn-sm"
-							aria-label={etiquetaPaso(item, m.pantry_restock)}
-							title={etiquetaPaso(item, m.pantry_restock)}
-							onclick={() => anotarAjuste(item.id, 1)}
-						>
-							<Plus aria-hidden="true" />
-						</button>
-					</form>
-					<!-- Re-añadir a la compra (checklist #74): abre el modal con el
-					     selector de lista y el ajuste de despensa. -->
+					{/if}
+					<span class="badge badge-ghost tabular-nums">
+						{cantidad}
+						{UNIT_LABEL[item.unit]}
+					</span>
 					<button
-						type="button"
+						type="submit"
+						name="delta"
+						value="1"
 						class="btn btn-ghost btn-sm"
-						title={m.pantry_readd()}
-						aria-label={m.pantry_readd()}
-						onclick={() => abrirReAnadir(item)}
+						aria-label={etiquetaPaso(item, m.pantry_restock)}
+						title={etiquetaPaso(item, m.pantry_restock)}
+						onclick={() => anotarAjuste(item.id, 1)}
 					>
-						<ShoppingCart aria-hidden="true" />
+						<Plus aria-hidden="true" />
 					</button>
-				</li>
-			{/each}
-		</ul>
+				</form>
+				<!-- Re-añadir a la compra (checklist #74): abre el modal con el
+				     selector de lista y el ajuste de despensa. En un agotado es EL
+				     botón: la memoria de «esto se compra» lista para volver. -->
+				<button
+					type="button"
+					class="btn btn-ghost btn-sm"
+					title={m.pantry_readd()}
+					aria-label={m.pantry_readd()}
+					onclick={() => abrirReAnadir(item)}
+				>
+					<ShoppingCart aria-hidden="true" />
+				</button>
+			</li>
+		{/snippet}
+
+		<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
+		     debajo (si no, sobra), como pendientes/comprados en la lista. -->
+		{#if enCasa.length > 0}
+			{#if agotados.length > 0}
+				<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
+					{m.pantry_section_home()}
+				</h2>
+			{/if}
+			<ul class="mt-4 flex list-none flex-col gap-2">
+				{#each enCasa as item (item.id)}
+					{@render filaProducto(item)}
+				{/each}
+			</ul>
+		{/if}
+
+		<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
+		     servidor NO los borra) para poder re-añadirlos a la compra. -->
+		{#if agotados.length > 0}
+			<h2
+				class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
+			>
+				{m.pantry_section_out()}
+			</h2>
+			<ul class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
+				{#each agotados as item (item.id)}
+					{@render filaProducto(item)}
+				{/each}
+			</ul>
+		{/if}
 	{/if}
 </section>
 
