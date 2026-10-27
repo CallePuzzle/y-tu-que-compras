@@ -1,5 +1,6 @@
 import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
+import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 import Users from '@lucide/svelte/icons/users';
@@ -31,9 +32,16 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 		};
 	}
 
-	// «Familias» exige sesión (el guard manda al login igualmente): el enlace
-	// sólo tiene sentido con ella, al revés que «Acceder».
+	// «Listas» y «Familias» exigen sesión (el guard manda al login igualmente):
+	// los enlaces sólo tienen sentido con ella, al revés que «Acceder».
 	if (isLoggedIn) {
+		// El núcleo de la app (#31): las listas de la familia activa.
+		routes['/lists'] = {
+			label: m.routes_lists(),
+			icon: ListChecks,
+			showInMenu: true,
+			showInMobile: true
+		};
 		routes['/families'] = {
 			label: m.routes_families(),
 			icon: Users,
