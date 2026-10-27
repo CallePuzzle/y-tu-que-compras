@@ -102,9 +102,7 @@ describe('FamilySwitcher', () => {
 
 		// El aviso de error sólo se pinta cuando el fetch ya resolvió: si está,
 		// el flujo terminó y `invalidateAll` no puede llegar tarde.
-		await expect
-			.poll(() => getByText('No se pudo cambiar de familia').elements().length)
-			.toBe(1);
+		await expect.poll(() => getByText('No se pudo cambiar de familia').elements().length).toBe(1);
 		expect((invalidateAll as Mock).mock.calls.length).toBe(0);
 	});
 });
