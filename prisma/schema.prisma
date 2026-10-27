@@ -110,18 +110,20 @@ model RateLimit {
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
 //
-// Las relaciones `lists` y `purchases` son de la app (no del plugin, que las
-// ignora): al borrar la familia mueren con ella sus listas de la compra
-// (Cascade en List) y su historial de compras (Cascade en PurchaseRecord).
+// Las relaciones `lists`, `purchases` y `pantryItems` son de la app (no del
+// plugin, que las ignora): al borrar la familia mueren con ella sus listas de
+// la compra (Cascade en List), su historial de compras (Cascade en
+// PurchaseRecord) y su despensa (Cascade en PantryItem).
 model Organization {
-  id        String           @id
-  name      String
-  slug      String           @unique
-  metadata  Json?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  lists     List[]
-  purchases PurchaseRecord[]
+  id          String           @id
+  name        String
+  slug        String           @unique
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  lists       List[]
+  purchases   PurchaseRecord[]
+  pantryItems PantryItem[]
 
   @@map("organization")
 }
@@ -407,4 +409,34 @@ model PurchaseItem {
 
   @@index([purchaseRecordId])
   @@map("purchaseItem")
+}
+
+// Item de la despensa de la familia (issue #70): donde aterrizan los items
+// comprados al finalizar una compra. La familia es la dueña (Cascade, como las
+// listas). `name` es el nombre visible del item tal y como se escribió en la
+// lista; `normalizedName` es el nombre CANÓNICO de búsqueda (trim, minúsculas
+// y sin acentos, ver `normalizeItemName` en `$lib/server/purchases`) — no se
+// muestra, existe para que «Leche Entera» y «leche entera» sean el mismo
+// producto de la despensa. `quantity` se acumula: cada compra suma sobre lo que
+// ya había, con la misma precisión que el `Item` de origen (DECIMAL(10,3)) y el
+// mismo enum `unit`.
+//
+// El único (familia, nombre normalizado, unidad) ES el contrato de «mismo
+// producto»: convierte la suma en un upsert atómico (INSERT ON CONFLICT de
+// Postgres, dos compras concurrentes nunca lo parten) y sirve de índice para
+// las consultas de la familia — con `organizationId` delante, la propia
+// restricción indexa el listado de la despensa.
+model PantryItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  quantity       Decimal      @db.Decimal(10, 3)
+  unit           Unit
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, normalizedName, unit])
+  @@map("pantryItem")
 }

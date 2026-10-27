@@ -144,6 +144,12 @@
 	"items_mark_pending": "Mark as pending",
 	"items_section_pending": "Pending",
 	"items_section_purchased": "Purchased",
+	"purchases_finalize": "Finalize purchase",
+	"purchases_success": "Purchase finalized: the purchased items are now in your pantry.",
+	"purchases_empty": "There are no purchased items to finalize. Mark at least one as purchased.",
+	"purchases_error": "The purchase could not be finalized. Please try again later.",
+	"schema_purchase_total_label": "Ticket total (€)",
+	"schema_purchase_total_error": "Enter a valid total (zero or greater).",
 
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",

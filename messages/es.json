@@ -144,6 +144,12 @@
 	"items_mark_pending": "Marcar como pendiente",
 	"items_section_pending": "Pendientes",
 	"items_section_purchased": "Comprados",
+	"purchases_finalize": "Finalizar compra",
+	"purchases_success": "Compra finalizada: los items comprados ya están en la despensa.",
+	"purchases_empty": "No hay items comprados que finalizar. Marca al menos uno como comprado.",
+	"purchases_error": "No se pudo finalizar la compra. Inténtalo de nuevo más tarde.",
+	"schema_purchase_total_label": "Total del ticket (€)",
+	"schema_purchase_total_error": "Escribe un total válido (cero o más).",
 
 	"routes_invitations": "Invitación",
 	"invitations_title": "Invitación a la familia",
