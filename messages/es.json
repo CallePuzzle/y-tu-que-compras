@@ -86,6 +86,7 @@
 	"ui_cancel": "Cancelar",
 
 	"routes_lists": "Listas",
+	"routes_pantry": "Despensa",
 	"lists_title": "Tus listas",
 	"lists_empty": "Todavía no hay listas en esta familia. Crea la primera y empieza la compra.",
 	"lists_create": "Nueva lista",
@@ -153,6 +154,10 @@
 	"purchases_error": "No se pudo finalizar la compra. Inténtalo de nuevo más tarde.",
 	"schema_purchase_total_label": "Total del ticket (€)",
 	"schema_purchase_total_error": "Escribe un total válido (cero o más).",
+
+	"pantry_title": "Tu despensa",
+	"pantry_empty": "La despensa está vacía: se llena al finalizar una compra.",
+	"pantry_go_lists": "Ir a las listas",
 
 	"routes_invitations": "Invitación",
 	"invitations_title": "Invitación a la familia",
