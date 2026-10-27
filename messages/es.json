@@ -123,8 +123,8 @@
 	"unit_can": "lata",
 	"unit_dozen": "docena",
 
-	"lists_items_count": "{count} en la lista",
-	"lists_pending_count": "{count} pendientes",
+	"lists_no_items": "Vacía",
+	"lists_pending_count": "Pendientes: {count}",
 	"lists_all_purchased": "Todo comprado",
 
 	"items_add": "Añadir",

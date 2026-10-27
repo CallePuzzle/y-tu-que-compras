@@ -136,11 +136,16 @@
 	// Refresco al volver a la pestaña (checklist #69): varios miembros pueden
 	// estar editando las listas (items marcados, altas y borrados) y la v1 no
 	// tiene tiempo real; al volver a mirar se revalidan los contadores.
+	//
+	// PERO superforms rehace el formulario del modal con el `form` que trae el
+	// load en cuanto se actualizan los datos de página: revalidar con un modal
+	// abierto MACHACARÍA lo tecleado. El refresco espera a una vuelta sin
+	// ningún `<dialog>` abierto.
 	$effect(() => {
 		function alVolver() {
-			if (document.visibilityState === 'visible') {
-				void invalidateAll();
-			}
+			if (document.visibilityState !== 'visible') return;
+			if (document.querySelector('dialog[open]')) return;
+			void invalidateAll();
 		}
 		document.addEventListener('visibilitychange', alVolver);
 		return () => document.removeEventListener('visibilitychange', alVolver);
@@ -198,11 +203,11 @@
 					<a href={resolve('/lists/[listId]', { listId: lista.id })} class="min-w-0 flex-1">
 						<p class="truncate font-medium">{lista.name}</p>
 						<!-- Contador de pendientes (checklist #69): lo que falta por
-						     comprar; una lista vacía sigue mostrando su total y una
-						     completada lo celebra. -->
+						     comprar; una lista vacía lo dice tal cual y una completada
+						     lo celebra. -->
 						<p class="text-sm opacity-60">
 							{#if lista.itemCount === 0}
-								{m.lists_items_count({ count: lista.itemCount })}
+								{m.lists_no_items()}
 							{:else if lista.pendingCount === 0}
 								{m.lists_all_purchased()}
 							{:else}

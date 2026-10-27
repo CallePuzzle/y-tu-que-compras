@@ -123,8 +123,8 @@
 	"unit_can": "can",
 	"unit_dozen": "dozen",
 
-	"lists_items_count": "{count} in the list",
-	"lists_pending_count": "{count} pending",
+	"lists_no_items": "Empty",
+	"lists_pending_count": "Pending: {count}",
 	"lists_all_purchased": "All bought",
 
 	"items_add": "Add",

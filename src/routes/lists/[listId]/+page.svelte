@@ -79,7 +79,9 @@
 		enhance: addEnhance,
 		delayed: addDelayed,
 		message: addMessage,
-		errors: addErrors
+		errors: addErrors,
+		// Qué campos del alta rápida están tocados sin guardar (ver `alVolver`).
+		tainted: addTainted
 	} = addForm;
 
 	let addNameInput: HTMLInputElement | undefined = $state();
@@ -193,11 +195,17 @@
 	// estar editando la misma lista y la v1 no tiene tiempo real, así que lo
 	// barato y suficiente es revalidar al volver a mirar. El efecto limpia su
 	// listener cuando la página se destruye.
+	//
+	// PERO superforms rehace los formularios con el `form`/`editForm` que trae
+	// el load en cuanto se actualizan los datos de página: revalidar ahora
+	// mismo MACHACARÍA lo que el usuario tenga a medias. El refresco espera a
+	// una vuelta sin ningún `<dialog>` abierto y con el alta rápida intacta
+	// (el `tainted` de superforms se desmarca solo al volver al valor base).
 	$effect(() => {
 		function alVolver() {
-			if (document.visibilityState === 'visible') {
-				void invalidateAll();
-			}
+			if (document.visibilityState !== 'visible') return;
+			if (document.querySelector('dialog[open]') || $addTainted) return;
+			void invalidateAll();
 		}
 		document.addEventListener('visibilitychange', alVolver);
 		return () => document.removeEventListener('visibilitychange', alVolver);
