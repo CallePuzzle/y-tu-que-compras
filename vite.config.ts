@@ -22,7 +22,9 @@ export default defineConfig({
 	},
 	test: {
 		expect: { requireAssertions: true },
-		// El proyecto `client` todavía no tiene tests de componentes.
+		// El proyecto `client` corre en Chromium real (vitest browser mode):
+		// los tests de componentes de la app empiezan con el `FamilySwitcher`.
+		// Si algún día no queda ninguno, que no falle la suite por eso.
 		passWithNoTests: true,
 		projects: [
 			{

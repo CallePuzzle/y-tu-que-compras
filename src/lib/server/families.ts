@@ -144,6 +144,37 @@ export async function listFamilies(event: RequestEvent): Promise<Family[]> {
 	return items.map(({ id, name }) => ({ id, name, canInvite: adminFamilyIds.has(id) }));
 }
 
+/** Una opción del selector de familia activa (issue #64): sólo id y nombre. */
+export interface FamilyOption {
+	id: string;
+	name: string;
+}
+
+/**
+ * Las familias donde el usuario es miembro, para el selector de familia activa
+ * (issue #64). A diferencia de `listFamilies` no pasa por el endpoint del
+ * plugin ni necesita el rol de cada membresía: el selector sólo pinta id y
+ * nombre, ordenados por nombre para que la lista no baile entre requests.
+ */
+export async function listFamilyOptions(event: RequestEvent): Promise<FamilyOption[]> {
+	const user = event.locals.user;
+	if (!user) return [];
+
+	// Mismas membresías que `resolveActiveFamily` (family-context.ts): la
+	// verdad de «a qué familias pertenece» está en la tabla `member`.
+	const memberships = await prisma.member.findMany({
+		where: { userId: user.id, contextType: 'organization' },
+		select: { contextId: true }
+	});
+	if (memberships.length === 0) return [];
+
+	return prisma.organization.findMany({
+		where: { id: { in: memberships.map((membership) => membership.contextId) } },
+		select: { id: true, name: true },
+		orderBy: { name: 'asc' }
+	});
+}
+
 /**
  * Crea la familia vía el plugin. Además de la organización, su
  * `onEntityCreated` (en `$lib/server/tenancy.ts`) siembra los roles y da de

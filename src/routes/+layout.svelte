@@ -16,6 +16,7 @@
 	import { getRoutes } from '$lib/routes';
 	import { m } from '$lib/paraglide/messages.js';
 	import { authClient } from '$lib/auth-client.js';
+	import FamilySwitcher from '$lib/components/FamilySwitcher.svelte';
 	import type { LayoutProps } from './$types';
 
 	// `children` se renombra: dentro del snippet `children` del `Drawer` el nombre
@@ -65,30 +66,40 @@
 					     prop `authClient`) porque `NavBarEnd` no reenvía `onSignOut`, y el
 					     logout necesita invalidar los datos: sin eso la cabecera seguiría
 					     pintando la sesión vieja. `redirectTo={null}`: la navegación la
-					     decide el guard, que con la cookie borrada manda a /login. -->
-					<NavBarEnd
-						user={data.user}
-						strings={{
-							userMenu: m.ui_user_menu(),
-							signOut: m.ui_sign_out(),
-							avatarAlt: (name) => m.ui_avatar_alt({ name })
-						}}
-					>
-						{#snippet login()}
-							<Link href="/login" label={m.routes_login()} class="btn btn-primary" />
-						{/snippet}
+					     decide el guard, que con la cookie borrada manda a /login.
+					     La caja `navbar-end` la pone el contenedor: `NavBarEnd` pierde su
+					     `width: 50%` con `w-auto` (las utilidades van en una capa posterior
+					     a los componentes de daisyUI), y así el selector de familia y el
+					     avatar quedan juntos en el borde derecho. -->
+					<div class="navbar-end gap-1">
+						{#if data.user}
+							<FamilySwitcher activeFamily={data.activeFamily} families={data.families} />
+						{/if}
+						<NavBarEnd
+							class="w-auto"
+							user={data.user}
+							strings={{
+								userMenu: m.ui_user_menu(),
+								signOut: m.ui_sign_out(),
+								avatarAlt: (name) => m.ui_avatar_alt({ name })
+							}}
+						>
+							{#snippet login()}
+								<Link href="/login" label={m.routes_login()} class="btn btn-primary" />
+							{/snippet}
 
-						{#snippet menuExtra()}
-							<li>
-								<ButtonSignOut
-									{authClient}
-									redirectTo={null}
-									{onSignOut}
-									strings={{ signOut: m.ui_sign_out() }}
-								/>
-							</li>
-						{/snippet}
-					</NavBarEnd>
+							{#snippet menuExtra()}
+								<li>
+									<ButtonSignOut
+										{authClient}
+										redirectTo={null}
+										{onSignOut}
+										strings={{ signOut: m.ui_sign_out() }}
+									/>
+								</li>
+							{/snippet}
+						</NavBarEnd>
+					</div>
 				{/snippet}
 			</Header>
 
@@ -120,8 +131,21 @@
 	{/snippet}
 
 	{#snippet side()}
-		<nav aria-label={m.ui_side_nav()}>
-			<NavBarList type="drawer" {routes} />
-		</nav>
+		<!-- El panel lo envuelve la app (fondo incluido) para alojar el selector
+		     de familia encima de la navegación: `NavBarList` ya traía `w-80` y
+		     `bg-base-200` para el drawer, y el mismo fondo en el contenedor hace
+		     que el bloque del selector no se note como un parche. -->
+		<div class="bg-base-200 min-h-full w-80">
+			{#if data.user}
+				<div class="px-4 pt-4">
+					<!-- Con sesión, el selector de familia activa (#64). En el drawer
+					     hay sitio: variante de ancho completo, con el nombre visible. -->
+					<FamilySwitcher activeFamily={data.activeFamily} families={data.families} fullWidth />
+				</div>
+			{/if}
+			<nav aria-label={m.ui_side_nav()}>
+				<NavBarList type="drawer" {routes} />
+			</nav>
+		</div>
 	{/snippet}
 </Drawer>
