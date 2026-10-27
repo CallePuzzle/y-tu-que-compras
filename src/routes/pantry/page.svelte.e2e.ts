@@ -113,3 +113,58 @@ test('el menu de navegacion lleva a la despensa', async ({ page }) => {
 	await expect(page).toHaveURL(/\/pantry$/);
 	await expect(page.getByRole('heading', { name: 'Tu despensa' })).toBeVisible();
 });
+
+test('consumir quita el paso de la unidad y al llegar a 0 el producto desaparece (#73)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 2, unit: 'unit' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const pan = page.locator('li', { hasText: 'Pan' });
+
+	// Dos consumos de 1 ud: 2 → 1 → fuera.
+	await pan.getByRole('button', { name: 'Consumir 1 ud' }).click();
+	await expect(pan.getByText('1 ud')).toBeVisible();
+	await pan.getByRole('button', { name: 'Consumir 1 ud' }).click();
+	await expect(page.locator('li', { hasText: 'Pan' })).toHaveCount(0);
+	await expect(page.getByText(/La despensa está vacía/)).toBeVisible();
+});
+
+test('los kilos bajan a cuartos: 0.5 kg, 0.25 kg y fuera (#73)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 0.5,
+		unit: 'kilogram'
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
+	await expect(leche.getByText('0.25 kg')).toBeVisible();
+	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
+	await expect(page.locator('li', { hasText: 'Leche entera' })).toHaveCount(0);
+});
+
+test('devolver (+) repone el paso consumido por error (#73)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Cerveza', quantity: 1, unit: 'unit' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const cerveza = page.locator('li', { hasText: 'Cerveza' });
+
+	await cerveza.getByRole('button', { name: 'Devolver 1 ud' }).click();
+	await expect(cerveza.getByText('2 ud')).toBeVisible();
+});

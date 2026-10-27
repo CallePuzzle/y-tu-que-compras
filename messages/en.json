@@ -158,6 +158,10 @@
 	"pantry_title": "Your pantry",
 	"pantry_empty": "The pantry is empty: it fills up when you finalize a purchase.",
 	"pantry_go_lists": "Go to lists",
+	"pantry_consume": "Consume {step} {unit}",
+	"pantry_restock": "Put back {step} {unit}",
+	"pantry_gone": "That item is no longer in the pantry.",
+	"pantry_error": "The pantry could not be updated. Please try again later.",
 
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",

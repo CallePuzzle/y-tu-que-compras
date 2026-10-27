@@ -158,6 +158,10 @@
 	"pantry_title": "Tu despensa",
 	"pantry_empty": "La despensa está vacía: se llena al finalizar una compra.",
 	"pantry_go_lists": "Ir a las listas",
+	"pantry_consume": "Consumir {step} {unit}",
+	"pantry_restock": "Devolver {step} {unit}",
+	"pantry_gone": "Ese producto ya no está en la despensa.",
+	"pantry_error": "No se ha podido actualizar la despensa. Inténtalo de nuevo más tarde.",
 
 	"routes_invitations": "Invitación",
 	"invitations_title": "Invitación a la familia",
