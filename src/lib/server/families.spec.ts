@@ -1,12 +1,30 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RequestEvent } from '@sveltejs/kit';
 
 // `families.ts` importa `auth` ($lib/server/auth.js), que instancia better-auth
-// (y con él el PrismaClient) al importar el módulo. Este spec sólo prueba
-// `familySlug`, así que `auth` se sustituye por un stub: sin BD ni better-auth
+// (y con él el PrismaClient) al importar el módulo. Este spec no prueba el
+// plugin, así que `auth` se sustituye por un stub: sin BD ni better-auth
 // (en CI no hay `.env` y el init del adaptador Prisma reventaría).
 vi.mock('$lib/server/auth.js', () => ({ auth: {} }));
 
-import { familySlug } from './families.js';
+// `listFamilyOptions` consulta Prisma directamente: el cliente se sustituye
+// por mocks con la forma que se consulta (`member.findMany`,
+// `organization.findMany`), igual que hace `family-context.spec.ts`.
+const prisma = vi.hoisted(() => ({
+	member: { findMany: vi.fn() },
+	organization: { findMany: vi.fn() }
+}));
+vi.mock('$lib/server/prisma.js', () => ({ default: prisma }));
+
+import { familySlug, listFamilyOptions } from './families.js';
+
+function eventOf(user?: { id: string }): RequestEvent {
+	return { locals: { user } } as unknown as RequestEvent;
+}
+
+beforeEach(() => {
+	vi.clearAllMocks();
+});
 
 // El formato que el plugin de tenancy impone al slug de una organización.
 const PLUGIN_SLUG = /^[a-z0-9-]{1,50}$/;
@@ -36,5 +54,43 @@ describe('familySlug', () => {
 		const [a, b] = [familySlug('Casa'), familySlug('Casa')];
 		expect(a).toMatch(/^casa-[0-9a-f]{6}$/);
 		expect(a).not.toBe(b);
+	});
+});
+
+describe('listFamilyOptions', () => {
+	it('sin sesión devuelve [] sin consultar', async () => {
+		expect(await listFamilyOptions(eventOf())).toEqual([]);
+		expect(prisma.member.findMany).not.toHaveBeenCalled();
+	});
+
+	it('sin ninguna membresía devuelve []', async () => {
+		prisma.member.findMany.mockResolvedValue([]);
+
+		expect(await listFamilyOptions(eventOf({ id: 'u1' }))).toEqual([]);
+		expect(prisma.organization.findMany).not.toHaveBeenCalled();
+	});
+
+	it('devuelve las familias con membresía, consultadas por sus ids y ordenadas', async () => {
+		prisma.member.findMany.mockResolvedValue([{ contextId: 'f2' }, { contextId: 'f1' }]);
+		prisma.organization.findMany.mockResolvedValue([
+			{ id: 'f1', name: 'Familia García' },
+			{ id: 'f2', name: 'Los Pérez' }
+		]);
+
+		const options = await listFamilyOptions(eventOf({ id: 'u1' }));
+
+		expect(prisma.member.findMany).toHaveBeenCalledWith({
+			where: { userId: 'u1', contextType: 'organization' },
+			select: { contextId: true }
+		});
+		expect(prisma.organization.findMany).toHaveBeenCalledWith({
+			where: { id: { in: ['f2', 'f1'] } },
+			select: { id: true, name: true },
+			orderBy: { name: 'asc' }
+		});
+		expect(options).toEqual([
+			{ id: 'f1', name: 'Familia García' },
+			{ id: 'f2', name: 'Los Pérez' }
+		]);
 	});
 });

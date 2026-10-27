@@ -6,6 +6,7 @@ import { env } from '$env/dynamic/private';
 import { betterAuthHandle } from '@callepuzzle/auth/hooks';
 import { auth } from '$lib/server/auth';
 import { handleAuthGuard } from '$lib/server/auth-guard';
+import { handleFamilyContext } from '$lib/server/family-context.js';
 import logger from '$lib/server/logger';
 import { getTextDirection } from '$lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '$lib/paraglide/server.js';
@@ -111,11 +112,14 @@ export const handleError: HandleServerError = ({ error, event }) => {
 // handleAuthGuard (justo después, para ver `locals.user`) exige sesión en todo
 // lo demás y manda a /login sin ella: cubre también `+server.ts` y form actions,
 // que un guard en `+layout.server.ts` no vería.
+// handleFamilyContext (issue #63) resuelve la familia activa del usuario en
+// cada request autenticado y la deja en `locals.activeFamily`.
 export const handle: Handle = sequence(
 	handleLogging,
 	handleSecurityHeaders,
 	betterAuthHandle(auth, building, { skipAssets: true }),
 	handleAuthGuard,
+	handleFamilyContext,
 	handleUserTrace,
 	handleParaglide
 );
