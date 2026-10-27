@@ -86,6 +86,7 @@
 	"ui_cancel": "Cancel",
 
 	"routes_lists": "Lists",
+	"routes_pantry": "Pantry",
 	"lists_title": "Your lists",
 	"lists_empty": "No lists in this family yet. Create the first one and start shopping.",
 	"lists_create": "New list",
@@ -153,6 +154,10 @@
 	"purchases_error": "The purchase could not be finalized. Please try again later.",
 	"schema_purchase_total_label": "Ticket total (€)",
 	"schema_purchase_total_error": "Enter a valid total (zero or greater).",
+
+	"pantry_title": "Your pantry",
+	"pantry_empty": "The pantry is empty: it fills up when you finalize a purchase.",
+	"pantry_go_lists": "Go to lists",
 
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",

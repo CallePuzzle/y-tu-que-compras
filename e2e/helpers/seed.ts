@@ -7,6 +7,7 @@ import type {
 	List,
 	Member,
 	Organization,
+	PantryItem,
 	Unit,
 	User
 } from '../../src/lib/generated/prisma/client';
@@ -38,9 +39,10 @@ const FAMILY_ROLE_TRANSLATIONS: Record<string, Record<string, string>> = {
 };
 
 // Deja la BD de test vacía entre tests. TRUNCATE ... CASCADE resuelve las
-// referencias cruzadas (member→user/role, list→organization, item→list…).
+// referencias cruzadas (member→user/role, list→organization, item→list,
+// pantryItem→organization…).
 export async function resetDb(): Promise<void> {
-	await prisma.$executeRaw`TRUNCATE TABLE "user", "session", "account", "verification", "rateLimit", "organization", "team", "role", "roleStatement", "roleTranslation", "statement", "statementTranslation", "member", "permissionGrant", "permissionDeny", "invitation", "list", "item" RESTART IDENTITY CASCADE`;
+	await prisma.$executeRaw`TRUNCATE TABLE "user", "session", "account", "verification", "rateLimit", "organization", "team", "role", "roleStatement", "roleTranslation", "statement", "statementTranslation", "member", "permissionGrant", "permissionDeny", "invitation", "list", "item", "pantryItem" RESTART IDENTITY CASCADE`;
 }
 
 export async function createUser(options: { email?: string; name?: string } = {}): Promise<User> {
@@ -196,6 +198,33 @@ export async function createItem(options: {
 			unit: options.unit ?? 'unit',
 			purchased: options.purchased ?? false,
 			order: options.order ?? 0,
+			createdAt: now,
+			updatedAt: now
+		}
+	});
+}
+
+/**
+ * Un producto de la despensa (issue #70): lo mismo que deja `finalizePurchase`
+ * al cerrar una compra — nombre visible (el de la primera compra), su canónico
+ * y la cantidad acumulada.
+ */
+export async function createPantryItem(options: {
+	familyId: string;
+	name?: string;
+	normalizedName?: string;
+	quantity?: number;
+	unit?: Unit;
+}): Promise<PantryItem> {
+	const now = new Date();
+	const name = options.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`;
+	return prisma.pantryItem.create({
+		data: {
+			organizationId: options.familyId,
+			name,
+			normalizedName: options.normalizedName ?? name.trim().toLowerCase(),
+			quantity: options.quantity ?? 1,
+			unit: options.unit ?? 'unit',
 			createdAt: now,
 			updatedAt: now
 		}
