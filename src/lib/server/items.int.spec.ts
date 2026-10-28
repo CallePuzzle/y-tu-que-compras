@@ -238,3 +238,55 @@ describe('Marcar item como comprado (#69)', () => {
 		expect(items.map((item) => item.purchased)).toEqual([false, false, true]);
 	});
 });
+
+// ---- El CHECK (quantity > 0) de la base (issue #107): el schema zod ya
+// rechaza lo que la columna DECIMAL(10,3) no puede guardar bien; el
+// constraint es la última defensa para TODO escritor que se salte el schema. ----
+
+describe('CHECK quantity > 0 en la base (#107)', () => {
+	it('la base rechaza una cantidad 0 en item, aunque nadie valide antes', async () => {
+		const familyId = await familyRow('Familia Check Cero');
+		const list = await createList(familyId, LISTA);
+
+		await expect(
+			prisma.item.create({
+				data: { listId: list.id, name: 'Nada', quantity: 0, unit: 'unit', order: 0 }
+			})
+		).rejects.toThrow();
+		// Y el redondeo traicionero: 0.0001 entra por `positive()` pero la
+		// columna lo convertiría en 0 — el CHECK lo corta.
+		await expect(
+			prisma.item.create({
+				data: { listId: list.id, name: 'Migas', quantity: 0.0001, unit: 'gram', order: 1 }
+			})
+		).rejects.toThrow();
+	});
+
+	it('la base rechaza una cantidad 0 en purchaseItem: el snapshot copia la regla', async () => {
+		const familyId = await familyRow('Familia Check Snapshot');
+		await expect(
+			prisma.purchaseRecord.create({
+				data: {
+					organizationId: familyId,
+					listName: 'Compra',
+					total: 1,
+					items: { create: [{ name: 'Nada', quantity: 0, unit: 'unit' }] }
+				}
+			})
+		).rejects.toThrow();
+	});
+
+	it('cantidades legales siguen entrando: la milésima justa y el techo de la columna', async () => {
+		const familyId = await familyRow('Familia Check Legal');
+		const list = await createList(familyId, LISTA);
+
+		const minimo = await prisma.item.create({
+			data: { listId: list.id, name: 'Azafrán', quantity: 0.001, unit: 'gram', order: 0 }
+		});
+		const techo = await prisma.item.create({
+			data: { listId: list.id, name: 'Harina', quantity: 9_999_999.999, unit: 'gram', order: 1 }
+		});
+		expect(Number(minimo.quantity)).toBe(0.001);
+		expect(Number(techo.quantity)).toBe(9_999_999.999);
+	});
+});

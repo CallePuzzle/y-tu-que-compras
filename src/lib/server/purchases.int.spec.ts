@@ -202,6 +202,34 @@ describe('Finalizar compra: comprados a despensa, fuera de la lista (#70)', () =
 		expect(pantry).toHaveLength(1);
 		expect(Number(pantry[0].quantity)).toBe(3);
 	});
+
+	it('los espacios internos repetidos no parten el producto (#107): «Leche  entera» y «Leche entera» suman', async () => {
+		const familyId = await familyRow('Familia Espaciada');
+		const list = await createList(familyId, LISTA);
+		await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'Leche  entera', quantity: 1, unit: 'liter' },
+			true
+		);
+		await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'Leche entera', quantity: 1, unit: 'liter' },
+			true
+		);
+
+		expect(await finalizePurchase(familyId, list.id, 2, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		// Antes eran DOS filas de despensa que no se sumaban al re-añadir: el
+		// canónico colapsa ahora los espacios internos y aterrizan en UNA.
+		const pantry = await prisma.pantryItem.findMany({ where: { organizationId: familyId } });
+		expect(pantry).toHaveLength(1);
+		expect(pantry[0].normalizedName).toBe('leche entera');
+		expect(Number(pantry[0].quantity)).toBe(2);
+	});
 });
 
 describe('Finalizar compra: guardas (#70)', () => {

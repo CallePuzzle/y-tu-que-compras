@@ -68,7 +68,9 @@ test('la validacion de cantidad corta el alta en cliente', async ({ page }) => {
 	await page.getByRole('button', { name: 'Añadir' }).first().click();
 
 	// Error del schema junto al campo, y el item no llega al servidor.
-	await expect(page.getByText('La cantidad debe ser un número mayor que cero.')).toBeVisible();
+	await expect(
+		page.getByText('La cantidad debe ser mayor que 0, con hasta 3 decimales y sin pasar de')
+	).toBeVisible();
 	await expect(page.locator('li', { hasText: 'Nada' })).toHaveCount(0);
 });
 
@@ -167,7 +169,9 @@ test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', asyn
 	// Y tras recargar el load confirma el estado del servidor: sigue pendiente.
 	await page.reload();
 	const lecheRecargada = page.locator('li', { hasText: 'Leche' });
-	await expect(lecheRecargada.getByRole('checkbox', { name: 'Marcar como comprado' })).toBeVisible();
+	await expect(
+		lecheRecargada.getByRole('checkbox', { name: 'Marcar como comprado' })
+	).toBeVisible();
 	await expect(
 		prisma.item.findUniqueOrThrow({ where: { id: itemLeche.id } })
 	).resolves.toMatchObject({ purchased: false });

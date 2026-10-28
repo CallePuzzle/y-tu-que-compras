@@ -9,9 +9,12 @@ import type { Unit } from '$lib/schemas/item.js';
 
 /**
  * El nombre canónico con el que la despensa identifica un producto (#70):
- * minúsculas, sin acentos y sin espacios sobrantes. Es lo que se guarda en
+ * minúsculas, sin acentos y con los espacios colapsados a uno solo (issue
+ * #107: el comentario prometía «sin espacios sobrantes» pero no colapsaba los
+ * internos, y «Leche  entera» y «Leche entera» creaban dos filas de despensa
+ * que no se sumaban al re-añadir). Es lo que se guarda en
  * `PantryItem.normalizedName` para que «Leche Entera», «leche entera» y
- * «LECHE entera» sumen sobre el mismo item de la despensa. Mismo trato que el
+ * «LECHE  entera» sumen sobre el mismo item de la despensa. Mismo trato que el
  * `slugify` de las familias (NFD + quitar diacríticos), pero conservando los
  * espacios: es un nombre, no un slug.
  */
@@ -20,7 +23,8 @@ export function normalizeItemName(name: string): string {
 		.trim()
 		.normalize('NFD')
 		.replace(/\p{Diacritic}/gu, '')
-		.toLowerCase();
+		.toLowerCase()
+		.replace(/\s+/g, ' ');
 }
 
 /** Cómo acabó un intento de finalización. */

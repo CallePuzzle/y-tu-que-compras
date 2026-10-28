@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { quantitySchema } from './item.js';
 
 /**
  * Qué hacer con el producto de la despensa al re-añadirlo a una lista
@@ -34,8 +35,11 @@ export type ReaddSchemaStrings = {
  *
  * `newQuantity` solo aplica con `pantryMode: 'set'`; el `superRefine` lo
  * exige positivo en ese caso (con cualquier otro modo se ignora, venga o no).
- * Las cantidades son > 0, como en el alta de items, y las etiquetas viajan en
- * `.meta()` para que `zodToFieldsJsonSchema` las vuelca al `Field`.
+ * Las cantidades llevan el MISMO contrato que el item (`quantitySchema`,
+ * issue #107: mínimo 0.001, techo de la columna y múltiplo de la milésima) —
+ * tanto la que entra en la lista como la que queda en la despensa, que la
+ * columna `DECIMAL(10,3)` es la misma en las dos tablas. Las etiquetas viajan
+ * en `.meta()` para que `zodToFieldsJsonSchema` las vuelca al `Field`.
  */
 export function readdSchema(strings?: ReaddSchemaStrings) {
 	return z
@@ -47,18 +51,15 @@ export function readdSchema(strings?: ReaddSchemaStrings) {
 				.min(1, strings?.listIdError)
 				.meta({ description: strings?.listIdLabel }),
 			// La cantidad que entra en la LISTA (no la de la despensa).
-			quantity: z
-				.number(strings?.quantityError)
-				.positive(strings?.quantityError)
-				.meta({ description: strings?.quantityLabel }),
+			quantity: quantitySchema(strings?.quantityError).meta({
+				description: strings?.quantityLabel
+			}),
 			// Qué hacer con la despensa: keep (nada), set (fijar) o remove (quitar).
 			pantryMode: z
 				.enum(PANTRY_MODES, strings?.pantryModeError)
 				.meta({ description: strings?.pantryModeLabel }),
 			// Solo para `set`: la cantidad que QUEDA en la despensa.
-			newQuantity: z
-				.number(strings?.newQuantityError)
-				.positive(strings?.newQuantityError)
+			newQuantity: quantitySchema(strings?.newQuantityError)
 				.optional()
 				.meta({ description: strings?.newQuantityLabel })
 		})
