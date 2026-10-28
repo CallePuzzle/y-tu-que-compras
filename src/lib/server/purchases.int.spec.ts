@@ -15,6 +15,7 @@ import {
 	finalizePurchase,
 	getPurchase,
 	listPurchases,
+	MAX_PURCHASES_OFFSET,
 	normalizeItemName,
 	PURCHASES_PAGE_SIZE
 } from './purchases.js';
@@ -389,7 +390,14 @@ async function purchaseRow(
 			total: options.total,
 			createdAt: options.createdAt,
 			items: {
-				create: options.items ?? [{ name: 'Producto', quantity: 1, unit: 'unit' }]
+				create: (options.items ?? [{ name: 'Producto', quantity: 1, unit: 'unit' }]).map(
+					(item, position) => ({
+						position,
+						name: item.name,
+						quantity: item.quantity,
+						unit: item.unit
+					})
+				)
 			}
 		}
 	});
@@ -453,7 +461,7 @@ describe('Historial: listado de la familia (#76)', () => {
 		expect(crecida.purchases.slice(0, PURCHASES_PAGE_SIZE)).toEqual(primera.purchases);
 	});
 
-	it('un offset basura o negativo es la primera página', async () => {
+	it('un offset basura o negativo es la primera página, y uno desmedido se acota (#109)', async () => {
 		const familyId = await familyRow('Familia Offset Basura');
 		await purchaseRow(familyId, {
 			listName: 'Única',
@@ -466,6 +474,35 @@ describe('Historial: listado de la familia (#76)', () => {
 		expect(basura.hasMore).toBe(false);
 		const negativo = await listPurchases(familyId, -5);
 		expect(negativo.purchases).toHaveLength(1);
+
+		// Sin acotar, `1e21` pasaba Number.isInteger y el `take` desmedido
+		// reventaba Prisma (500); un millón volcaba el historial entero.
+		expect(() => listPurchases(familyId, 1e21)).not.toThrow();
+		const acotado = await listPurchases(familyId, 1e21);
+		expect(acotado.purchases).toHaveLength(1);
+		expect(await listPurchases(familyId, 1_000_000)).toEqual(acotado);
+		expect(await listPurchases(familyId, MAX_PURCHASES_OFFSET)).toEqual(acotado);
+	});
+
+	it('el detalle sale en el orden CONGELADO por `position`, no alfabético ni físico (#109)', async () => {
+		const familyId = await familyRow('Familia Detalle Ordenado');
+		// En la lista se compró primero Pan y luego Leche: el snapshot congela
+		// ese orden aunque no sea alfabético ni el que Postgres devuelva «de
+		// oído» (el orden físico de inserción no está prometido).
+		const lista = await createList(familyId, LISTA);
+		const compra = await purchaseRow(familyId, {
+			listId: lista.id,
+			listName: LISTA.name,
+			total: 5,
+			createdAt: new Date('2026-06-01T10:00:00Z'),
+			items: [
+				{ name: 'Pan', quantity: 1, unit: 'unit' },
+				{ name: 'Leche entera', quantity: 1.5, unit: 'liter' }
+			]
+		});
+
+		const detalle = await getPurchase(familyId, compra.id);
+		expect(detalle?.items.map((item) => item.name)).toEqual(['Pan', 'Leche entera']);
 	});
 });
 

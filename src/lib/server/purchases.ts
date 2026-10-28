@@ -138,8 +138,9 @@ export async function finalizePurchase(
 			}
 
 			// Historial (issue #75): snapshot inmutable de la lista y de cada
-			// item comprado — en el ORDEN DE LA LISTA en que se compraron —,
-			// con el total a mano y quién finalizó.
+			// item comprado — en el ORDEN DE LA LISTA en que se compraron, que
+			// es la que acaban de traer los locks y la que congela `position`
+			// (issue #109) —, con el total a mano y quién finalizó.
 			await tx.purchaseRecord.create({
 				data: {
 					organizationId: familyId,
@@ -148,7 +149,8 @@ export async function finalizePurchase(
 					total,
 					userId,
 					items: {
-						create: purchased.map((item) => ({
+						create: purchased.map((item, position) => ({
+							position,
 							name: item.name,
 							quantity: item.quantity,
 							unit: item.unit
@@ -235,6 +237,14 @@ export async function finalizePurchase(
 /** El tamaño de página de la carga incremental del listado (#76). */
 export const PURCHASES_PAGE_SIZE = 20;
 
+/**
+ * El tope del offset de «Cargar más» (issue #109): sin él, un `?offset=1e21`
+ * pasaba `Number.isInteger` y el `take` desmedido revientaba Prisma (500), y
+ * un `?offset=1000000` volcaba el historial entero. 1000 compras son 50
+ * páginas: para el historial de una familia, de sobra.
+ */
+export const MAX_PURCHASES_OFFSET = 1000;
+
 /** Una compra del historial tal y como el listado la muestra. */
 export interface PurchaseSummaryView {
 	id: string;
@@ -285,9 +295,11 @@ export async function listPurchases(
 	offset: number
 ): Promise<{ purchases: PurchaseSummaryView[]; hasMore: boolean }> {
 	// El offset viaja en la URL: cualquier cosa que no sea un entero no
-	// negativo es la primera página. Sin tope alto: un `take` desmedido solo
-	// relee las compras de LA FAMILIA (el `where` manda), nunca las de nadie.
-	const from = Number.isInteger(offset) && offset > 0 ? offset : 0;
+	// negativo es la primera página, y por encima del tope se ACOTA (issue
+	// #109): un offset desmedido no puede ni reventar el `take` de Prisma ni
+	// volcar el historial entero. Un `take` grande solo relee compras de LA
+	// FAMILIA (el `where` manda), nunca las de nadie.
+	const from = Number.isInteger(offset) && offset > 0 ? Math.min(offset, MAX_PURCHASES_OFFSET) : 0;
 
 	const rows = await prisma.purchaseRecord.findMany({
 		where: { organizationId: familyId },
@@ -304,8 +316,9 @@ export async function listPurchases(
 /**
  * El detalle de una compra de la familia con sus items snapshot (#76). `null`
  * si no existe ahí (id ajeno o rancio): sin revelar si vive en otra familia.
- * Los items vuelven en el orden en que se compraron, que es el orden de
- * inserción del snapshot.
+ * Los items vuelven en el orden en que se compraron: es la `position` que
+ * `finalizePurchase` congeló (issue #109) — sin ella, el orden dependía del
+ * orden físico de inserción, que Postgres no promete que se conserve.
  */
 export async function getPurchase(
 	familyId: string,
@@ -318,7 +331,10 @@ export async function getPurchase(
 			listName: true,
 			total: true,
 			createdAt: true,
-			items: { select: { id: true, name: true, quantity: true, unit: true } }
+			items: {
+				orderBy: { position: 'asc' },
+				select: { id: true, name: true, quantity: true, unit: true }
+			}
 		}
 	});
 	if (!row) {

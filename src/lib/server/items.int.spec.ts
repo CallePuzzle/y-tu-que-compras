@@ -270,7 +270,7 @@ describe('CHECK quantity > 0 en la base (#107)', () => {
 					organizationId: familyId,
 					listName: 'Compra',
 					total: 1,
-					items: { create: [{ name: 'Nada', quantity: 0, unit: 'unit' }] }
+					items: { create: [{ position: 0, name: 'Nada', quantity: 0, unit: 'unit' }] }
 				}
 			})
 		).rejects.toThrow();
