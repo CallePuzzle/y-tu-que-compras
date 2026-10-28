@@ -107,6 +107,34 @@ test('carga incremental: «Cargar más» añade la cola sin perder las filas ya 
 	await expect(page.getByText('Compra 1', { exact: true })).toBeVisible();
 });
 
+test('«Cargar más» no devuelve la vista al principio de la página (#117)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	for (let i = 0; i < 25; i++) {
+		await createPurchaseRecord({
+			familyId: family.id,
+			listName: `Compra ${i + 1}`,
+			createdAt: new Date(Date.UTC(2026, 0, 1, 12, i))
+		});
+	}
+	await seedSession(page, user);
+
+	// Viewport bajo: con 20 filas la página tiene scroll de sobra.
+	await page.setViewportSize({ width: 412, height: 600 });
+	await page.goto('/history');
+	await waitForHydration(page);
+
+	const boton = page.getByRole('button', { name: 'Cargar más' });
+	await boton.scrollIntoViewIfNeeded();
+	const antes = await page.evaluate(() => window.scrollY);
+	expect(antes).toBeGreaterThan(0);
+
+	await boton.click();
+	await expect(page.locator('section li')).toHaveCount(25);
+	// La vista sigue donde estaba: la cola nueva aparece debajo de ella.
+	expect(await page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(antes);
+});
+
 test('cada compra enlaza a su detalle', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
