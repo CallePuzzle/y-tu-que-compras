@@ -39,11 +39,20 @@ const FAMILY_ROLE_TRANSLATIONS: Record<string, Record<string, string>> = {
 	member: { es: 'Miembro', en: 'Member' }
 };
 
-// Deja la BD de test vacía entre tests. TRUNCATE ... CASCADE resuelve las
-// referencias cruzadas (member→user/role, list→organization, item→list,
-// pantryItem→organization, purchaseRecord→organization…).
+// Deja la BD de test vacía entre tests. La lista de tablas sale de
+// `pg_tables` (issue #125): una tabla nueva queda cubierta sin tocar esto
+// (`_prisma_migrations` no, o la BD olvidaría sus migraciones).
+// TRUNCATE ... CASCADE resuelve las referencias cruzadas (member→user/role,
+// list→organization, item→list…).
 export async function resetDb(): Promise<void> {
-	await prisma.$executeRaw`TRUNCATE TABLE "user", "session", "account", "verification", "rateLimit", "organization", "team", "role", "roleStatement", "roleTranslation", "statement", "statementTranslation", "member", "permissionGrant", "permissionDeny", "invitation", "list", "item", "pantryItem", "purchaseRecord", "purchaseItem" RESTART IDENTITY CASCADE`;
+	const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+		SELECT tablename FROM pg_tables
+		WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+	if (tables.length === 0) return;
+	// Identificadores entre comillas (con las comillas internas dobladas): no
+	// se pueden pasar como parámetros, y los nombres vienen del catálogo.
+	const list = tables.map(({ tablename }) => `"public"."${tablename.replaceAll('"', '""')}"`);
+	await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list.join(', ')} RESTART IDENTITY CASCADE`);
 }
 
 export async function createUser(options: { email?: string; name?: string } = {}): Promise<User> {
@@ -258,7 +267,8 @@ export async function createPurchaseRecord(options: {
 			userId: options.userId ?? null,
 			createdAt: options.createdAt ?? new Date(),
 			items: {
-				create: items.map((item) => ({
+				create: items.map((item, position) => ({
+					position,
 					name: item.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`,
 					quantity: item.quantity ?? 1,
 					unit: item.unit ?? 'unit'

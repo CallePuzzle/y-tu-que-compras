@@ -86,11 +86,11 @@ export const actions: Actions = {
 		try {
 			const ok = await adjustPantryItem(family.id, id, direction);
 			if (!ok) {
-				return fail(400, { error: m.pantry_gone() });
+				return fail(404, { error: m.pantry_gone() });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al ajustar la despensa');
-			return fail(400, { error: m.pantry_error() });
+			return fail(500, { error: m.pantry_error() });
 		}
 
 		return { success: true };
@@ -117,14 +117,15 @@ export const actions: Actions = {
 		try {
 			const outcome = await readdPantryItem(family.id, pantryId, form.data);
 			if (outcome === 'pantry-gone') {
-				return message(form, m.pantry_gone(), { status: 400 });
+				// Producto o lista ya no existen: 404 (issue #110).
+				return message(form, m.pantry_gone(), { status: 404 });
 			}
 			if (outcome === 'list-gone') {
-				return message(form, m.lists_gone(), { status: 400 });
+				return message(form, m.lists_gone(), { status: 404 });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al re-añadir el producto a la lista');
-			return message(form, m.pantry_readd_error(), { status: 400 });
+			return message(form, m.pantry_readd_error(), { status: 500 });
 		}
 
 		return message(form, m.pantry_readd_success());

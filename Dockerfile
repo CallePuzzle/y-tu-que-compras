@@ -13,17 +13,26 @@
 # aquí no hay nada arch-específico.
 
 # Dependencias completas (devDeps incluidos: vite, svelte, typescript...). El
-# postinstall de package.json genera código (svelte-kit sync, prisma generate,
-# paraglide compile) que el build necesita, y el de @prisma/engines descarga el
-# schema-engine que usará el init container db-migrate.
+# install va en su propia capa con solo los manifiestos (issue #123): un cambio
+# de código no reinstala nada mientras no cambien package.json/bun.lock.
+# Por eso `--ignore-scripts`: el postinstall de package.json genera código
+# (svelte-kit sync, prisma generate, paraglide compile) a partir del fuente,
+# que aún no está; se ejecuta abajo, tras el COPY. De los scripts de
+# dependencias solo importa el de @prisma/engines (descarga el schema-engine
+# que usará el init container db-migrate), que se lanza a mano aquí — el de
+# esbuild solo verifica el binario de su paquete opcional y el preinstall de
+# prisma solo comprueba versiones.
 FROM oven/bun:1.4.4 AS build
 WORKDIR /app
-COPY . .
+COPY package.json bun.lock .npmrc ./
 # NPM_TOKEN entra como secret de BuildKit: no queda en ARG/ENV ni en ninguna
 # capa. Lo expande el .npmrc (que se entrega sin secretos) al resolver los
 # paquetes @callepuzzle/* y @zytera/* de GitHub Packages.
 RUN --mount=type=secret,id=npm_token \
-    NPM_TOKEN="$(cat /run/secrets/npm_token)" bun install --frozen-lockfile
+    NPM_TOKEN="$(cat /run/secrets/npm_token)" bun install --frozen-lockfile --ignore-scripts && \
+    cd node_modules/@prisma/engines && bun run postinstall
+COPY . .
+RUN bun run postinstall
 # ADAPTER=node: svelte.config.js elige adapter-node y genera `build/` (la build
 # de Vercel, que no define esta variable, sigue generando .vercel/output).
 ENV ADAPTER=node

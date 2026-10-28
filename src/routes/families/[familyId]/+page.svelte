@@ -189,6 +189,40 @@
 		{/each}
 	</ul>
 
+	<!-- Invitaciones pendientes (issue #102): solo el admin las ve — llevan
+	     emails de terceros — y puede cancelar cada una. La caducada se señala:
+	     su enlace ya no sirve, pero sigue aquí hasta cancelarse (el cron la
+	     marcará «expired» en la base). -->
+	{#if viewer?.isAdmin && familia.pendingInvitations.length > 0}
+		<section class="mt-8">
+			<h2 class="text-sm font-bold opacity-70">{m.families_invitations_pending()}</h2>
+			<ul class="mt-2 flex flex-col gap-2">
+				{#each familia.pendingInvitations as invitacion (invitacion.id)}
+					<li
+						class="bg-base-200 rounded-box flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+					>
+						<div class="min-w-0">
+							<p class="truncate font-medium">{invitacion.email}</p>
+							<p class="text-sm opacity-70">
+								{#if invitacion.expired}
+									{m.families_invitation_expired()}
+								{:else if invitacion.expiresLabel}
+									{m.families_invitation_expires({ date: invitacion.expiresLabel })}
+								{/if}
+							</p>
+						</div>
+						<form method="POST" action="?/cancel" use:enhance>
+							<input type="hidden" name="invitacion" value={invitacion.id} />
+							<button type="submit" class="btn btn-ghost btn-sm btn-error">
+								{m.families_invitation_cancel()}
+							</button>
+						</form>
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
 	<!-- Salir de la familia (issue #62): para cualquier miembro, admin o no;
 	     si es el último admin, el servidor lo rechaza con la explicación. -->
 	<div class="mt-6">

@@ -63,22 +63,31 @@ export async function createItem(
 	data: ItemData
 ): Promise<ItemView | null> {
 	return prisma.$transaction(async (tx) => {
-		const list = await tx.list.findFirst({
-			where: { id: listId, organizationId: familyId },
-			select: { id: true }
-		});
-		if (!list) {
+		// La lista PRIMERO y CON LOCK (issue #108): dos altas concurrentes en
+		// la misma lista se serializan, así que el `max(order) + 1` de abajo
+		// no repite posición. `null` si la lista no existe ahí (id ajeno o ya
+		// borrado): sin revelar si vive en otra familia. El `order` lo
+		// calcula el SERVIDOR (el schema no trae default: «nadie inserta sin
+		// decir dónde»).
+		const list = await tx.$queryRaw<Array<{ id: string }>>`
+			SELECT "id"
+			FROM "list"
+			WHERE "id" = ${listId} AND "organizationId" = ${familyId}
+			FOR UPDATE
+		`;
+		if (list.length === 0) {
 			return null;
 		}
+		const listaId = list[0].id;
 
 		const { _max } = await tx.item.aggregate({
-			where: { listId: list.id },
+			where: { listId: listaId },
 			_max: { order: true }
 		});
 
 		const row = await tx.item.create({
 			data: {
-				listId: list.id,
+				listId: listaId,
 				name: data.name,
 				quantity: data.quantity,
 				unit: data.unit,

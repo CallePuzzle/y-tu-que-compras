@@ -1,30 +1,38 @@
 import { describe, expect, it } from 'vitest';
 
-// Test de UNIDAD (proyecto vitest `server`, sin base de datos): el contrato de
-// `normalizeItemName`, el nombre canónico con el que la despensa decide si dos
-// nombres escritos distinto son el mismo producto (issue #70).
+// Test unitario (proyecto `server`, sin base de datos) del contrato del nombre
+// canónico de la despensa: es la clave con la que `PantryItem` decide si dos
+// escrituras son el mismo producto y hay que SUMAR (issues #70 y #107).
+
 import { normalizeItemName } from './purchases.js';
 
-describe('normalizeItemName (#70)', () => {
-	it('recorta los espacios sobrantes y pasa a minúsculas', () => {
-		expect(normalizeItemName('  Leche Entera  ')).toBe('leche entera');
-		expect(normalizeItemName('PAN')).toBe('pan');
+describe('normalizeItemName (#70, #107)', () => {
+	it('pone en minúsculas y quita acentos: el acento y la mayúscula no hacen al producto', () => {
+		expect(normalizeItemName('Leche Entera')).toBe('leche entera');
+		expect(normalizeItemName('LECHE entera')).toBe('leche entera');
+		expect(normalizeItemName('Café con leche')).toBe('cafe con leche');
+		expect(normalizeItemName('Aceítunas')).toBe('aceitunas');
 	});
 
-	it('quita los acentos: «Leche Desnatada» y «leche desnatada» son el mismo producto', () => {
-		expect(normalizeItemName('Cañón de cerdo')).toBe(normalizeItemName('CANON DE CERDO'));
-		expect(normalizeItemName(' Café molido ')).toBe(normalizeItemName('cafe molido'));
+	it('recorta los espacios de los extremos', () => {
+		expect(normalizeItemName('  pan de molde  ')).toBe('pan de molde');
+		expect(normalizeItemName('\tLeche\n')).toBe('leche');
 	});
 
-	it('mantiene los espacios internos: es un nombre, no un slug', () => {
-		expect(normalizeItemName('Aceite de oliva virgen')).toBe('aceite de oliva virgen');
+	it('colapsa los espacios internos repetidos (issue #107)', () => {
+		// Antes «Leche  entera» y «Leche entera» creaban DOS filas de despensa
+		// que no se sumaban al re-añadir: ahora canónicamente son la misma.
+		expect(normalizeItemName('Leche  entera')).toBe('leche entera');
+		expect(normalizeItemName('Leche \t entera')).toBe('leche entera');
+		expect(normalizeItemName('Leche  Entera')).toBe(normalizeItemName('leche entera'));
 	});
 
-	it('colapsa la ñ a n, igual que el slugify de las familias', () => {
-		expect(normalizeItemName('Ñoquis')).toBe('noquis');
+	it('no es un slug: conserva los espacios simples entre palabras', () => {
+		expect(normalizeItemName('Pan de molde')).toBe('pan de molde');
 	});
 
-	it('un nombre de solo espacios deja la cadena vacía', () => {
+	it('el resultado vacío solo si la entrada es vacía o de espacios', () => {
+		expect(normalizeItemName('')).toBe('');
 		expect(normalizeItemName('   ')).toBe('');
 	});
 });

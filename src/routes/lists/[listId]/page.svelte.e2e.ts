@@ -68,7 +68,9 @@ test('la validacion de cantidad corta el alta en cliente', async ({ page }) => {
 	await page.getByRole('button', { name: 'Añadir' }).first().click();
 
 	// Error del schema junto al campo, y el item no llega al servidor.
-	await expect(page.getByText('La cantidad debe ser un número mayor que cero.')).toBeVisible();
+	await expect(
+		page.getByText('La cantidad debe ser mayor que 0, con hasta 3 decimales y sin pasar de')
+	).toBeVisible();
 	await expect(page.locator('li', { hasText: 'Nada' })).toHaveCount(0);
 });
 
@@ -131,7 +133,7 @@ test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', asyn
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', order: 0 });
+	const itemLeche = await createItem({ listId: lista.id, name: 'Leche', order: 0 });
 	await createItem({ listId: lista.id, name: 'Pan', order: 1 });
 	await seedSession(page, user);
 
@@ -156,10 +158,23 @@ test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', asyn
 	expect(items.find((row) => row.name === 'Leche')?.purchased).toBe(true);
 	expect(items.find((row) => row.name === 'Pan')?.purchased).toBe(false);
 
-	// Desmarcar vuelve a Pendientes.
+	// Desmarcar vuelve a Pendientes… y la verdad queda en la BD (issue #106:
+	// el desmarcado no se guardaba, solo el optimista de pantalla).
 	await leche.getByRole('checkbox', { name: 'Marcar como pendiente' }).click();
 	await expect(leche).not.toHaveClass(/opacity-60/);
 	await expect(leche.locator('p').first()).not.toHaveClass(/line-through/);
+	const despuesDeDesmarcar = await prisma.item.findUniqueOrThrow({ where: { id: itemLeche.id } });
+	expect(despuesDeDesmarcar.purchased).toBe(false);
+
+	// Y tras recargar el load confirma el estado del servidor: sigue pendiente.
+	await page.reload();
+	const lecheRecargada = page.locator('li', { hasText: 'Leche' });
+	await expect(
+		lecheRecargada.getByRole('checkbox', { name: 'Marcar como comprado' })
+	).toBeVisible();
+	await expect(
+		prisma.item.findUniqueOrThrow({ where: { id: itemLeche.id } })
+	).resolves.toMatchObject({ purchased: false });
 });
 
 test('con todo comprado, el listado lo celebra', async ({ page }) => {
@@ -293,7 +308,14 @@ test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => 
 	// La lista desaparece «por debajo» (otro miembro la borró): el POST de
 	// comprado falla y el checkbox debe volver a su estado original.
 	await prisma.list.delete({ where: { id: lista.id } });
+	const respuesta = page.waitForResponse((r) => r.url().includes('?/purchased'));
 	await page.getByRole('checkbox', { name: 'Marcar como comprado' }).click();
+
+	// El recurso que ya no existe vuelve 404, no 400 (issue #110). Con
+	// use:enhance la respuesta HTTP de la acción es siempre 200: el status de
+	// fail() viaja en el cuerpo JSON ({ type: 'failure', status }).
+	const cuerpo = await (await respuesta).json();
+	expect(cuerpo).toMatchObject({ type: 'failure', status: 404 });
 
 	// El fallo se avisa, el optimista se retira y el item vuelve a pendiente
 	// con los datos que traía la página (no hay update en fallo).

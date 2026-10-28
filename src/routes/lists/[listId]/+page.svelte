@@ -438,12 +438,19 @@
 							// volver MARCADA a Pendientes tras un fallo. Con la
 							// propiedad devuelta a `comprado`, cache y DOM quedan
 							// alineados: el estado es quien pinta cada valor.
-							// El valor NUEVO no se pierde: pasa al hidden, que es lo
-							// que lee la acción (?/purchased) tanto con JS como en
-							// un envío nativo sin JS.
+							// El valor NUEVO no se pierde: pasa al hidden y al checkbox se
+							// le QUITA el `name`, para que el envío lleve UN solo valor —
+							// el del hidden. Sin esto, al desmarcar el FormData llega con
+							// el hidden «false» Y el checkbox «true» (la propiedad se
+							// devolvió a su valor anterior arriba) y la acción se queda
+							// con «true»: el desmarcado nunca se guardaba (issue #106).
+							// Sin JS no hay toggle (no corre este `onchange`): el envío
+							// nativo conserva el par hidden+checkbox intacto y el
+							// servidor sigue leyéndolo bien.
 							const input = event.currentTarget;
 							const nuevo = input.checked;
 							input.checked = comprado;
+							input.removeAttribute('name');
 							const hidden = input.form?.querySelector<HTMLInputElement>(
 								'input[name="purchased"][type="hidden"]'
 							);

@@ -13,6 +13,8 @@ Guía para agentes de IA. App **y-tu-que-compras**: SvelteKit 2 + Svelte 5 (rune
 ## Setup
 
 - Gestor: **bun** (`bun.lock`); node >= 24. Versiones fijadas en `.tool-versions` (asdf): `asdf install`.
+  bun va en la MISMA versión en `.tool-versions`, `packageManager`, `setup-bun` de `ci.yml` y las
+  imágenes `oven/bun` del `Dockerfile`: al subirla, en los cuatro sitios.
 - `bun install` **exige `NPM_TOKEN` en `.env`** (PAT clásico con `read:packages`): `@callepuzzle/*` y
   `@zytera/*` vienen de GitHub Packages vía `.npmrc`; sin token falla con 401. En CI basta `GITHUB_TOKEN`.
 - El `postinstall` genera código (`svelte-kit sync && prisma generate && paraglide compile`): si algo
@@ -32,7 +34,7 @@ Guía para agentes de IA. App **y-tu-que-compras**: SvelteKit 2 + Svelte 5 (rune
 bun run lint        # prettier --check + eslint (formato: bun run format)
 bun run check       # svelte-check (typecheck)
 bun run test:unit -- --run   # vitest en modo run (sin --run queda en watch)
-bun run test:integration     # vitest proyecto `integration` (necesita DATABASE_URL con migraciones aplicadas)
+bun run test:integration     # vitest proyecto `integration` (BD de test: bun run db:test:up + migraciones)
 bun run test:e2e    # playwright (necesita la BD de e2e: bun run db:test:up antes)
 bun run test        # unit + integration + e2e
 ```
@@ -47,14 +49,22 @@ antes). Un test suelto:
 - Tres proyectos de vitest (`vite.config.ts`): **client** corre `.svelte.{test,spec}.*` en Chromium
   real (vitest browser mode; requiere `bunx playwright install --with-deps chromium` la primera vez),
   **server** corre el resto en node (sin base de datos) y **integration** corre `*.int.spec.ts`
-  contra Postgres real (en local: postgres en :5432 + `bun run db:migrate`; en CI hay un service).
-  Los tests de `src/lib/server/**` son siempre de servidor.
+  contra Postgres real. Los tests de `src/lib/server/**` son siempre de servidor.
+- **BD de integración**: vitest corre en modo `test`, así que Vite carga `.env.test` por encima de
+  `.env` y el proyecto `integration` usa la MISMA BD que los e2e (`y_tu_que_compras_test` en
+  :55433). En local: `bun run db:test:up` y aplicarle las migraciones (las aplica cualquier
+  `bun run test:e2e`, o `DATABASE_URL=postgresql://test:test@localhost:55433/y_tu_que_compras_test bunx prisma migrate deploy`).
+  `src/lib/server/integration-setup.ts` aborta si la `DATABASE_URL` no es local o su BD no acaba
+  en `_test` (issue #125): estos tests crean datos y no los limpian. Un `DATABASE_URL` en el entorno
+  de la shell tiene prioridad sobre ambos `.env`. En CI hay un service de postgres
+  (`y_tu_que_compras_test` en :5432).
 - **e2e (Playwright)**: los specs viven junto a su ruta como `*.e2e.ts` y los helpers compartidos en
   `e2e/` (`helpers/` con `auth` — sesión sembrada + login OTP real leyendo la tabla `verification` —,
   `seed` — familias con roles sembrados como los siembra el plugin —, `db` y `env`). Van full-stack:
   el webServer es `vite dev` en :4174 contra el PostgreSQL de `docker-compose.yml` (:55433,
   `bun run db:test:up`; migraciones las aplica `e2e/global-setup.ts`). Sin paralelismo (workers 1):
-  cada spec trunca la BD (`resetDb`). En dev no sale ningún email real y better-auth no activa el
+  cada spec trunca la BD (`resetDb`, que saca las tablas de `pg_tables`: un modelo nuevo no
+  requiere tocarlo). En dev no sale ningún email real y better-auth no activa el
   rate limit, así que el flujo OTP es repetible. En CI el compose se levanta en su paso del
   workflow.
 - `requireAssertions: true`: un test sin assertions falla.
@@ -75,6 +85,10 @@ antes). Un test suelto:
   `bun run` lo inyectan (los flags `--env-file` de bun solo valen para scripts del propio bun).
 - El cliente Prisma (`src/lib/server/prisma.ts`) se instancia perezosamente vía Proxy para que
   `vite build` no necesite `DATABASE_URL`. Mantener ese patrón si se toca.
+- **Permisos de familia**: los roles (`admin`/`member`, `src/lib/server/tenancy.ts`) solo guardan
+  la gestión de la familia (renombrar, borrar, invitar, roles). Listas, compras y despensa son
+  intencionadamente de escritura total para cualquier miembro: las acciones solo comprueban la
+  pertenencia (`requireActiveFamily`). No añadir checks de rol ahí sin decidirlo antes (issue #111).
 - `ssr.noExternal` en `vite.config.ts`: los paquetes `@callepuzzle/*`, formsnap y
   sveltekit-superforms deben bundlarse en SSR porque importan los módulos virtuales `$app/*`.
 - Imports dentro del código de servidor: alias **`$lib/*`** (el nativo de SvelteKit; eslint lo
@@ -97,16 +111,23 @@ antes). Un test suelto:
   `db-migrate` ejecuta `prisma migrate deploy` antes de arrancar el servidor. El entorno `pro/`
   lleva `spec.json`, `main.jsonnet` (host público), `version.jsonnet` (tag de imagen) y
   `secrets.enc` (SOPS/age, misma clave age que el repo de infra; ver `~/projects/age-key.txt`).
-- **Release**: push a `main` → `.github/workflows/release.yml` construye la imagen `linux/arm64`
-  en el runner `ubuntu-24.04-arm` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de
-  GitHub Packages entra como secret de BuildKit, no como ARG), corta la release/tag y commitea
-  `deploy/pro/version.jsonnet`; Argo CD (autoSync) despliega el nuevo tag. El push del bump va
-  por SSH con la deploy key de escritura `bump-pro release (CI)` (secret `BUMP_DEPLOY_KEY`): el
-  ruleset de `main` exige los checks de CI a los pushes humanos y la key es bypass actor
-  (el `GITHUB_TOKEN` del workflow no puede pushear — lo rechazó en la v0.0.1). El job `docker` de
-  `ci.yml` construye la misma imagen (mismo runner ARM) en cada PR para que lo que construye la
-  release no se estrene en main. El workflow se salta
-  los cambios de `deploy/**` (`paths-ignore` + `[skip ci]`).
+- **Release**: CI verde en `main` → `.github/workflows/release.yml` (disparado por
+  `workflow_run` del CI, sobre su `head_sha`: solo se despliegan commits con CI completo en main)
+  corta la release/tag, construye la imagen `linux/arm64` en el runner `ubuntu-24.04-arm`
+  (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de GitHub Packages entra como
+  secret de BuildKit, no como ARG), la publica y commitea `deploy/pro/version.jsonnet`; Argo CD
+  (autoSync) despliega el nuevo tag. El build va en un job con `GITHUB_TOKEN` de solo lectura
+  (`packages: read`): los scripts de dependencias nunca ven un token de escritura; la imagen
+  pasa como artifact al job `publish`, que es el único con `packages: write` (issue #122). El push
+  del bump va por SSH con la deploy key de escritura `bump-pro release (CI)` (secret
+  `BUMP_DEPLOY_KEY`): el ruleset de `main` exige los checks de CI a los pushes humanos y la key es
+  bypass actor (el `GITHUB_TOKEN` del workflow no puede pushear — lo rechazó en la v0.0.1); si
+  main avanzó mientras tanto, rebase y reintento (5 intentos). El job `docker` de `ci.yml`
+  construye la misma imagen (mismo runner ARM) en cada PR y la arranca contra Postgres
+  (`migrate deploy` como el init container, servidor y curl a `/healthz`, `/readyz` y `/login`;
+  issue #123), así que el runtime real no se estrena en pro. El CI de `main` ignora `deploy/**`
+  (`paths-ignore`) y el bump lleva `[skip ci]`: ninguno dispara release. En PRs el CI cancela el
+  run anterior; en `main`, no.
 - **Runtime**: la imagen es todo bun, como `Zytera/auth`: build con `oven/bun:1.4.4` (exporta
   `ADAPTER=node`, que hace que `svelte.config.js` elija adapter-node) y runtime
   `oven/bun:1.4.4-distroless` ejecutando `bun run /app/build/index.js` (el output de adapter-node

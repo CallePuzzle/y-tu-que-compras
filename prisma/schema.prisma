@@ -379,6 +379,10 @@ enum Unit {
 // fecha de la compra es el `createdAt`: el registro se crea exactamente al
 // finalizar, no tiene vida posterior (inmutable). El usuario que finaliza
 // también va con SetNull: que borre su cuenta no debe romper el historial.
+//
+// El índice (familia, createdAt DESC, id) es el del listado del historial
+// (issue #109): la consulta ordena por `createdAt desc, id desc` y filtra por
+// familia, así que el `organizationId` suelto que había no le servía.
 model PurchaseRecord {
   id             String         @id @default(cuid())
   organizationId String
@@ -392,17 +396,24 @@ model PurchaseRecord {
   items          PurchaseItem[]
   createdAt      DateTime       @default(now())
 
-  @@index([organizationId])
+  @@index([organizationId, createdAt(sort: Desc), id])
   @@map("purchaseRecord")
 }
 
 // Snapshot inmutable de cada item comprado (issue #75). Misma precisión que el
 // `Item` de origen (DECIMAL(10,3), ver Item.quantity) y el mismo enum `unit`
 // para que el snapshot conserve íntegro lo que sabía la lista.
+//
+// `position` congela el orden del item EN LA LISTA al comprar (issue #109):
+// sin él, el orden del detalle dependía del orden de inserción físico, que
+// Postgres no promete; ahora el detalle lee por `position` y sale SIEMPRE
+// igual. Lo escribe `finalizePurchase` (nadie inserta sin decir dónde, como
+// el `order` de Item).
 model PurchaseItem {
   id               String         @id @default(cuid())
   purchaseRecordId String
   purchaseRecord   PurchaseRecord @relation(fields: [purchaseRecordId], references: [id], onDelete: Cascade)
+  position         Int
   name             String
   quantity         Decimal        @db.Decimal(10, 3)
   unit             Unit

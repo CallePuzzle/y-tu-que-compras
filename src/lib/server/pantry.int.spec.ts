@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 // Decimal aplanada a número para la vista (#72).
 import prisma from './prisma.js';
 import { adjustPantryItem, listPantryItems, readdPantryItem } from './pantry.js';
+import { createItem } from './items.js';
 import { createList } from './lists.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
@@ -375,5 +376,63 @@ describe('Re-añadir a la compra (#74)', () => {
 		// La lista recibe el item y la despensa vuelve a tener leche.
 		await expect(prisma.item.count({ where: { listId: lista.id } })).resolves.toBe(1);
 		await expect(cantidadDe(producto.id)).resolves.toBe(2);
+	});
+});
+
+// ---- Concurrencia del re-añadido (issue #108): dos miembros a la vez sobre
+// la MISMA lista. El «buscar pendiente equivalente o crear» sin bloqueo
+// creaba dos items; con el lock de la fila de lista, el segundo ve lo que el
+// primero acaba de crear y suma. ----
+
+describe('Re-añadidos concurrentes (#108)', () => {
+	it('dos miembros re-añaden a la vez el mismo producto a la misma lista: un item, cantidad sumada', async () => {
+		const familyId = await familyRow('Familia Re-añadida a la Vez');
+		const lista = await createList(familyId, LISTA);
+		const producto = await pantryRow(familyId, 'Leche entera', 5, 'liter');
+
+		const outcomes = await Promise.all([
+			readdPantryItem(familyId, producto.id, {
+				...READD_BASE,
+				listId: lista.id,
+				quantity: 1
+			}),
+			readdPantryItem(familyId, producto.id, {
+				...READD_BASE,
+				listId: lista.id,
+				quantity: 2
+			})
+		]);
+		expect(outcomes).toEqual(['added', 'added']);
+
+		// UNA fila (la primera creó, la segunda sumó sobre ella): sin
+		// duplicados y con 1 + 2 = 3 L.
+		const filas = await prisma.item.findMany({ where: { listId: lista.id } });
+		expect(filas).toHaveLength(1);
+		expect(Number(filas[0].quantity)).toBe(3);
+		// La despensa quedó intacta (pantryMode keep).
+		await expect(cantidadDe(producto.id)).resolves.toBe(5);
+	});
+
+	it('dos altas rápidas a la vez en la misma lista no repiten posición (`order`)', async () => {
+		// El `max(order) + 1` sin lock daba el mismo `order` a los dos items,
+		// que bailaban entre sí en el listado.
+		const familyId = await familyRow('Familia Alta Doble');
+		const lista = await createList(familyId, LISTA);
+
+		const [primero, segundo] = await Promise.all([
+			createItem(familyId, lista.id, { name: 'Pan', quantity: 1, unit: 'unit' }),
+			createItem(familyId, lista.id, { name: 'Leche', quantity: 1, unit: 'liter' })
+		]);
+		expect(primero).not.toBeNull();
+		expect(segundo).not.toBeNull();
+
+		// Dos items y posiciones DISTINCTAS 0 y 1: quién la tome depende de
+		// quién gane el lock de la lista, pero nunca se repite.
+		const orders = await prisma.item
+			.findMany({ where: { listId: lista.id }, orderBy: { order: 'asc' } })
+			.then((filas) => filas.map((fila) => fila.order));
+		expect(orders).toHaveLength(2);
+		expect(orders).toEqual([0, 1]);
+		expect(new Set(orders).size).toBe(2);
 	});
 });

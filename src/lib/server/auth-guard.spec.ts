@@ -32,6 +32,13 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/invitations')).toBe(false);
 	});
 
+	it('las probes del clúster son públicas (issue #124)', () => {
+		// El kubelet sondea sin sesión; solo las rutas exactas.
+		expect(isPublicPathname('/healthz')).toBe(true);
+		expect(isPublicPathname('/readyz')).toBe(true);
+		expect(isPublicPathname('/healthz/otra')).toBe(false);
+	});
+
 	it('el resto de rutas exigen sesión', () => {
 		expect(isPublicPathname('/')).toBe(false);
 		expect(isPublicPathname('/loginfoo')).toBe(false);
