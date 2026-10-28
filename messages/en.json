@@ -4,6 +4,7 @@
 	"app_brand": "What are you buying?",
 	"app_tagline": "Manage your supermarket and market shopping",
 	"app_footer": "What are you buying? Your shopping list, for the supermarket and the market.",
+	"app_unexpected_error": "An unexpected error occurred (id: {id})",
 
 	"routes_home": "Home",
 	"routes_login": "Sign in",
@@ -18,6 +19,9 @@
 	"ui_avatar_alt": "Avatar of {name}",
 	"ui_sign_out": "Sign out",
 	"ui_user_not_logged": "You need to sign in to see this content.",
+	"ui_language": "Change language",
+	"ui_language_es": "Español",
+	"ui_language_en": "English",
 
 	"form_required": "Required",
 	"form_optional": "Optional",

@@ -17,6 +17,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { authClient } from '$lib/auth-client.js';
 	import FamilySwitcher from '$lib/components/FamilySwitcher.svelte';
+	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 	import type { LayoutProps } from './$types';
 
 	// `children` se renombra: dentro del snippet `children` del `Drawer` el nombre
@@ -78,6 +79,9 @@
 					     a los componentes de daisyUI), y así el selector de familia y el
 					     avatar quedan juntos en el borde derecho. -->
 					<div class="navbar-end gap-1">
+						<!-- El idioma se cambia sin sesión (la portada y el login son
+						     bilingües) y en móvil vive en la misma navbar. -->
+						<LanguageSwitcher />
 						{#if data.user}
 							<FamilySwitcher activeFamily={data.activeFamily} families={data.families} />
 						{/if}

@@ -27,7 +27,30 @@ export default defineConfig({
 		baseURL,
 		trace: 'retain-on-failure'
 	},
-	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+	// Dos proyectos: escritorio (todos los specs junto a su ruta) y móvil, que
+	// corre SOLO el spec transversal de la navegación en pantalla táctil
+	// (issue #79, `src/routes/mobile.e2e.ts`): mismo servidor y BD, viewport
+	// real de un teléfono (Pixel 7, `isMobile` + `hasTouch`). Sin paralelismo
+	// los proyectos se turnan, y cada spec trunca la BD al empezar.
+	projects: [
+		{
+			name: 'chromium',
+			use: {
+				...devices['Desktop Chrome'],
+				// Navegador en español: sin esto Playwright emula `en-US` y, con
+				// la detección por Accept-Language de la #78, TODA la suite vería
+				// la UI en inglés. El camino «Accept-Language en inglés» lo cubre
+				// el proyecto móvil (Pixel 7, su locale por defecto).
+				locale: 'es-ES'
+			},
+			testIgnore: '**/mobile.e2e.ts'
+		},
+		{
+			name: 'mobile',
+			testMatch: '**/mobile.e2e.ts',
+			use: { ...devices['Pixel 7'] }
+		}
+	],
 	webServer: {
 		// Dev server y no preview: en desarrollo `sendEmail` no abre conexión
 		// (los emails quedan capturados en el log) y better-auth no activa el
