@@ -148,6 +148,23 @@ export async function readdPantryItem(
 	data: ReaddData
 ): Promise<ReaddOutcome> {
 	return prisma.$transaction(async (tx) => {
+		// La lista PRIMERO y CON LOCK (issue #108): serializa todo re-añadido
+		// (o alta rápida) concurrente sobre la misma lista, así que el
+		// «buscar pendiente equivalente o crear» de abajo ya no puede duplicar
+		// items — el segundo ve lo que el primero acaba de crear y suma.
+		// Lista inexistente o ajena: id rancio o de otra familia — «no existe»
+		// en ambos casos, como en `finalizePurchase`.
+		const lista = await tx.$queryRaw<Array<{ id: string }>>`
+			SELECT "id"
+			FROM "list"
+			WHERE "id" = ${data.listId} AND "organizationId" = ${familyId}
+			FOR UPDATE
+		`;
+		if (lista.length === 0) {
+			return 'list-gone';
+		}
+		const listaId = lista[0].id;
+
 		// Producto ajeno o ya consumido por otro miembro mientras se abría el
 		// modal: «no existe», sin revelar si vive en otra familia.
 		const producto = await tx.pantryItem.findFirst({
@@ -158,21 +175,11 @@ export async function readdPantryItem(
 			return 'pantry-gone';
 		}
 
-		// Lista inexistente o ajena: id rancio o de otra familia — «no existe»
-		// en ambos casos, como en `finalizePurchase`.
-		const lista = await tx.list.findFirst({
-			where: { id: data.listId, organizationId: familyId },
-			select: { id: true }
-		});
-		if (!lista) {
-			return 'list-gone';
-		}
-
 		// ¿Hay pendiente equivalente? Mismo nombre normalizado (los acentos y
 		// las mayúsculas no hacen al producto) y misma unidad — la unidad va
 		// en el `where` y el nombre se compara canónico a canónico.
 		const pendientes = await tx.item.findMany({
-			where: { listId: lista.id, purchased: false, unit: producto.unit },
+			where: { listId: listaId, purchased: false, unit: producto.unit },
 			select: { id: true, name: true }
 		});
 		const equivalente = pendientes.find(
@@ -193,12 +200,12 @@ export async function readdPantryItem(
 			// El `order` lo calcula el SERVIDOR, como en `createItem`: al final
 			// de la lista.
 			const { _max } = await tx.item.aggregate({
-				where: { listId: lista.id },
+				where: { listId: listaId },
 				_max: { order: true }
 			});
 			await tx.item.create({
 				data: {
-					listId: lista.id,
+					listId: listaId,
 					name: producto.name,
 					quantity: data.quantity,
 					unit: producto.unit,

@@ -258,7 +258,8 @@ export async function createPurchaseRecord(options: {
 			userId: options.userId ?? null,
 			createdAt: options.createdAt ?? new Date(),
 			items: {
-				create: items.map((item) => ({
+				create: items.map((item, position) => ({
+					position,
 					name: item.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`,
 					quantity: item.quantity ?? 1,
 					unit: item.unit ?? 'unit'

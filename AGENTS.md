@@ -75,6 +75,10 @@ antes). Un test suelto:
   `bun run` lo inyectan (los flags `--env-file` de bun solo valen para scripts del propio bun).
 - El cliente Prisma (`src/lib/server/prisma.ts`) se instancia perezosamente vía Proxy para que
   `vite build` no necesite `DATABASE_URL`. Mantener ese patrón si se toca.
+- **Permisos de familia**: los roles (`admin`/`member`, `src/lib/server/tenancy.ts`) solo guardan
+  la gestión de la familia (renombrar, borrar, invitar, roles). Listas, compras y despensa son
+  intencionadamente de escritura total para cualquier miembro: las acciones solo comprueban la
+  pertenencia (`requireActiveFamily`). No añadir checks de rol ahí sin decidirlo antes (issue #111).
 - `ssr.noExternal` en `vite.config.ts`: los paquetes `@callepuzzle/*`, formsnap y
   sveltekit-superforms deben bundlarse en SSR porque importan los módulos virtuales `$app/*`.
 - Imports dentro del código de servidor: alias **`$lib/*`** (el nativo de SvelteKit; eslint lo

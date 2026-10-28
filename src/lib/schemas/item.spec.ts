@@ -34,6 +34,21 @@ describe('itemSchema', () => {
 		expect(itemSchema().safeParse({ ...VALID, quantity: -1.5 }).success).toBe(false);
 	});
 
+	it('rechaza lo que la columna DECIMAL(10,3) redondearía o desbordaría (#107)', () => {
+		// Por debajo del mínimo: Postgres lo redondearía a 0 y el producto
+		// llegaría a la despensa ya «Agotado».
+		expect(itemSchema().safeParse({ ...VALID, quantity: 0.0001 }).success).toBe(false);
+		// Techo exacto de la columna (10 dígitos, 3 decimales): por encima
+		// desborda con «numeric field overflow» y la lista ya no se finaliza.
+		expect(itemSchema().safeParse({ ...VALID, quantity: 9_999_999.999 }).success).toBe(true);
+		expect(itemSchema().safeParse({ ...VALID, quantity: 10_000_000 }).success).toBe(false);
+		// Cuarto decimal: la base lo redondearía por su cuenta; no se acepta.
+		expect(itemSchema().safeParse({ ...VALID, quantity: 1.2345 }).success).toBe(false);
+		// Múltiplos de la milésima hostiles a la coma flotante sí pasan.
+		expect(itemSchema().safeParse({ ...VALID, quantity: 0.003 }).success).toBe(true);
+		expect(itemSchema().safeParse({ ...VALID, quantity: 2.75 }).success).toBe(true);
+	});
+
 	it('acepta decimales: medio kilo es cantidad legal', () => {
 		const result = itemSchema().safeParse({ ...VALID, quantity: 0.5, unit: 'kilogram' });
 
