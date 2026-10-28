@@ -27,7 +27,7 @@ export default defineConfig({
 		baseURL,
 		trace: 'retain-on-failure'
 	},
-	// Dos proyectos: escritorio (todos los specs junto a su ruta) y móvil, que
+	// Tres proyectos: escritorio (todos los specs junto a su ruta), móvil, que
 	// corre SOLO el spec transversal de la navegación en pantalla táctil
 	// (issue #79, `src/routes/mobile.e2e.ts`): mismo servidor y BD, viewport
 	// real de un teléfono (Pixel 7, `isMobile` + `hasTouch`). Sin paralelismo
@@ -49,6 +49,15 @@ export default defineConfig({
 			name: 'mobile',
 			testMatch: '**/mobile.e2e.ts',
 			use: { ...devices['Pixel 7'] }
+		},
+		// El mismo spec móvil en WebKit con un iPhone (issue #116): Safari/iOS no
+		// da foco a un `<button>` al pulsarlo, así que lo que dependa del foco
+		// (los dropdowns de daisyUI por `:focus-within`) se rompe ahí y no en
+		// Chromium. Es la aproximación automatizable a «probarlo en un iPhone».
+		{
+			name: 'webkit',
+			testMatch: '**/mobile.e2e.ts',
+			use: { ...devices['iPhone 13'] }
 		}
 	],
 	webServer: {

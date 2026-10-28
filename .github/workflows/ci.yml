@@ -70,9 +70,10 @@ jobs:
           # el resto (lint, tests, build) ejecuta código de terceros sin token.
           NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Los tests de componentes (vitest browser mode) y los e2e corren en Chromium.
-      - name: Instalar Chromium
-        run: bunx playwright install --with-deps chromium
+      # Los tests de componentes (vitest browser mode) y los e2e corren en
+      # Chromium; el spec móvil corre además en WebKit (iPhone, issue #116).
+      - name: Instalar Chromium y WebKit
+        run: bunx playwright install --with-deps chromium webkit
 
       - name: Lint
         run: bun run lint

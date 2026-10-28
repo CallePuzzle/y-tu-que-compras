@@ -48,17 +48,18 @@ describe('FamilySwitcher', () => {
 			'Familia García'
 		);
 
-		// daisyUI abre el dropdown por foco (`:focus-within`): click en el
-		// trigger y los items aparecen, con la activa sin `disabled`.
+		// El menú abre por estado (#116), no por foco: click en el trigger y
+		// los items aparecen, con la activa marcada y sin `disabled`.
 		await getByRole('button', { name: 'Cambiar de familia' }).click();
 		const items = [
-			firstOf(getByRole('button', { name: 'Familia García' })),
-			firstOf(getByRole('button', { name: 'Los Pérez' }))
+			firstOf(getByRole('menuitemradio', { name: 'Familia García' })),
+			firstOf(getByRole('menuitemradio', { name: 'Los Pérez' }))
 		];
 		expect(items.filter(Boolean).map((item) => (item as HTMLButtonElement).disabled)).toEqual([
 			false,
 			false
 		]);
+		expect(items.map((item) => item?.getAttribute('aria-checked'))).toEqual(['true', 'false']);
 	});
 
 	it('cambiar de familia hace el POST y luego invalida los datos', async () => {
@@ -71,10 +72,12 @@ describe('FamilySwitcher', () => {
 
 		const { getByRole } = await render(FamilySwitcher, { families, activeFamily: activa });
 		await getByRole('button', { name: 'Cambiar de familia' }).click();
-		await getByRole('button', { name: 'Los Pérez' }).click();
+		await getByRole('menuitemradio', { name: 'Los Pérez' }).click();
 
 		await expect.poll(() => invalidateAll.mock.calls.length).toBe(1);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+		// Elegir cierra el menú (#116).
+		await expect.poll(() => getByRole('menu').elements().length).toBe(0);
 		// URL e init que recibió el fetch nativo simulado.
 		expect(typeof captured).toBe('object');
 		expect((captured?.url as URL | string).toString()).toBe('/families/active');
@@ -94,11 +97,13 @@ describe('FamilySwitcher', () => {
 			activeFamily: activa
 		});
 		await getByRole('button', { name: 'Cambiar de familia' }).click();
-		await getByRole('button', { name: 'Los Pérez' }).click();
+		await getByRole('menuitemradio', { name: 'Los Pérez' }).click();
 
 		// El aviso de error sólo se pinta cuando el fetch ya resolvió: si está,
 		// el flujo terminó y `invalidateAll` no puede llegar tarde.
 		await expect.poll(() => getByText('No se pudo cambiar de familia').elements().length).toBe(1);
 		expect((invalidateAll as Mock).mock.calls.length).toBe(0);
+		// Con error el menú sigue abierto: el aviso vive dentro.
+		expect(getByRole('menu').elements()).toHaveLength(1);
 	});
 });

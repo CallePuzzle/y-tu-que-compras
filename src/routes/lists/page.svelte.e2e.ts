@@ -205,7 +205,7 @@ test('cambiar de familia activa cambia las listas sin recargar (#64)', async ({ 
 	const selector = page.getByRole('button', { name: 'Cambiar de familia' });
 	await expect(selector).toContainText('Elegir familia');
 	await selector.click();
-	await page.getByRole('button', { name: 'Familia A' }).click();
+	await page.getByRole('menuitemradio', { name: 'Familia A' }).click();
 	await expect(selector).toContainText('Familia A');
 
 	await page.goto('/lists');
@@ -215,10 +215,46 @@ test('cambiar de familia activa cambia las listas sin recargar (#64)', async ({ 
 
 	// Cambio en caliente: invalidateAll repinta las listas sin navegación.
 	await selector.click();
-	await page.getByRole('button', { name: 'Familia B' }).click();
+	await page.getByRole('menuitemradio', { name: 'Familia B' }).click();
 	await expect(selector).toContainText('Familia B');
 	await expect(page.locator('li', { hasText: 'Ferretería' })).toBeVisible();
 	await expect(page.locator('li', { hasText: 'Compra del super' })).toHaveCount(0);
+});
+
+test('los selectores de color e icono son una parada de tabulador con flechas (#116)', async ({
+	page
+}) => {
+	const user = await createUser();
+	await createFamily({ owner: user });
+	await seedSession(page, user);
+
+	await page.goto('/lists');
+	await waitForHydration(page);
+	await page.getByRole('button', { name: 'Nueva lista' }).first().click();
+	const dialog = page.locator('dialog[open]');
+
+	const colores = dialog.getByRole('radiogroup', { name: 'Color' });
+	const marcado = colores.getByRole('radio', { checked: true });
+	// Roving tabindex: solo la opción marcada está en el orden de tabulación.
+	await expect(colores.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
+	await expect(marcado).toHaveAttribute('tabindex', '0');
+
+	// → marca la siguiente y le pasa el foco; ← vuelve.
+	await marcado.focus();
+	const inicial = await marcado.getAttribute('aria-label');
+	await page.keyboard.press('ArrowRight');
+	const siguiente = colores.getByRole('radio', { checked: true });
+	await expect(siguiente).not.toHaveAttribute('aria-label', inicial ?? '');
+	await expect(siguiente).toBeFocused();
+	await page.keyboard.press('ArrowLeft');
+	await expect(colores.getByRole('radio', { checked: true })).toHaveAttribute(
+		'aria-label',
+		inicial ?? ''
+	);
+	// Fin lleva a la última opción.
+	await page.keyboard.press('End');
+	await expect(colores.getByRole('radio').last()).toHaveAttribute('aria-checked', 'true');
+	await expect(colores.getByRole('radio').last()).toBeFocused();
 });
 
 test('al volver a la pestaña con el modal abierto NO refresca (no machaca el formulario)', async ({

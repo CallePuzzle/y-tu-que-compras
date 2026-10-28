@@ -10,6 +10,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
 	import { textoError } from '$lib/forms.js';
+	import { onRadioGroupKeydown } from '$lib/radio-group.js';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import {
 		COLOR_CHIP,
@@ -62,6 +63,18 @@
 	// icono llevan selectores propios más ricos que un `<select>` (paleta y
 	// catálogo visual, notas técnicas de la #31), conectados al mismo superforms
 	// y con sus mismos errores.
+	// Los iconos en el orden en que se pintan, para las flechas del selector.
+	const ICON_NAMES = Object.keys(ICONS) as ListIcon[];
+
+	/**
+	 * Roving tabindex de los selectores (#116): solo la opción marcada (o la
+	 * primera, si ninguna lo está) entra en el orden de tabulación.
+	 */
+	function tabindexRadio<T>(values: readonly T[], current: T, value: T): 0 | -1 {
+		const marcada = values.includes(current) ? current : values[0];
+		return value === marcada ? 0 : -1;
+	}
+
 	// Nombres traducidos de los selectores de color e icono (#118), en render.
 	const COLOR_LABEL = colorLabels();
 	const ICON_LABEL = iconLabels();
@@ -248,12 +261,26 @@
 		<!-- Selector de color: la paleta semántica daisyUI (LIST_COLORS). -->
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">{m.schema_lists_color_label()}</legend>
-			<div class="flex flex-wrap gap-2" role="radiogroup" aria-label={m.schema_lists_color_label()}>
+			<!-- Una sola parada de tabulador y flechas para moverse (#116). -->
+			<div
+				class="flex flex-wrap gap-2"
+				role="radiogroup"
+				tabindex="-1"
+				aria-label={m.schema_lists_color_label()}
+				onkeydown={(event) =>
+					onRadioGroupKeydown(
+						event,
+						LIST_COLORS,
+						$formData.color,
+						(color) => ($formData.color = color)
+					)}
+			>
 				{#each LIST_COLORS as color (color)}
 					<button
 						type="button"
 						role="radio"
 						aria-checked={$formData.color === color}
+						tabindex={tabindexRadio(LIST_COLORS, $formData.color, color)}
 						aria-label={COLOR_LABEL[color]}
 						title={COLOR_LABEL[color]}
 						class={`flex size-8 items-center justify-center rounded-full transition ${COLOR_CHIP[color]} ${$formData.color === color ? 'ring-base-content ring-offset-base-100 ring-2 ring-offset-2' : ''}`}
@@ -273,12 +300,20 @@
 		<!-- Selector de icono: el catálogo lucide (LIST_ICONS), en botones. -->
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">{m.schema_lists_icon_label()}</legend>
-			<div class="flex flex-wrap gap-1" role="radiogroup" aria-label={m.schema_lists_icon_label()}>
+			<div
+				class="flex flex-wrap gap-1"
+				role="radiogroup"
+				tabindex="-1"
+				aria-label={m.schema_lists_icon_label()}
+				onkeydown={(event) =>
+					onRadioGroupKeydown(event, ICON_NAMES, $formData.icon, (icon) => ($formData.icon = icon))}
+			>
 				{#each Object.entries(ICONS) as [iconName, Icono] (iconName)}
 					<button
 						type="button"
 						role="radio"
 						aria-checked={$formData.icon === iconName}
+						tabindex={tabindexRadio(ICON_NAMES, $formData.icon, iconName as ListIcon)}
 						aria-label={ICON_LABEL[iconName as ListIcon]}
 						title={ICON_LABEL[iconName as ListIcon]}
 						class={`btn btn-square btn-sm ${$formData.icon === iconName ? 'btn-primary' : 'btn-ghost'}`}

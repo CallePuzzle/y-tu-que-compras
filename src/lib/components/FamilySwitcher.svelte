@@ -6,6 +6,7 @@
 	import Users from '@lucide/svelte/icons/users';
 	import { Link } from '@callepuzzle/svelte-ui';
 	import { m } from '$lib/paraglide/messages.js';
+	import DropdownMenu from './DropdownMenu.svelte';
 
 	// Selector de familia activa (issue #64). Se renderiza en la cabecera y en
 	// el drawer del layout con las familias que el load del layout trae del
@@ -25,15 +26,12 @@
 
 	let { activeFamily = null, families = [], fullWidth = false, class: className }: Props = $props();
 
-	// Sólo para `aria-expanded`: daisyUI muestra el dropdown por CSS con
-	// `:focus-within`, igual que hace `NavBarEnd` en la librería.
-	let open = $state(false);
-
 	/** Id de la familia en curso de cambio, para el spinner del item pulsado. */
 	let switchingId = $state<string | null>(null);
 	let failed = $state(false);
 
-	async function switchTo(familyId: string): Promise<void> {
+	/** Cambia de familia; el menú se cierra al acabar bien (con error, sigue). */
+	async function switchTo(familyId: string, close: () => void): Promise<void> {
 		switchingId = familyId;
 		failed = false;
 		try {
@@ -49,6 +47,7 @@
 			// La cookie ya apunta a la nueva familia: reejecutar TODOS los loads
 			// (el del layout también) repinta cada vista con el contexto nuevo.
 			await invalidateAll();
+			close();
 		} catch {
 			failed = true;
 		} finally {
@@ -66,18 +65,14 @@
 		class="btn btn-primary {fullWidth ? 'w-full' : ''}"
 	/>
 {:else}
-	<div
-		class="dropdown dropdown-end {fullWidth ? 'w-full' : ''} {className ?? ''}"
-		onfocusin={() => (open = true)}
-		onfocusout={() => (open = false)}
+	<!-- Menú con apertura por estado, no por foco (#116): ver `DropdownMenu`. -->
+	<DropdownMenu
+		label={m.families_switch_label()}
+		triggerClass="btn btn-ghost {fullWidth ? 'w-full' : ''}"
+		menuClass={fullWidth ? 'w-full' : 'w-56'}
+		class="{fullWidth ? 'w-full' : ''} {className ?? ''}"
 	>
-		<button
-			type="button"
-			aria-label={m.families_switch_label()}
-			aria-haspopup="menu"
-			aria-expanded={open}
-			class="btn btn-ghost {fullWidth ? 'w-full' : ''}"
-		>
+		{#snippet trigger()}
 			<Users />
 			{#if fullWidth}
 				<!-- En el drawer el nombre sobresale: hay sitio de sobra. -->
@@ -93,15 +88,17 @@
 					<ChevronDown />
 				</span>
 			{/if}
-		</button>
-		<ul
-			class="dropdown-content menu rounded-box bg-base-100 z-1 mt-3 p-2 shadow {fullWidth
-				? 'w-full'
-				: 'w-56'}"
-		>
+		{/snippet}
+		{#snippet items({ close })}
 			{#each families as family (family.id)}
-				<li>
-					<button type="button" disabled={switchingId !== null} onclick={() => switchTo(family.id)}>
+				<li role="none">
+					<button
+						type="button"
+						role="menuitemradio"
+						aria-checked={family.id === activeFamily?.id}
+						disabled={switchingId !== null}
+						onclick={() => switchTo(family.id, close)}
+					>
 						{#if switchingId === family.id}
 							<span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
 						{:else if family.id === activeFamily?.id}
@@ -113,10 +110,10 @@
 			{/each}
 			{#if failed}
 				<!-- Fuera del flujo normal: sólo informativo, no clicable. -->
-				<li class="pointer-events-none">
-					<span class="text-error">{m.families_switch_error()}</span>
+				<li role="none" class="pointer-events-none">
+					<span class="text-error" role="alert">{m.families_switch_error()}</span>
 				</li>
 			{/if}
-		</ul>
-	</div>
+		{/snippet}
+	</DropdownMenu>
 {/if}
