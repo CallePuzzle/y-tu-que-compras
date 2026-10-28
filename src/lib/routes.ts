@@ -2,6 +2,7 @@ import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
+import Refrigerator from '@lucide/svelte/icons/refrigerator';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 import Users from '@lucide/svelte/icons/users';
 import { m } from '$lib/paraglide/messages.js';
@@ -39,6 +40,13 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 		routes['/lists'] = {
 			label: m.routes_lists(),
 			icon: ListChecks,
+			showInMenu: true,
+			showInMobile: true
+		};
+		// La despensa de la familia activa (#72): se llena al finalizar compras.
+		routes['/pantry'] = {
+			label: m.routes_pantry(),
+			icon: Refrigerator,
 			showInMenu: true,
 			showInMobile: true
 		};
