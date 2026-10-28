@@ -180,6 +180,10 @@
 				{m.families_invite_title({ family: familiaInvitada?.name ?? '' })}
 			</h2>
 			<p class="mt-1 text-sm opacity-70">{m.families_invite_role_hint()}</p>
+			<!-- Toda invitación caduca (#102): que el admin lo sepa antes de enviar. -->
+			<p class="mt-1 text-sm opacity-70">
+				{m.families_invite_expiry_hint({ hours: data.invitationExpiryHours })}
+			</p>
 
 			<form
 				method="POST"

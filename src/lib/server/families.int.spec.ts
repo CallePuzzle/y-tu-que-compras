@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { makeSignature } from 'better-auth/crypto';
 import { describe, expect, it } from 'vitest';
+import { with_request_store } from '@sveltejs/kit/internal/server';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Test de INTEGRACIÓN (proyecto vitest `integration`): a diferencia de
@@ -17,10 +18,20 @@ import type { RequestEvent } from '@sveltejs/kit';
 // migraciones aplicadas (postgres local o el service del CI). Cada test usa
 // ids/emails únicos: no hace falta limpiar ni coordinar ejecuciones.
 import { auth } from './auth.js';
-import { FAMILY_ADMIN_ROLE, FAMILY_MEMBER_ROLE, MAX_FAMILIES_PER_USER } from './tenancy.js';
 import {
+	FAMILY_ADMIN_ROLE,
+	FAMILY_INVITATION_EXPIRY_HOURS,
+	FAMILY_MEMBER_ROLE,
+	MAX_FAMILIES_PER_USER,
+	MAX_FAMILY_MEMBERS
+} from './tenancy.js';
+import {
+	FamilyInvitationGoneError,
 	FamilyLastAdminError,
+	FamilyLimitReachedError,
 	FamilyMemberGoneError,
+	acceptFamilyInvitation,
+	cancelFamilyInvitation,
 	deleteFamily,
 	familyDetailView,
 	familySlug,
@@ -106,6 +117,25 @@ async function createFamilyViaApi(cookie: string, name: string): Promise<Respons
 			body: { name, slug: familySlug(name) }
 		})
 	);
+}
+
+/**
+ * Corre `fn` como si SvelteKit la hubiera invocado dentro de `handle`
+ * (issue #103): la locale del correo de invitación sale de `getRequestEvent()`,
+ * que necesita el ALS de Kit — los tests no lo levantan, así que este
+ * envoltorio hace de servidor con el evento del test. Sus cabeceras (sesión,
+ * cookie de idioma) son las que verán better-auth y la resolución de locale.
+ */
+function withinEvent<T>(event: RequestEvent, fn: () => Promise<T>): Promise<T> {
+	return with_request_store({ event } as never, fn);
+}
+
+/** Un RequestEvent mínimo con esa cookie, para las llamadas por HTTP. */
+function testEvent(cookie: string): RequestEvent {
+	return {
+		request: new Request(BASE, { headers: { cookie } }),
+		locals: {}
+	} as unknown as RequestEvent;
 }
 
 describe('seed de una familia (adaptador Prisma real)', () => {
@@ -278,11 +308,15 @@ describe('invitar por email (#60)', () => {
 	}
 
 	async function inviteViaApi(cookie: string, familyId: string, email: string): Promise<Response> {
-		return auth.handler(
-			tenancyRequest('invitation/create', cookie, {
-				method: 'POST',
-				body: { identifier: email, contextType: 'organization', contextId: familyId }
-			})
+		// El correo de la invitación resuelve su locale del request event (#103):
+		// el handler va envuelto, como estaría en `handle` de SvelteKit.
+		return withinEvent(testEvent(cookie), () =>
+			auth.handler(
+				tenancyRequest('invitation/create', cookie, {
+					method: 'POST',
+					body: { identifier: email, contextType: 'organization', contextId: familyId }
+				})
+			)
 		);
 	}
 
@@ -404,7 +438,8 @@ describe('aceptar y rechazar invitación (#61)', () => {
 
 		// La invitación va por la función de app (`inviteFamily`): es la que fija
 		// el rol `member` de entrada que la aceptación debe respetar.
-		await inviteFamily(eventOf(admin.cookie), { familyId, email: guestEmail });
+		const event = eventOf(admin.cookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email: guestEmail }));
 
 		const invitation = await prisma.invitation.findFirstOrThrow({
 			where: { identifier: guestEmail, contextId: familyId }
@@ -680,7 +715,10 @@ describe('expulsar, abandonar, promover y borrar (#62)', () => {
 
 		// Una invitación pendiente también desaparece con la familia.
 		const guestEmail = `borrada-${randomUUID().slice(0, 8)}@example.com`;
-		await inviteFamily(eventOf(admin.cookie), { familyId, email: guestEmail });
+		const inviteEvent = eventOf(admin.cookie);
+		await withinEvent(inviteEvent, () =>
+			inviteFamily(inviteEvent, { familyId, email: guestEmail })
+		);
 		expect(await prisma.invitation.findFirst({ where: { contextId: familyId } })).not.toBeNull();
 
 		await deleteFamily(eventOf(admin.cookie), familyId);
@@ -703,5 +741,537 @@ describe('expulsar, abandonar, promover y borrar (#62)', () => {
 			/Missing permission: organization:delete/
 		);
 		expect(await prisma.organization.findUnique({ where: { id: familyId } })).not.toBeNull();
+	});
+});
+
+/**
+ * Perímetro de miembros entre familias (issue #101): nadie entra en una familia
+ * sin invitación aceptada (`member/add` cerrado) y ningún endpoint devuelve
+ * miembros de familias ajenas (`member/:id` autoriza contra la familia del
+ * miembro, no contra un query falseado).
+ */
+describe('perímetro de miembros entre familias (#101)', () => {
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Limite ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Alta directo en BD de un miembro con rol `member` (como los siembra el plugin). */
+	async function addMemberDirectly(
+		familyId: string
+	): Promise<{ userId: string; memberId: string; cookie: string }> {
+		const session = await sessionCookieFor('Miembro Ajeno');
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		const membership = await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: memberRole.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { userId: session.userId, memberId: membership.id, cookie: session.cookie };
+	}
+
+	it('member/add responde denegado aunque lo pida el admin de la familia', async () => {
+		const admin = await sessionCookieFor('Admin Inyector');
+		const familyId = await createFamilyFor(admin.cookie);
+		const victim = await sessionCookieFor('Victima Inyeccion');
+
+		// Antes de #101 este endpoint estaba abierto al statement `member:invite`:
+		// un admin metía a cualquiera sin invitación ni aceptación.
+		const response = await auth.handler(
+			tenancyRequest('member/add', admin.cookie, {
+				method: 'POST',
+				body: { userId: victim.userId, contextType: 'organization', contextId: familyId }
+			})
+		);
+		expect(response.status).toBe(403);
+		expect(await response.text()).toContain('disabled');
+
+		// Y el alta no ocurrió: en la familia sigue solo su admin.
+		const memberships = await prisma.member.findMany({ where: { contextId: familyId } });
+		expect(memberships).toHaveLength(1);
+		expect(memberships[0].userId).not.toBe(victim.userId);
+	});
+
+	it('GET member/:id de otra familia con el contextId falseado responde denegado', async () => {
+		const adminAjeno = await sessionCookieFor('Admin Atacante');
+		const attackerFamilyId = await createFamilyFor(adminAjeno.cookie);
+
+		const victimFamilyAdmin = await sessionCookieFor('Admin Victima');
+		const victimFamilyId = await createFamilyFor(victimFamilyAdmin.cookie);
+		const { memberId, cookie: memberCookie } = await addMemberDirectly(victimFamilyId);
+
+		// El agujero: el endpoint no declara schema de query, pero better-call
+		// parsea el query string igualmente y el hook se fiaba primero del
+		// `contextId` — con el de SU familia, el atacante leía un miembro ajeno.
+		const smugled = await auth.handler(
+			tenancyRequest(
+				`member/${memberId}?contextType=organization&contextId=${attackerFamilyId}`,
+				adminAjeno.cookie
+			)
+		);
+		expect(smugled.status).toBe(403);
+		expect(await smugled.text()).not.toContain('@integration.test');
+
+		// Sin query falseado, también denegado: el miembro pertenece a otra familia.
+		const plain = await auth.handler(tenancyRequest(`member/${memberId}`, adminAjeno.cookie));
+		expect(plain.status).toBe(403);
+
+		// El miembro de la familia sí se ve a sí mismo por id (lectura legítima).
+		const own = await auth.handler(tenancyRequest(`member/${memberId}`, memberCookie));
+		expect(own.ok).toBe(true);
+		const seen = (await own.json()) as { id: string };
+		expect(seen.id).toBe(memberId);
+	});
+});
+
+/**
+ * Caducidad y cancelación de invitaciones (issue #102): toda invitación nace
+ * con caducidad (72 h, la pase la app o la fuerce el hook en llamadas directas)
+ * y el admin puede cancelar las pendientes desde la gestión de la familia.
+ */
+describe('caducidad y cancelación de invitaciones (#102)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string, userId?: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: userId ? { id: userId } : undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Caduca ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Invita por la app y devuelve la fila MÁS RECIENTE de esa invitación. */
+	async function invitedRow(cookie: string, familyId: string, email: string) {
+		const event = eventOf(cookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+		return prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId },
+			orderBy: { createdAt: 'desc' }
+		});
+	}
+
+	/** Alta directo en BD de un miembro con rol `member` y su cookie de sesión. */
+	async function addMemberDirectly(familyId: string): Promise<{ cookie: string; userId: string }> {
+		const session = await sessionCookieFor('Miembro Caduca');
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: memberRole.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { cookie: session.cookie, userId: session.userId };
+	}
+
+	it('toda invitación de la app nace con caducidad (~72 h)', async () => {
+		const admin = await sessionCookieFor('Admin Caducador');
+		const familyId = await createFamilyFor(admin.cookie);
+
+		const before = Date.now();
+		const invitation = await invitedRow(
+			admin.cookie,
+			familyId,
+			`caduca-${randomUUID().slice(0, 8)}@example.com`
+		);
+		const after = Date.now();
+
+		// Entre «ahora + 72 h» menos lo tardado y «ahora + 72 h» exactas: la
+		// caducidad se fija en el momento del create, no del `before`.
+		const expiry = invitation.expiresAt!.getTime();
+		expect(expiry).toBeGreaterThan(before + (FAMILY_INVITATION_EXPIRY_HOURS - 1) * 60 * 60 * 1000);
+		expect(expiry).toBeLessThanOrEqual(after + FAMILY_INVITATION_EXPIRY_HOURS * 60 * 60 * 1000);
+	});
+
+	it('la API directa sin expiresInHours también caduca (hook invitation/create)', async () => {
+		const admin = await sessionCookieFor('Admin Manual');
+		const familyId = await createFamilyFor(admin.cookie);
+		const email = `manual-${randomUUID().slice(0, 8)}@example.com`;
+
+		// Llamada cruda al endpoint del plugin, SIN expiresInHours: antes de la
+		// #102 guardaba expiresAt = null y el enlace servía para siempre.
+		const response = await withinEvent(testEvent(admin.cookie), () =>
+			auth.handler(
+				tenancyRequest('invitation/create', admin.cookie, {
+					method: 'POST',
+					body: { identifier: email, contextType: 'organization', contextId: familyId }
+				})
+			)
+		);
+		expect(response.ok).toBe(true);
+
+		const invitation = await prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId }
+		});
+		expect(invitation.expiresAt).not.toBeNull();
+		expect(invitation.expiresAt!.getTime()).toBeGreaterThan(Date.now());
+	});
+
+	it('cancelar la pendiente la marca y permite volver a invitar ese email', async () => {
+		const admin = await sessionCookieFor('Admin Cancelador');
+		const familyId = await createFamilyFor(admin.cookie);
+		const email = `cancelada-${randomUUID().slice(0, 8)}@example.com`;
+		const invitation = await invitedRow(admin.cookie, familyId, email);
+		expect(invitation.status).toBe('pending');
+
+		await cancelFamilyInvitation(eventOf(admin.cookie), invitation.id);
+		expect(
+			await prisma.invitation.findUniqueOrThrow({ where: { id: invitation.id } })
+		).toMatchObject({ status: 'cancelled' });
+
+		// El email queda libre: el plugin solo bloquea pendientes duplicadas.
+		const reinvited = await invitedRow(admin.cookie, familyId, email);
+		expect(reinvited.id).not.toBe(invitation.id);
+		expect(reinvited.status).toBe('pending');
+	});
+
+	it('cancelar desaparece de la vista de gestión (solo para el admin)', async () => {
+		const admin = await sessionCookieFor('Admin Vista Inv');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addMemberDirectly(familyId);
+		const email = `vista-${randomUUID().slice(0, 8)}@example.com`;
+		const invitation = await invitedRow(admin.cookie, familyId, email);
+
+		const adminView = await familyDetailView(eventOf(admin.cookie, admin.userId), familyId);
+		expect(adminView?.pendingInvitations.map((row) => row.id)).toContain(invitation.id);
+		// Un miembro normal no ve las pendientes (emails de terceros).
+		const memberView = await familyDetailView(eventOf(member.cookie, member.userId), familyId);
+		expect(memberView?.pendingInvitations).toEqual([]);
+
+		await cancelFamilyInvitation(eventOf(admin.cookie), invitation.id);
+		const after = await familyDetailView(eventOf(admin.cookie, admin.userId), familyId);
+		expect(after?.pendingInvitations.map((row) => row.id)).not.toContain(invitation.id);
+	});
+
+	it('un miembro sin rol admin no puede cancelar (403)', async () => {
+		const admin = await sessionCookieFor('Admin No Cancelable');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addMemberDirectly(familyId);
+		const invitation = await invitedRow(
+			admin.cookie,
+			familyId,
+			`protegida-${randomUUID().slice(0, 8)}@example.com`
+		);
+
+		await expect(cancelFamilyInvitation(eventOf(member.cookie), invitation.id)).rejects.toThrow(
+			/Missing permission: invitation:cancel/
+		);
+		expect(
+			await prisma.invitation.findUniqueOrThrow({ where: { id: invitation.id } })
+		).toMatchObject({ status: 'pending' });
+	});
+
+	it('cancelar una invitación ya respondida da el error tipado', async () => {
+		const admin = await sessionCookieFor('Admin Tardío Cancela');
+		const familyId = await createFamilyFor(admin.cookie);
+		const email = `usada-${randomUUID().slice(0, 8)}@example.com`;
+		const invitation = await invitedRow(admin.cookie, familyId, email);
+
+		// «Respondida» simulada en la base: da igual cómo, ya no está pendiente.
+		await prisma.invitation.update({
+			where: { id: invitation.id },
+			data: { status: 'accepted', acceptedAt: new Date() }
+		});
+
+		await expect(
+			cancelFamilyInvitation(eventOf(admin.cookie), invitation.id)
+		).rejects.toBeInstanceOf(FamilyInvitationGoneError);
+	});
+});
+
+/**
+ * Locale del correo de invitación (issue #103): sale del request event de
+ * SvelteKit (`getRequestEvent`), no del `ctx.request` del endpoint — que
+ * better-call deja vacío cuando `inviteFamily` llama a `auth.api.
+ * createInvitation` desde una server action. Con la app en inglés, el email
+ * sale en inglés.
+ */
+describe('locale del correo de invitación (#103)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Locale ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	it('con la app en inglés (cookie del selector) el correo sale en inglés', async () => {
+		const admin = await sessionCookieFor('Admin Anglo');
+		const familyId = await createFamilyFor(admin.cookie);
+		clearCapturedEmailsForTests();
+
+		const email = `anglo-${randomUUID().slice(0, 8)}@example.com`;
+		// Una sola petición con las dos cookies (sesión + idioma), como llega
+		// del navegador; dentro, `inviteFamily` llama programáticamente al
+		// endpoint — el agujero que hacía el correo siempre en español.
+		const event = eventOf(`${admin.cookie}; PARAGLIDE_LOCALE=en`);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+
+		const [captured] = capturedEmailsForTests();
+		expect(captured?.to).toBe(email);
+		expect(captured?.subject).toContain('has invited you');
+		expect(captured?.text).toContain('has invited you to the family');
+	});
+
+	it('sin cookie de idioma el correo sale en español (base)', async () => {
+		const admin = await sessionCookieFor('Admin Hispano');
+		const familyId = await createFamilyFor(admin.cookie);
+		clearCapturedEmailsForTests();
+
+		const email = `hispano-${randomUUID().slice(0, 8)}@example.com`;
+		const event = eventOf(admin.cookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+
+		const [captured] = capturedEmailsForTests();
+		expect(captured?.subject).toContain('te ha invitado');
+	});
+});
+
+/**
+ * Invariantes de familia frente a peticiones concurrentes (issue #104): los
+ * hooks cuentan y el plugin escribe después y sin transacción, así que la
+ * garantía la dan los triggers de la migración `family_invariants`. Estos
+ * tests lanzan las peticiones A LA VEZ (todas pasan el recuento del hook con
+ * el mismo valor) y comprueban el estado final en la BD.
+ */
+describe('carreras y límites de familia (#104)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Carrera ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Da de alta a un usuario (con sesión) en la familia con ese rol. */
+	async function addSessionMember(
+		familyId: string,
+		roleName: typeof FAMILY_ADMIN_ROLE | typeof FAMILY_MEMBER_ROLE = FAMILY_MEMBER_ROLE
+	): Promise<{ cookie: string; userId: string; email: string; memberId: string }> {
+		const session = await sessionCookieFor('Miembro Carrera');
+		const role = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: roleName }
+		});
+		const membership = await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: role.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { ...session, memberId: membership.id };
+	}
+
+	/** Admins que le quedan a la familia. */
+	async function adminCount(familyId: string): Promise<number> {
+		return prisma.member.count({
+			where: { contextId: familyId, role: { name: FAMILY_ADMIN_ROLE } }
+		});
+	}
+
+	/** Invita al email por la app y devuelve el token. */
+	async function invitationToken(
+		adminCookie: string,
+		familyId: string,
+		email: string
+	): Promise<string> {
+		const event = eventOf(adminCookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+		const invitation = await prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId }
+		});
+		return invitation.token;
+	}
+
+	it('dos admins que abandonan A LA VEZ: uno sale, el otro sigue de admin', async () => {
+		const first = await sessionCookieFor('Admin Uno');
+		const familyId = await createFamilyFor(first.cookie);
+		const firstMember = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: first.userId }
+		});
+		const second = await addSessionMember(familyId, FAMILY_ADMIN_ROLE);
+		// Un miembro raso: la familia sigue viva y necesita a alguien que la administre.
+		await addSessionMember(familyId);
+
+		const results = await Promise.allSettled([
+			leaveFamily(eventOf(first.cookie), firstMember.id),
+			leaveFamily(eventOf(second.cookie), second.memberId)
+		]);
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		const [rejected] = results.filter((result) => result.status === 'rejected');
+		expect(rejected?.reason).toBeInstanceOf(FamilyLastAdminError);
+		expect(await adminCount(familyId)).toBe(1);
+	});
+
+	it('dos admins que se expulsan mutuamente A LA VEZ: la familia no se queda sin admin', async () => {
+		const first = await sessionCookieFor('Admin Expulsor');
+		const familyId = await createFamilyFor(first.cookie);
+		const firstMember = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: first.userId }
+		});
+		const second = await addSessionMember(familyId, FAMILY_ADMIN_ROLE);
+
+		const results = await Promise.allSettled([
+			removeFamilyMember(eventOf(first.cookie), second.memberId),
+			removeFamilyMember(eventOf(second.cookie), firstMember.id)
+		]);
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		expect(await adminCount(familyId)).toBe(1);
+	});
+
+	it('la BD rechaza quitar o degradar al último admin aunque se salte los hooks', async () => {
+		const admin = await sessionCookieFor('Admin Blindado');
+		const familyId = await createFamilyFor(admin.cookie);
+		await addSessionMember(familyId);
+		const adminMember = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: admin.userId }
+		});
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+
+		await expect(prisma.member.delete({ where: { id: adminMember.id } })).rejects.toThrow(
+			/last admin/
+		);
+		await expect(
+			prisma.member.update({ where: { id: adminMember.id }, data: { roleId: memberRole.id } })
+		).rejects.toThrow(/last admin/);
+		expect(await adminCount(familyId)).toBe(1);
+
+		// Borrar la familia entera sí: ahí no queda familia que administrar.
+		await deleteFamily(eventOf(admin.cookie), familyId);
+		expect(await prisma.member.count({ where: { contextId: familyId } })).toBe(0);
+		expect(await prisma.role.count({ where: { contextId: familyId } })).toBe(0);
+	});
+
+	it(`crear familias en paralelo no supera las ${MAX_FAMILIES_PER_USER} del usuario ni deja restos`, async () => {
+		const startedAt = new Date();
+		const { cookie, userId } = await sessionCookieFor('Creador Ansioso');
+		const names = Array.from(
+			{ length: MAX_FAMILIES_PER_USER + 2 },
+			(_, i) => `Familia Paralela ${randomUUID().slice(0, 8)} ${i}`
+		);
+
+		const responses = await Promise.all(names.map((name) => createFamilyViaApi(cookie, name)));
+
+		expect(responses.filter((response) => response.ok)).toHaveLength(MAX_FAMILIES_PER_USER);
+		for (const response of responses.filter((r) => !r.ok)) {
+			expect(response.status).toBe(403);
+		}
+		expect(await prisma.member.count({ where: { userId, contextType: 'organization' } })).toBe(
+			MAX_FAMILIES_PER_USER
+		);
+		// Las creaciones rechazadas se llevan su familia y sus roles sembrados:
+		// ningún rol creado durante el test se queda sin su organización.
+		expect(await prisma.organization.count({ where: { name: { in: names } } })).toBe(
+			MAX_FAMILIES_PER_USER
+		);
+		const [{ orphans }] = await prisma.$queryRaw<{ orphans: bigint }[]>`
+			SELECT count(*) AS orphans FROM "role" r
+			WHERE r."contextType" = 'organization' AND r."createdAt" >= ${startedAt}
+				AND NOT EXISTS (SELECT 1 FROM "organization" o WHERE o."id" = r."contextId")`;
+		expect(orphans).toBe(0n);
+	});
+
+	it(`aceptar una invitación con ${MAX_FAMILIES_PER_USER} familias se deniega y la deja pendiente`, async () => {
+		const admin = await sessionCookieFor('Admin Invitador');
+		const familyId = await createFamilyFor(admin.cookie);
+		const guest = await sessionCookieFor('Invitado Lleno');
+		for (let i = 0; i < MAX_FAMILIES_PER_USER; i++) {
+			await createFamilyFor(guest.cookie);
+		}
+		const token = await invitationToken(admin.cookie, familyId, guest.email);
+
+		await expect(acceptFamilyInvitation(eventOf(guest.cookie), token)).rejects.toBeInstanceOf(
+			FamilyLimitReachedError
+		);
+		expect(
+			await prisma.member.findFirst({ where: { contextId: familyId, userId: guest.userId } })
+		).toBeNull();
+		expect((await prisma.invitation.findUniqueOrThrow({ where: { token } })).status).toBe(
+			'pending'
+		);
+	});
+
+	it('aceptar dos invitaciones A LA VEZ con un hueco libre: solo entra en una', async () => {
+		const guest = await sessionCookieFor('Invitado Doble');
+		for (let i = 0; i < MAX_FAMILIES_PER_USER - 1; i++) {
+			await createFamilyFor(guest.cookie);
+		}
+		const invitations = await Promise.all(
+			[0, 1].map(async () => {
+				const admin = await sessionCookieFor('Admin Doble');
+				const familyId = await createFamilyFor(admin.cookie);
+				return invitationToken(admin.cookie, familyId, guest.email);
+			})
+		);
+
+		const results = await Promise.allSettled(
+			invitations.map((token) => acceptFamilyInvitation(eventOf(guest.cookie), token))
+		);
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		const [rejected] = results.filter((result) => result.status === 'rejected');
+		expect(rejected?.reason).toBeInstanceOf(FamilyLimitReachedError);
+		expect(
+			await prisma.member.count({ where: { userId: guest.userId, contextType: 'organization' } })
+		).toBe(MAX_FAMILIES_PER_USER);
+	});
+
+	it(`la BD no da de alta a un miembro más allá de ${MAX_FAMILY_MEMBERS}`, async () => {
+		const admin = await sessionCookieFor('Admin Aforo');
+		const familyId = await createFamilyFor(admin.cookie);
+		for (let i = 1; i < MAX_FAMILY_MEMBERS; i++) {
+			await addSessionMember(familyId);
+		}
+		expect(await prisma.member.count({ where: { contextId: familyId } })).toBe(MAX_FAMILY_MEMBERS);
+
+		await expect(addSessionMember(familyId)).rejects.toThrow(/Family members limit reached/);
+		expect(await prisma.member.count({ where: { contextId: familyId } })).toBe(MAX_FAMILY_MEMBERS);
 	});
 });

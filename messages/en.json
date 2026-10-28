@@ -86,6 +86,12 @@
 	"families_last_admin": "You are the last admin: make another member an admin before leaving, or delete the family.",
 	"families_member_gone": "That member no longer belongs to the family.",
 	"families_members_error": "The operation could not be completed. Please try again.",
+	"families_invitations_pending": "Pending invitations",
+	"families_invitation_expires": "The link expires on {date}",
+	"families_invitation_expired": "Expired: the link no longer works",
+	"families_invitation_cancel": "Cancel invitation",
+	"families_invitation_cancel_error": "The invitation could not be cancelled. Please try again later.",
+	"families_invite_expiry_hint": "The invitation expires in {hours} hours.",
 	"ui_close": "Close",
 	"ui_cancel": "Cancel",
 

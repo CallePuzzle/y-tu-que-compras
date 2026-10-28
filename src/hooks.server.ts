@@ -144,7 +144,8 @@ export const handle: Handle = sequence(
 	handleUserTrace,
 	// Paraglide el último: `/api/auth/*` lo atiende betterAuthHandle antes y no
 	// paga el clonado de la request del middleware. Los correos que dispara el
-	// auth resuelven su locale de la request por su cuenta (ver
-	// `$lib/server/auth.ts` e `invitations.ts`).
+	// auth (OTP e invitaciones) resuelven su locale del request event de
+	// SvelteKit con `extractLocaleFromRequest` — ver `$lib/server/auth.ts` e
+	// `invitations.ts`.
 	handleParaglide
 );

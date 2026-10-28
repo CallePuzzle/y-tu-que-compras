@@ -1,9 +1,11 @@
 import type { GenericEndpointContext } from '@better-auth/core';
 import type { InvitationCreatedEvent } from '@zytera/better-auth-tenancy';
+import { getRequestEvent } from '$app/server';
 import { APIError } from 'better-auth/api';
 import { env } from '$env/dynamic/private';
 
 import type { Locale } from '$lib/paraglide/runtime.js';
+import { extractLocaleFromRequest } from '$lib/paraglide/runtime.js';
 import { sendFamilyInvitationEmail } from './emails.js';
 import logger from './logger.js';
 
@@ -24,14 +26,19 @@ export function invitationUrl(token: string): string {
 }
 
 /**
- * Locale del correo: el del ADMIN que invita (la cabecera `Accept-Language` de
- * su petición, la misma que el cliente del plugin manda). El invitado puede no
- * tener cuenta todavía, así que su locale es desconocido. Solo hay dos: `es`
- * por defecto, `en` si la cabecera lo pide.
+ * Locale del correo: la del ADMIN que invita. El invitado puede no tener
+ * cuenta todavía, así que su locale es desconocida.
+ *
+ * Se resuelve del REQUEST EVENT de SvelteKit con la misma estrategia que el
+ * OTP (`$lib/server/auth.ts`): cookie del selector de idioma, Accept-Language
+ * y base. Tiene que ser el evento de SvelteKit y no `ctx.request` del
+ * endpoint: `inviteFamily` llama a `auth.api.createInvitation` desde una
+ * server action y en la llamada programática better-call deja
+ * `ctx.request = undefined` — la cabecera llegaba vacía y el correo salía
+ * siempre en español (issue #103).
  */
-function localeFromRequest(ctx: GenericEndpointContext): Locale {
-	const accept = ctx.request?.headers.get('accept-language') ?? '';
-	return accept.trim().toLowerCase().startsWith('en') ? 'en' : 'es';
+function invitationLocale(): Locale {
+	return extractLocaleFromRequest(getRequestEvent().request);
 }
 
 /**
@@ -77,6 +84,6 @@ export async function sendFamilyInvitationEmailFor(
 		// Sin nombre visible, el email de quien invita (todo usuario lo tiene).
 		inviter: inviter?.name?.trim() || inviter?.email || '',
 		url: invitationUrl(event.token),
-		locale: localeFromRequest(ctx)
+		locale: invitationLocale()
 	});
 }

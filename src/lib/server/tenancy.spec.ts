@@ -3,11 +3,13 @@ import type { GenericEndpointContext } from '@better-auth/core';
 import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
 import { tenancy } from '@zytera/better-auth-tenancy/server';
 import type { EndpointAuthHook } from '@zytera/better-auth-tenancy/server';
+import { with_request_store } from '@sveltejs/kit/internal/server';
 
 import {
 	ALREADY_FAMILY_MEMBER_MESSAGE,
 	FAMILY_ADMIN_ROLE,
 	FAMILY_ADMIN_STATEMENTS,
+	FAMILY_INVITATION_EXPIRY_HOURS,
 	FAMILY_MEMBER_ROLE,
 	FAMILY_MEMBER_STATEMENTS,
 	FAMILY_MEMBERS_LIMIT_MESSAGE,
@@ -241,11 +243,6 @@ describe('tenancyConfig.endpoints (statements de admin)', () => {
 			request: { body: { id: 'fam-1' } }
 		},
 		{
-			statement: 'member:invite (añadir miembro)',
-			hook: tenancyConfig.endpoints?.member?.add,
-			request: { body: { userId: 'new-1', ...familiaResource } }
-		},
-		{
 			statement: 'member:invite (crear invitación)',
 			hook: tenancyConfig.endpoints?.invitation?.create,
 			request: { body: { identifier: 'nueva@familia.es', ...familiaResource } }
@@ -315,6 +312,22 @@ describe('tenancyConfig.endpoints (listados de miembros e invitaciones)', () => 
 				sessionOf('member-1')
 			)
 		).resolves.toBeUndefined();
+	});
+
+	it('member/:id con el query falseado NO autoriza contra la familia del atacante (#101)', async () => {
+		// El endpoint no declara schema de query, pero better-call parsea el
+		// query string igualmente: `?contextType=organization&contextId=fam-1`
+		// (la del atacante) no puede convertir la lectura del miembro de OTRA
+		// familia en una lectura autorizada. El id del params manda.
+		const queryFalso = { contextType: 'organization', contextId: 'fam-1' };
+		await expect(
+			callHook(
+				listMembers,
+				familyAdapterMock(),
+				{ params: { id: 'membership-member' }, query: queryFalso },
+				sessionOf('outsider-1')
+			)
+		).rejects.toThrow('Missing permission: organization:get');
 	});
 
 	it('quien no pertenece no lista miembros ajenos, ni por query ni por id', async () => {
@@ -615,6 +628,7 @@ describe('tenancyConfig.endpoints denegados (administración del plugin)', () =>
 
 	it('las operaciones en bloque de miembros y la limpieza de invitaciones también', async () => {
 		for (const hook of [
+			tenancyConfig.endpoints?.member?.add,
 			tenancyConfig.endpoints?.member?.bulkAdd,
 			tenancyConfig.endpoints?.member?.bulkRemove,
 			tenancyConfig.endpoints?.member?.transfer,
@@ -624,6 +638,17 @@ describe('tenancyConfig.endpoints denegados (administración del plugin)', () =>
 				'disabled'
 			);
 		}
+		// `member/add` en particular (issue #101): ni el admin de la familia con
+		// `member:invite` puede insertar miembros directamente — la entrada en
+		// una familia es siempre por invitación aceptada.
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.member?.add,
+				familyAdapterMock(),
+				{ body: { userId: 'new-1', contextType: 'organization', contextId: 'fam-1' } },
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow('disabled');
 	});
 });
 
@@ -643,12 +668,14 @@ describe('perímetro del plugin (surface real de endpoints)', () => {
 		['/tenancy/organization/update', 'organization:update'],
 		['/tenancy/organization/delete', 'organization:delete'],
 		['/tenancy/organization/list', 'filterOrganizations (pertenencia)'],
-		// member: la clave `list` guarda también el GET por id, y `updateRole`
+		// member: la clave `list` guarda también el GET por id, y autoriza
+		// contra la familia del MIEMBRO del params (o del query en el listado);
+		// `add` va denegado: la entrada es por invitación (#101). `updateRole`
 		// guarda el cambio de metadatos (así lo cablea el plugin): esa petición
 		// —sin `roleId` en el body— se deniega.
 		['/tenancy/member/list', 'organization:get'],
-		['/tenancy/member/:id', 'organization:get (clave member.list)'],
-		['/tenancy/member/add', 'member:invite'],
+		['/tenancy/member/:id', 'organization:get (clave member.list; familia del miembro, #101)'],
+		['/tenancy/member/add', 'denegado (la entrada es por invitación aceptada, #101)'],
 		['/tenancy/member/remove', 'admin o el propio miembro; el último admin protegido (#62)'],
 		['/tenancy/member/role/update', 'member:update (promover; último admin protegido, #62)'],
 		['/tenancy/member/metadata/update', 'denegado (clave member.updateRole compartida)'],
@@ -777,9 +804,34 @@ describe('tenancyConfig.endpoints.organization.read (statement del miembro)', ()
 });
 
 describe('tenancyConfig.permissionFiltering.filterOrganizations', () => {
+	type Where = { field: string; operator?: string; value: unknown }[];
+
+	/**
+	 * Adaptador con membresías y organizaciones: el hook lee las familias del
+	 * usuario por id, y no filtra la página (truncada) que le pasa el plugin.
+	 */
+	function listingAdapterMock(
+		memberships: { contextId: string }[],
+		organizations: { id: string }[]
+	) {
+		const queries: { model: string; where?: Where }[] = [];
+		return {
+			queries,
+			async findMany({ model, where }: { model: string; where?: Where }) {
+				queries.push({ model, where });
+				if (model === 'member') return memberships;
+				const ids = (where?.find((clause) => clause.field === 'id')?.value ?? []) as string[];
+				return organizations.filter((organization) => ids.includes(organization.id));
+			}
+		};
+	}
+
 	it('devuelve solo las familias donde el usuario es miembro', async () => {
-		const adapter = adapterMock([{ contextId: 'fam-1' }, { contextId: 'fam-3' }]);
 		const organizations = [{ id: 'fam-1' }, { id: 'fam-2' }, { id: 'fam-3' }];
+		const adapter = listingAdapterMock(
+			[{ contextId: 'fam-1' }, { contextId: 'fam-3' }],
+			organizations
+		);
 
 		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
 			ctxOf(adapter, { user: { id: 'user-1' } }),
@@ -789,28 +841,44 @@ describe('tenancyConfig.permissionFiltering.filterOrganizations', () => {
 		expect(filtered).toEqual([{ id: 'fam-1' }, { id: 'fam-3' }]);
 	});
 
+	it('incluye las familias del usuario que no venían en la página truncada del plugin', async () => {
+		// El plugin pasa como mucho 100 organizaciones (tope por defecto del
+		// adaptador): la del usuario puede no estar entre ellas.
+		const adapter = listingAdapterMock([{ contextId: 'fam-200' }], [{ id: 'fam-200' }]);
+
+		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
+			ctxOf(adapter, { user: { id: 'user-1' } }),
+			[{ id: 'fam-1' }, { id: 'fam-2' }]
+		);
+
+		expect(filtered).toEqual([{ id: 'fam-200' }]);
+		expect(adapter.queries.at(-1)?.where).toEqual([
+			{ field: 'id', operator: 'in', value: ['fam-200'] }
+		]);
+	});
+
 	it('sin sesión no devuelve ninguna', async () => {
-		const adapter = adapterMock();
-		const organizations = [{ id: 'fam-1' }];
+		const adapter = listingAdapterMock([{ contextId: 'fam-1' }], [{ id: 'fam-1' }]);
 
 		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
 			ctxOf(adapter),
-			organizations
+			[{ id: 'fam-1' }]
 		);
 
 		expect(filtered).toEqual([]);
 	});
 
 	it('con sesión pero sin pertenencias no devuelve ninguna', async () => {
-		const adapter = adapterMock([]);
-		const organizations = [{ id: 'fam-1' }];
+		const adapter = listingAdapterMock([], [{ id: 'fam-1' }]);
 
 		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
 			ctxOf(adapter, { user: { id: 'user-1' } }),
-			organizations
+			[{ id: 'fam-1' }]
 		);
 
 		expect(filtered).toEqual([]);
+		// Sin pertenencias no hace falta ni leer organizaciones.
+		expect(adapter.queries.map((query) => query.model)).toEqual(['member']);
 	});
 });
 
@@ -842,6 +910,23 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 		} as unknown as GenericEndpointContext;
 	}
 
+	/**
+	 * Corre `fn` dentro del request event de SvelteKit con esas cabeceras
+	 * (issue #103): la locale del correo sale de ahí (`getRequestEvent`), no
+	 * del `ctx.request` del endpoint, que better-call deja vacío en las
+	 * llamadas programáticas a `auth.api.createInvitation`.
+	 */
+	function withRequestEvent(headers: Record<string, string>, fn: () => unknown): Promise<unknown> {
+		return with_request_store(
+			{
+				event: {
+					request: new Request('http://localhost/api/auth/tenancy/invitation/create', { headers })
+				}
+			} as never,
+			async () => fn()
+		);
+	}
+
 	function invitationEvent(
 		identifier: string,
 		contextType: 'organization' | 'team' = 'organization'
@@ -864,9 +949,11 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 	});
 
 	it('envía el correo con el enlace del token, la familia y el invitador', async () => {
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com'),
-			ctxOfRequest(adapterOfInvitation(), 'es')
+		await withRequestEvent({ 'accept-language': 'es' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
 
 		expect(capturedEmailsForTests()).toHaveLength(1);
@@ -877,34 +964,64 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 		expect(email.subject).toContain('Ana');
 	});
 
-	it('el idioma del correo sigue el Accept-Language de quien invita', async () => {
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com'),
-			ctxOfRequest(adapterOfInvitation(), 'es')
+	it('el idioma del correo sigue la locale del request (cookie del selector)', async () => {
+		// Cookie del selector de idioma: la vía principal de la app.
+		await withRequestEvent({ cookie: 'PARAGLIDE_LOCALE=en' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com'),
-			ctxOfRequest(adapterOfInvitation(), 'en-GB,en;q=0.9')
+		await withRequestEvent({ cookie: 'PARAGLIDE_LOCALE=es' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
 
-		const [es, en] = capturedEmailsForTests();
-		expect(es.subject).not.toBe(en.subject);
+		const [en, es] = capturedEmailsForTests();
+		expect(en.subject).toContain('has invited you');
+		expect(es.subject).toContain('te ha invitado');
+	});
+
+	it('sin cookie, el Accept-Language decide (estrategia de Paraglide)', async () => {
+		await withRequestEvent({ 'accept-language': 'en-GB,en;q=0.9' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
+		);
+		await withRequestEvent({}, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
+		);
+
+		const [en, base] = capturedEmailsForTests();
+		expect(en.subject).toContain('has invited you');
+		// Sin ninguna señal, la base («es»).
+		expect(base.subject).toContain('te ha invitado');
 	});
 
 	it('una invitación sin email no envía ningún correo', async () => {
 		await expect(
-			tenancyConfig.actions?.onInvitationCreated?.(
-				invitationEvent(''),
-				ctxOfRequest(adapterOfInvitation(), 'es')
+			withRequestEvent({}, () =>
+				tenancyConfig.actions?.onInvitationCreated?.(
+					invitationEvent(''),
+					ctxOfRequest(adapterOfInvitation(), 'es')
+				)
 			)
 		).resolves.toBeUndefined();
 		expect(capturedEmailsForTests()).toHaveLength(0);
 	});
 
 	it('los teams no generan correo de familia', async () => {
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com', 'team'),
-			ctxOfRequest(adapterOfInvitation(), 'es')
+		await withRequestEvent({}, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com', 'team'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
 		expect(capturedEmailsForTests()).toHaveLength(0);
 	});
@@ -917,9 +1034,11 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 		};
 
 		await expect(
-			tenancyConfig.actions?.onInvitationCreated?.(
-				invitationEvent('invitado@example.com'),
-				ctxOfRequest(adapter, 'es')
+			withRequestEvent({}, () =>
+				tenancyConfig.actions?.onInvitationCreated?.(
+					invitationEvent('invitado@example.com'),
+					ctxOfRequest(adapter, 'es')
+				)
 			)
 		).rejects.toThrow(/not found/i);
 	});
@@ -1041,6 +1160,49 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 				sessionOf('admin-1')
 			)
 		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
+	});
+});
+
+describe('caducidad de las invitaciones (#102)', () => {
+	const baseRequest = (): { body: Record<string, unknown> } => ({
+		body: { identifier: 'invitado@example.com', contextType: 'organization', contextId: 'fam-1' }
+	});
+
+	/** Lanza el hook completo de invitar (todas las validaciones en verde). */
+	async function crear(body: Record<string, unknown>) {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.create,
+				familyAdapterMock(),
+				{ body },
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	}
+
+	it('sin expiresInHours el hook fija el tope de la app en el body', async () => {
+		const request = baseRequest();
+		await crear(request.body);
+
+		// El handler del plugin lee `expiresInHours` del mismo body DESPUÉS de
+		// los hooks: con él, `expiresAt` deja de ser null (antes no caducaban).
+		expect(request.body.expiresInHours).toBe(FAMILY_INVITATION_EXPIRY_HOURS);
+	});
+
+	it('recorta las llamadas directas a la API que piden más horas', async () => {
+		const request = baseRequest();
+		request.body.expiresInHours = 24 * 365;
+		await crear(request.body);
+
+		expect(request.body.expiresInHours).toBe(FAMILY_INVITATION_EXPIRY_HOURS);
+	});
+
+	it('un tope menor pedido por el body se respeta', async () => {
+		const request = baseRequest();
+		request.body.expiresInHours = 1;
+		await crear(request.body);
+
+		expect(request.body.expiresInHours).toBe(1);
 	});
 });
 
