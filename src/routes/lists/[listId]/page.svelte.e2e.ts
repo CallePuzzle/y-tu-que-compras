@@ -232,7 +232,11 @@ test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => 
 	// La lista desaparece «por debajo» (otro miembro la borró): el POST de
 	// comprado falla y el checkbox debe volver a su estado original.
 	await prisma.list.delete({ where: { id: lista.id } });
+	const respuesta = page.waitForResponse((r) => r.url().includes('?/purchased'));
 	await page.getByRole('checkbox', { name: 'Marcar como comprado' }).click();
+
+	// El recurso que ya no existe vuelve 404, no 400 (issue #110).
+	expect((await respuesta).status()).toBe(404);
 
 	// El fallo se avisa, el optimista se retira y el item vuelve a pendiente
 	// con los datos que traía la página (no hay update en fallo).

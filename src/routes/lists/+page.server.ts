@@ -68,7 +68,10 @@ export const actions: Actions = {
 			await createList(family.id, form.data);
 		} catch (error) {
 			logger.error({ err: error }, 'Error al crear la lista');
-			return message(form, m.lists_error(), { status: 400 });
+			// Fallo inesperado (BD caída, columna…): 5xx, que el cliente y la
+			// monitorización lo vean como lo que es (issue #110). Lo mismo en
+			// los demás catch de acciones.
+			return message(form, m.lists_error(), { status: 500 });
 		}
 
 		return message(form, m.lists_success());
@@ -95,11 +98,13 @@ export const actions: Actions = {
 		try {
 			const updated = await updateList(family.id, id, form.data);
 			if (!updated) {
-				return message(form, m.lists_gone(), { status: 400 });
+				// Ya no existe (id rancio o borrada por otro miembro): 404, no
+				// 400 — el recurso que pide tocar es otro que ya no está.
+				return message(form, m.lists_gone(), { status: 404 });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al actualizar la lista');
-			return message(form, m.lists_error(), { status: 400 });
+			return message(form, m.lists_error(), { status: 500 });
 		}
 
 		return message(form, m.lists_updated());
@@ -117,11 +122,11 @@ export const actions: Actions = {
 		try {
 			const deleted = await deleteList(family.id, id);
 			if (!deleted) {
-				return fail(400, { error: m.lists_gone() });
+				return fail(404, { error: m.lists_gone() });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al borrar la lista');
-			return fail(400, { error: m.lists_error() });
+			return fail(500, { error: m.lists_error() });
 		}
 
 		return { success: true };
