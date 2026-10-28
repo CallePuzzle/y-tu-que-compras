@@ -70,7 +70,8 @@ Son full-stack: levantan el dev server contra un PostgreSQL dedicado (puerto 554
 `docker-compose.yml`) con las migraciones aplicadas, hacen login OTP real leyendo el código de la
 BD y ejercitan las páginas con sesión. Antes de lanzarlos, sube la BD de test con
 `bun run db:test:up` (y bájala con `bun run db:test:down`). El entorno del e2e vive en
-`.env.test`.
+`.env.test`; los tests de integración (`bun run test:integration`) usan esa misma BD y se niegan
+a correr contra una cuyo nombre no acabe en `_test`.
 
 El CI (`.github/workflows/ci.yml`) ejecuta todo lo anterior y además
 [gitleaks](https://github.com/gitleaks/gitleaks) sobre el historial completo.

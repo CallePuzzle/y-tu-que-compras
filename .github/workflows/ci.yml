@@ -2,12 +2,20 @@ name: CI
 
 on:
   pull_request:
+  # El CI verde en main es lo que dispara la release (workflow_run en
+  # release.yml). Los cambios solo de deploy/** (el bump de version.jsonnet y
+  # los manifiestos, que Argo CD aplica sin imagen nueva) no la necesitan.
   push:
     branches: [main]
+    paths-ignore:
+      - 'deploy/**'
 
+# En una PR, un push nuevo deja obsoleto el run anterior. En main no se
+# cancela (issue #122): cada merge necesita su CI completo para que la
+# release sepa si desplegarlo.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Solo lectura: el CI no escribe en el repo ni publica.
 permissions:
@@ -26,7 +34,7 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: y_tu_que_compras
+          POSTGRES_DB: y_tu_que_compras_test
         ports:
           - 5432:5432
         options: >-
@@ -42,7 +50,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
 
       # Caché de paquetes de bun: evita re-descargar el registry en cada run.
       - name: Restaurar caché de bun
@@ -82,7 +90,7 @@ jobs:
           bunx prisma migrate deploy
           bun run test:integration
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/y_tu_que_compras
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/y_tu_que_compras_test
 
       - name: Build
         run: bun run build
@@ -108,7 +116,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
 
       # Solo necesita bun.lock: no instala nada ni usa NPM_TOKEN. Los `@callepuzzle/*`
       # no se pueden auditar (GitHub Packages no responde al audit): se escanean en su repo.
@@ -128,12 +136,31 @@ jobs:
           ./gitleaks git --redact --no-banner --exit-code 1 .
 
   # Construye la imagen que publica release.yml (linux/arm64 en runner ARM
-  # nativo, mismas instrucciones del Dockerfile): sin esto, lo que la release
-  # construye solo se prueba al mergear a main — la primera release falló
-  # justo por un path de libs que solo existía en amd64. Build sin push.
+  # nativo, mismas instrucciones del Dockerfile) y la ARRANCA contra Postgres
+  # (issue #123): migraciones con el CLI de Prisma como el init container
+  # db-migrate, servidor de adapter-node sobre bun distroless y curl a las
+  # probes. Sin esto, el runtime real solo se estrenaba en pro (la primera
+  # release falló por un path de libs que solo existía en amd64; un «libssl»
+  # del schema-engine solo se vería como CrashLoop). Build sin push.
   docker:
     name: build imagen linux/arm64
     runs-on: ubuntu-24.04-arm
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ytqc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      IMAGE: y-tu-que-compras:ci
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ytqc
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -148,8 +175,54 @@ jobs:
           context: .
           platforms: linux/arm64
           push: false
+          # A la imagen local del runner, para arrancarla en los pasos siguientes.
+          load: true
+          tags: ${{ env.IMAGE }}
           # Mismo mecanismo que release.yml: resuelve @callepuzzle/* de GitHub Packages.
           secrets: |
             npm_token=${{ secrets.GITHUB_TOKEN }}
           # Lee la caché que escribe la release en main; este job no escribe.
           cache-from: type=gha
+
+      # Mismo comando que el init container db-migrate (deploy/lib/app.libsonnet)
+      # y las mismas restricciones que su securityContext (sin capabilities ni
+      # escalada; la imagen ya corre como nonroot). `--network host`: el
+      # Postgres del service escucha en localhost del runner.
+      - name: Migraciones con la imagen
+        run: |
+          docker run --rm --network host \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e DATABASE_URL \
+            --entrypoint bun "$IMAGE" \
+            run /app/node_modules/prisma/build/index.js migrate deploy
+
+      - name: Arrancar el servidor
+        run: |
+          docker run -d --name ytqc --network host \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e DATABASE_URL \
+            -e BETTER_AUTH_SECRET=ci-smoke-secret-no-usar-en-produccion-0123456789 \
+            -e BETTER_AUTH_URL=http://localhost:8080 \
+            -e ORIGIN=http://localhost:8080 \
+            "$IMAGE"
+
+      # /healthz: el proceso sirve. /readyz: llega a Postgres por el adaptador
+      # pg (SELECT 1). /login: render SSR completo (hooks, i18n, better-auth).
+      - name: Probes y una página
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz && break
+            if [ "$i" = 30 ]; then
+              echo "::error::El servidor no responde a /healthz tras 30s"
+              exit 1
+            fi
+            sleep 1
+          done
+          echo
+          curl -sf http://localhost:8080/readyz
+          echo
+          curl -sf -o /dev/null -w 'GET /login -> %{http_code}\n' http://localhost:8080/login
+
+      - name: Logs del servidor
+        if: always()
+        run: docker logs ytqc || true
