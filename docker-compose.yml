@@ -1,20 +1,26 @@
-# PostgreSQL dedicado a los tests E2E (Playwright). No lo usa la app en
-# desarrollo ni en producción: solo `bun run test:e2e` / `db:test:up`.
-# Los tests truncan las tablas antes de cada uno (resetDb), así que el
+# PostgreSQL dedicado a los tests: e2e (Playwright) e integración (vitest,
+# proyecto `integration`), ambos vía `.env.test`. No lo usa la app en
+# desarrollo ni en producción: solo `bun run test:e2e` / `test:integration` /
+# `db:test:up`. El nombre de la BD acaba en `_test`: lo exige el guardia de
+# `src/lib/server/integration-setup.ts` (issue #125).
+# Los e2e truncan las tablas antes de cada spec (resetDb), así que el
 # `db:test:down` es `stop` y no `down`: la red no se desmonta y se evita el
-# fallo intermitente de netavark al recrearla (podman).
+# fallo intermitente de netavark al recrearla (podman). Un contenedor creado
+# antes del cambio de nombre (BD `e2e`) sigue valiendo: POSTGRES_DB solo se
+# aplica al inicializar el volumen, pero `prisma migrate deploy` (lo lanza
+# e2e/global-setup.ts) crea la BD si no existe.
 services:
   postgres-test:
     image: postgres:17-alpine
     container_name: y-tu-que-compras-e2e-db
     environment:
-      POSTGRES_DB: e2e
+      POSTGRES_DB: y_tu_que_compras_test
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
     ports:
       - '55433:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U test -d e2e']
+      test: ['CMD-SHELL', 'pg_isready -U test -d y_tu_que_compras_test']
       interval: 2s
       timeout: 5s
       retries: 10

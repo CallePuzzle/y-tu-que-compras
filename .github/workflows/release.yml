@@ -1,17 +1,25 @@
 name: Release
 
-# Merge a main: construye la imagen estable (linux/arm64, el clúster k0s es
+# CI verde en main: construye la imagen estable (linux/arm64, el clúster k0s es
 # aarch64), corta la release/tag en el commit y mueve deploy/pro/version.jsonnet
 # en main, de modo que ArgoCD (autoSync, plugin tanka-sops) despliegue en pro.
 # Fase 3 de la issue #30 de villajilguero-oci-services.
+#
+# Se dispara al acabar el workflow CI (issue #122), no en el push: solo se
+# despliega un commit cuyo CI completo ha pasado EN main (dos PRs verdes por
+# separado pueden romper juntas). El CI de main ignora deploy/** (el bump y
+# los manifiestos no necesitan imagen nueva) y el commit del bump lleva
+# [skip ci], así que ninguno de los dos llega aquí. Todo el workflow trabaja
+# sobre `workflow_run.head_sha` (el commit que validó el CI), no sobre la
+# punta de main en el momento de arrancar.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths-ignore:
-      - 'deploy/**'
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 env:
@@ -19,13 +27,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Corta la release (y su tag git). Solo git y la API de releases: aquí no
+  # se ejecuta código de dependencias, que es lo que justifica el token con
+  # escritura en contents.
   release:
-    # Runner ARM nativo: construye linux/arm64 sin QEMU (empaquetado con QEMU
-    # es un orden de magnitud más lento con bun/vite).
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
-      packages: write
     outputs:
       version: ${{ steps.tag.outputs.version }}
 
@@ -33,6 +42,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           # El token no se queda en .git/config al alcance de dependencias y herramientas.
           persist-credentials: false
@@ -65,18 +75,34 @@ jobs:
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           tag_name: ${{ steps.tag.outputs.version }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
           generate_release_notes: true
+
+  # Build de la imagen con un token de SOLO LECTURA (issue #122): `bun
+  # install`/`bun remove` ejecutan scripts de dependencias dentro del build,
+  # y el token que reciben como secret de BuildKit (para GitHub Packages) es
+  # el GITHUB_TOKEN de este job. Con `packages: read` una dependencia
+  # comprometida no puede pushear, mover tags ni publicar. La imagen sale
+  # como tarball (artifact) y la publica el job siguiente, que no ejecuta
+  # nada del build.
+  build:
+    needs: release
+    # Runner ARM nativo: construye linux/arm64 sin QEMU (empaquetado con QEMU
+    # es un orden de magnitud más lento con bun/vite).
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
@@ -84,16 +110,19 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.tag.outputs.version }}
+            type=raw,value=${{ needs.release.outputs.version }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           platforms: linux/arm64
-          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Tarball en formato docker para `docker load` en el job de push. El
+          # exportador docker no admite attestations.
+          outputs: type=docker,dest=${{ runner.temp }}/image.tar
+          provenance: false
           # El Dockerfile pide el token de GitHub Packages como secret de
           # BuildKit (nunca en ARG/ENV ni en capas). GITHUB_TOKEN basta: los
           # paquetes @callepuzzle/* tienen este repo añadido en "Manage Actions
@@ -102,6 +131,43 @@ jobs:
             npm_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Upload image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 1
+
+  # Publica en ghcr el tarball del job anterior: aquí sí hay `packages:
+  # write`, pero no se instala ni se ejecuta nada del repo.
+  publish:
+    needs: [release, build]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      packages: write
+
+    steps:
+      - name: Download image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: ${{ runner.temp }}
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # El tag ya viene en el tarball (metadata-action del build). La ruta del
+      # registry va en minúsculas aunque github.repository no lo esté.
+      - name: Push Docker image
+        run: |
+          docker load -i "$RUNNER_TEMP/image.tar"
+          repo=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          docker push "${{ env.REGISTRY }}/${repo}:${{ needs.release.outputs.version }}"
 
       # ghcr.io can acknowledge the push before the tag is readable again
       # (eventual consistency), and the registry API is case-sensitive while
@@ -116,7 +182,7 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           repo=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          tag="${{ steps.tag.outputs.version }}"
+          tag="${{ needs.release.outputs.version }}"
           accept='application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json'
           for i in $(seq 1 36); do
             tok=$(curl -sf -u "$ACTOR:$GH_TOKEN" "https://ghcr.io/token?scope=repository:${repo}:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
@@ -133,8 +199,8 @@ jobs:
 
   # Point pro at the new version: the commit lands on main and the autoSync'd
   # ArgoCD Application (villajilguero-oci-services/jilguedev/app-of-apps) picks
-  # it up. [skip ci] so this push doesn't re-trigger the release workflow
-  # (paths-ignore on deploy/** is the second guard).
+  # it up. [skip ci] so this push doesn't run CI (and so doesn't re-trigger
+  # this workflow); CI's paths-ignore on deploy/** is the second guard.
   #
   # El push va por SSH con la deploy key de escritura `bump-pro release (CI)`
   # (secret BUMP_DEPLOY_KEY): el ruleset de main exige los checks de CI y el
@@ -142,7 +208,8 @@ jobs:
   # la key es bypass actor de ese ruleset. git-auto-commit-action no vale
   # aquí: pushea por HTTPS con el token del checkout.
   bump-pro:
-    needs: release
+    # Tras publish: ArgoCD nunca debe ver un tag que no esté en ghcr.
+    needs: [release, publish]
     runs-on: ubuntu-24.04-arm
     # El push ya no usa el GITHUB_TOKEN: solo lectura para el checkout.
     permissions:
@@ -176,4 +243,20 @@ jobs:
           git add deploy/pro/version.jsonnet
           git commit -m "chore(deploy): pro=${VERSION} [skip ci]"
           git remote set-url origin git@github.com:CallePuzzle/y-tu-que-compras.git
-          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes' git push origin HEAD:main
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes'
+          # Si entra un commit en main entre el checkout y el push, el push se
+          # rechaza (no fast-forward): rebase sobre la punta nueva y reintento
+          # (issue #122). Sin esto la versión no llegaba a pro, y si el commit
+          # intruso era solo de deploy/** nada la volvía a desplegar. Un
+          # conflicto de rebase (otro bump del mismo fichero, imposible con la
+          # concurrency del workflow) sí falla el job.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push rechazado (intento $attempt/5); rebase sobre origin/main y reintento"
+            sleep $((attempt * 3))
+            git pull --rebase origin main
+          done
+          echo "::error::No se pudo pushear el bump de ${VERSION} tras 5 intentos"
+          exit 1

@@ -27,7 +27,7 @@
 		"test:e2e:install": "playwright install chromium",
 		"audit": "bun audit --audit-level=moderate --ignore=GHSA-ggr8-5vv4-36mx"
 	},
-	"packageManager": "bun@1.4.3",
+	"packageManager": "bun@1.4.4",
 	"engines": {
 		"node": ">=24",
 		"bun": ">=1.4.0"

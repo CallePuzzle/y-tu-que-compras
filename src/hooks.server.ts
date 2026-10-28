@@ -61,13 +61,20 @@ const handleUserTrace: Handle = ({ event, resolve }) => {
 // primero en la secuencia para que `event.locals.log` esté disponible en el
 // resto de handles (y en `handleError`).
 const handleLogging: Handle = async ({ event, resolve }) => {
-	// `x-vercel-id` es el id de correlación de Vercel (de donde viene la app);
-	// sin esa cabecera (k8s, local) cae a un uuid.
-	const requestId = event.request.headers.get('x-vercel-id') ?? randomUUID();
+	// `x-vercel-id` es el id de correlación que inyecta Vercel (de donde viene
+	// la app): solo se respeta si SOMOS Vercel quien sirve la request
+	// (`env.VERCEL` lo fija la plataforma). Fuera de Vercel (clúster k0s, local)
+	// cualquiera podría enviar esa cabecera y falsear o reutilizar ids en logs
+	// y trazas, así que ahí cae a un uuid aleatorio.
+	const requestId = (env.VERCEL && event.request.headers.get('x-vercel-id')) || randomUUID();
 	event.locals.log = logger.child({ requestId });
 
 	const startedAt = performance.now();
 	let status = 500;
+	// Las probes del kubelet (/healthz, /readyz, issue #124) llegan cada pocos
+	// segundos y siempre contestan igual: fuera del log de requests, que si no
+	// es puro ruido (el fallo de readiness lo grita igualmente el propio pod).
+	const quiet = event.url.pathname === '/healthz' || event.url.pathname === '/readyz';
 	try {
 		const response = await resolve(event);
 		status = response.status;
@@ -75,15 +82,17 @@ const handleLogging: Handle = async ({ event, resolve }) => {
 	} finally {
 		// `finally`: también se registra cuando la request acaba en error no
 		// manejado (SvelteKit convierte el rechazo en respuesta de error después).
-		event.locals.log.info(
-			{
-				method: event.request.method,
-				path: event.url.pathname,
-				status,
-				durationMs: Math.round(performance.now() - startedAt)
-			},
-			'request completed'
-		);
+		if (!quiet) {
+			event.locals.log.info(
+				{
+					method: event.request.method,
+					path: event.url.pathname,
+					status,
+					durationMs: Math.round(performance.now() - startedAt)
+				},
+				'request completed'
+			);
+		}
 	}
 };
 

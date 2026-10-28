@@ -3,11 +3,12 @@
 [extend]
 useDefault = true
 
-# El BETTER_AUTH_SECRET de .env.test es un valor dummy de los e2e (ver la
-# cabecera del propio fichero): mejor-auth exige que la variable exista, pero
-# no es un secreto real y nunca lo será (la regla generic-api-key la pilla por
-# Excepción ceñida al valor dummy (la regla captura el valor, no la línea),
-# no al fichero entero, para no enmascarar un secreto real que caiga ahí.
+# Valores dummy de BETTER_AUTH_SECRET que la regla generic-api-key toma por
+# secretos: el de `.env.test` (e2e) y el de la prueba de humo de la imagen
+# (job `docker` de ci.yml). better-auth exige que la variable exista, pero no
+# son secretos reales y nunca lo serán.
+# Excepción ceñida a los valores dummy (la regla captura el valor, no la
+# línea), no al fichero entero, para no enmascarar un secreto real que caiga ahí.
 [allowlist]
-description = "Valores dummy de los tests e2e"
-regexes = ['''e2e-test-secret-no-usar-en-produccion''']
+description = "Valores dummy de los tests e2e y de la prueba de humo de CI"
+regexes = ['''e2e-test-secret-no-usar-en-produccion''', '''ci-smoke-secret-no-usar-en-produccion''']

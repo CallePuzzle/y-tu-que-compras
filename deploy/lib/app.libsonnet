@@ -24,6 +24,54 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
     dbBackupPath: 'ytqc-db',
   },
   local secrets = (import 'secrets.json'),
+  // Contraseña del rol de la app (CNPG). Va percent-codificada dentro de
+  // `DATABASE_URL` (issue #124): un `/ @ : # ?` tal cual rompería el parse de
+  // la URL y, con ello, la conexión. Con la codificación aquí, en el
+  // manifest, el valor del secret cifrado puede ser cualquier ASCII
+  // imprimible (el assert lo deja claro al renderizar, no en producción).
+  local dbPassword = secrets.DB_APP_PASSWORD,
+  // No vacía y solo ASCII (el codepoint de cada char < 128): lo que la
+  // codificación de abajo sabe transformar sin ambigüedad.
+  local dbPasswordOk =
+    std.foldl(
+      function(ok, ch) ok && std.codepoint(ch) < 128,
+      std.stringChars(dbPassword),
+      std.length(dbPassword) > 0
+    ),
+  local dbPasswordChecked =
+    if dbPasswordOk then
+      dbPassword
+    else
+      error 'DB_APP_PASSWORD debe ser ASCII imprimible: la codificación de DATABASE_URL (urlEncode abajo) solo es correcta para ASCII',
+  // Percent-codifica los bytes que no son «unreserved» del RFC 3986. Solo
+  // fiable para ASCII (lo garantiza dbPasswordChecked): `std.codepoint` da el
+  // codepoint unicode, no los bytes UTF-8.
+  local urlEncode(s) =
+    local unreserved = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    std.join('', [
+      if std.member(unreserved, ch) then ch else '%%%02X' % std.codepoint(ch)
+      for ch in std.stringChars(s)
+    ]),
+  // stringData del secret de la app. El checksum de ESTE mapa es el que hace
+  // reiniciar el pod cuando rota un secreto (podAnnotations del workload
+  // abajo): CNPG aplica el cambio de contraseña al momento, pero un env de
+  // un Secret ya montado no se reaplica jamás sin reinicio.
+  local secretData = {
+    // Apunta al service -rw del Cluster CNPG (mismo dbClusterName que
+    // db/dbCredentials); la password es la del secret de credenciales.
+    DATABASE_URL: 'postgresql://ytqc:' + urlEncode(dbPasswordChecked) + '@'
+                  + $.values.dbClusterName + '-rw.' + tk.env.spec.namespace + '.svc:5432/ytqc',
+    BETTER_AUTH_SECRET: secrets.BETTER_AUTH_SECRET,
+    // Email transaccional (OCI Email Delivery). Nótese el typo SMPT_: es
+    // intencionado, así se leen en sender.ts. Sin estas variables la app
+    // arranca, pero el login OTP falla al enviar el código.
+    SMTP_HOST: secrets.SMTP_HOST,
+    SMPT_AUTH_USER: secrets.SMPT_AUTH_USER,
+    SMPT_AUTH_PASS: secrets.SMPT_AUTH_PASS,
+    SMPT_SENDER: secrets.SMPT_SENDER,
+    // Sal para etiquetar trazas con el hash del usuario (hooks.server.ts).
+    OBSERVABILITY_SALT: secrets.OBSERVABILITY_SALT,
+  },
   local container_values = {
     name: 'y-tu-que-compras',
     image: 'ghcr.io/callepuzzle/y-tu-que-compras',
@@ -55,6 +103,19 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
     // uid del usuario `nonroot` de la imagen runtime (distroless de bun, ver
     // Dockerfile).
     userId: 65532,
+    // Endurecimiento de contenedores (issue #124), para el servidor y el init
+    // container (ambos salen de estos values): sin escalada de privilegios,
+    // sin capabilities, seccomp RuntimeDefault y no-root explícito. Sin
+    // readOnlyRootFilesystem a propósito: el init container descarga el
+    // schema-engine de Prisma en node_modules (@prisma/engines) al arrancar.
+    containerMixin: {
+      securityContext+: {
+        allowPrivilegeEscalation: false,
+        capabilities: { drop: ['ALL'] },
+        seccompProfile: { type: 'RuntimeDefault' },
+        runAsNonRoot: true,
+      },
+    },
   },
   local initContainer = [
     (_container { values+: container_values {
@@ -84,16 +145,28 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
       limitMemory: '512Mi',
       port: 8080,
       serverAlias: $.values.serverAlias,
-      // Primera iteración (issue #30): la app no tiene /healthz; probes TCP
-      // contra el puerto del servidor (kubelet habla directo a la IP del pod,
-      // sin Service).
+      // Checksum del secret de la app en las anotaciones del pod template
+      // (issue #124): al rotar cualquier secreto cambia el hash, Argo CD
+      // actualiza el Deployment y el rollout reinicia los pods — la única
+      // forma de que un `envFrom` de un Secret ya montado se reaplique.
+      podAnnotations: {
+        'checksum/secrets': std.md5(std.manifestJsonMinified(secretData)),
+      },
+      // La app no habla con la API de Kubernetes: sin token de ServiceAccount
+      // montado (issue #124).
+      deploymentMixin: {
+        spec+: { template+: { spec+: { automountServiceAccountToken: false } } },
+      },
+      // Probes HTTP (issue #124): /healthz (liveness, sin BD) y /readyz
+      // (readiness, `SELECT 1`). Las TCP de la primera iteración (issue #30)
+      // no detectaban un event loop colgado ni el pool de BD agotado.
       livenessProbe: {
-        tcpSocket: { port: 8080 },
+        httpGet: { path: '/healthz', port: 8080 },
         initialDelaySeconds: 5,
         periodSeconds: 10,
       },
       readinessProbe: {
-        tcpSocket: { port: 8080 },
+        httpGet: { path: '/readyz', port: 8080 },
         initialDelaySeconds: 5,
         periodSeconds: 10,
         failureThreshold: 3,
@@ -141,22 +214,7 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
     values+:: {
       name: 'y-tu-que-compras',
       namespace: tk.env.spec.namespace,
-      stringData: {
-        // Apunta al service -rw del Cluster CNPG (mismo dbClusterName que
-        // db/dbCredentials); la password es la del secret de credenciales.
-        DATABASE_URL: 'postgresql://ytqc:' + secrets.DB_APP_PASSWORD + '@'
-                      + $.values.dbClusterName + '-rw.' + tk.env.spec.namespace + '.svc:5432/ytqc',
-        BETTER_AUTH_SECRET: secrets.BETTER_AUTH_SECRET,
-        // Email transaccional (OCI Email Delivery). Nótese el typo SMPT_: es
-        // intencionado, así se leen en sender.ts. Sin estas variables la app
-        // arranca, pero el login OTP falla al enviar el código.
-        SMTP_HOST: secrets.SMTP_HOST,
-        SMPT_AUTH_USER: secrets.SMPT_AUTH_USER,
-        SMPT_AUTH_PASS: secrets.SMPT_AUTH_PASS,
-        SMPT_SENDER: secrets.SMPT_SENDER,
-        // Sal para etiquetar trazas con el hash del usuario (hooks.server.ts).
-        OBSERVABILITY_SALT: secrets.OBSERVABILITY_SALT,
-      },
+      stringData: secretData,
     },
   },
   dbCredentials: _secret {
