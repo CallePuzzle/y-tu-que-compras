@@ -17,10 +17,17 @@ import type { RequestEvent } from '@sveltejs/kit';
 // migraciones aplicadas (postgres local o el service del CI). Cada test usa
 // ids/emails únicos: no hace falta limpiar ni coordinar ejecuciones.
 import { auth } from './auth.js';
-import { FAMILY_ADMIN_ROLE, FAMILY_MEMBER_ROLE, MAX_FAMILIES_PER_USER } from './tenancy.js';
 import {
+	FAMILY_ADMIN_ROLE,
+	FAMILY_INVITATION_EXPIRY_HOURS,
+	FAMILY_MEMBER_ROLE,
+	MAX_FAMILIES_PER_USER
+} from './tenancy.js';
+import {
+	FamilyInvitationGoneError,
 	FamilyLastAdminError,
 	FamilyMemberGoneError,
+	cancelFamilyInvitation,
 	deleteFamily,
 	familyDetailView,
 	familySlug,
@@ -794,5 +801,169 @@ describe('perímetro de miembros entre familias (#101)', () => {
 		expect(own.ok).toBe(true);
 		const seen = (await own.json()) as { id: string };
 		expect(seen.id).toBe(memberId);
+	});
+});
+
+/**
+ * Caducidad y cancelación de invitaciones (issue #102): toda invitación nace
+ * con caducidad (72 h, la pase la app o la fuerce el hook en llamadas directas)
+ * y el admin puede cancelar las pendientes desde la gestión de la familia.
+ */
+describe('caducidad y cancelación de invitaciones (#102)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string, userId?: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: userId ? { id: userId } : undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Caduca ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Invita por la app y devuelve la fila MÁS RECIENTE de esa invitación. */
+	async function invitedRow(cookie: string, familyId: string, email: string) {
+		await inviteFamily(eventOf(cookie), { familyId, email });
+		return prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId },
+			orderBy: { createdAt: 'desc' }
+		});
+	}
+
+	/** Alta directo en BD de un miembro con rol `member` y su cookie de sesión. */
+	async function addMemberDirectly(familyId: string): Promise<{ cookie: string; userId: string }> {
+		const session = await sessionCookieFor('Miembro Caduca');
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: memberRole.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { cookie: session.cookie, userId: session.userId };
+	}
+
+	it('toda invitación de la app nace con caducidad (~72 h)', async () => {
+		const admin = await sessionCookieFor('Admin Caducador');
+		const familyId = await createFamilyFor(admin.cookie);
+
+		const before = Date.now();
+		const invitation = await invitedRow(
+			admin.cookie,
+			familyId,
+			`caduca-${randomUUID().slice(0, 8)}@example.com`
+		);
+		const after = Date.now();
+
+		// Entre «ahora + 72 h» menos lo tardado y «ahora + 72 h» exactas: la
+		// caducidad se fija en el momento del create, no del `before`.
+		const expiry = invitation.expiresAt!.getTime();
+		expect(expiry).toBeGreaterThan(before + (FAMILY_INVITATION_EXPIRY_HOURS - 1) * 60 * 60 * 1000);
+		expect(expiry).toBeLessThanOrEqual(after + FAMILY_INVITATION_EXPIRY_HOURS * 60 * 60 * 1000);
+	});
+
+	it('la API directa sin expiresInHours también caduca (hook invitation/create)', async () => {
+		const admin = await sessionCookieFor('Admin Manual');
+		const familyId = await createFamilyFor(admin.cookie);
+		const email = `manual-${randomUUID().slice(0, 8)}@example.com`;
+
+		// Llamada cruda al endpoint del plugin, SIN expiresInHours: antes de la
+		// #102 guardaba expiresAt = null y el enlace servía para siempre.
+		const response = await auth.handler(
+			tenancyRequest('invitation/create', admin.cookie, {
+				method: 'POST',
+				body: { identifier: email, contextType: 'organization', contextId: familyId }
+			})
+		);
+		expect(response.ok).toBe(true);
+
+		const invitation = await prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId }
+		});
+		expect(invitation.expiresAt).not.toBeNull();
+		expect(invitation.expiresAt!.getTime()).toBeGreaterThan(Date.now());
+	});
+
+	it('cancelar la pendiente la marca y permite volver a invitar ese email', async () => {
+		const admin = await sessionCookieFor('Admin Cancelador');
+		const familyId = await createFamilyFor(admin.cookie);
+		const email = `cancelada-${randomUUID().slice(0, 8)}@example.com`;
+		const invitation = await invitedRow(admin.cookie, familyId, email);
+		expect(invitation.status).toBe('pending');
+
+		await cancelFamilyInvitation(eventOf(admin.cookie), invitation.id);
+		expect(
+			await prisma.invitation.findUniqueOrThrow({ where: { id: invitation.id } })
+		).toMatchObject({ status: 'cancelled' });
+
+		// El email queda libre: el plugin solo bloquea pendientes duplicadas.
+		const reinvited = await invitedRow(admin.cookie, familyId, email);
+		expect(reinvited.id).not.toBe(invitation.id);
+		expect(reinvited.status).toBe('pending');
+	});
+
+	it('cancelar desaparece de la vista de gestión (solo para el admin)', async () => {
+		const admin = await sessionCookieFor('Admin Vista Inv');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addMemberDirectly(familyId);
+		const email = `vista-${randomUUID().slice(0, 8)}@example.com`;
+		const invitation = await invitedRow(admin.cookie, familyId, email);
+
+		const adminView = await familyDetailView(eventOf(admin.cookie, admin.userId), familyId);
+		expect(adminView?.pendingInvitations.map((row) => row.id)).toContain(invitation.id);
+		// Un miembro normal no ve las pendientes (emails de terceros).
+		const memberView = await familyDetailView(eventOf(member.cookie, member.userId), familyId);
+		expect(memberView?.pendingInvitations).toEqual([]);
+
+		await cancelFamilyInvitation(eventOf(admin.cookie), invitation.id);
+		const after = await familyDetailView(eventOf(admin.cookie, admin.userId), familyId);
+		expect(after?.pendingInvitations.map((row) => row.id)).not.toContain(invitation.id);
+	});
+
+	it('un miembro sin rol admin no puede cancelar (403)', async () => {
+		const admin = await sessionCookieFor('Admin No Cancelable');
+		const familyId = await createFamilyFor(admin.cookie);
+		const member = await addMemberDirectly(familyId);
+		const invitation = await invitedRow(
+			admin.cookie,
+			familyId,
+			`protegida-${randomUUID().slice(0, 8)}@example.com`
+		);
+
+		await expect(cancelFamilyInvitation(eventOf(member.cookie), invitation.id)).rejects.toThrow(
+			/Missing permission: invitation:cancel/
+		);
+		expect(
+			await prisma.invitation.findUniqueOrThrow({ where: { id: invitation.id } })
+		).toMatchObject({ status: 'pending' });
+	});
+
+	it('cancelar una invitación ya respondida da el error tipado', async () => {
+		const admin = await sessionCookieFor('Admin Tardío Cancela');
+		const familyId = await createFamilyFor(admin.cookie);
+		const email = `usada-${randomUUID().slice(0, 8)}@example.com`;
+		const invitation = await invitedRow(admin.cookie, familyId, email);
+
+		// «Respondida» simulada en la base: da igual cómo, ya no está pendiente.
+		await prisma.invitation.update({
+			where: { id: invitation.id },
+			data: { status: 'accepted', acceptedAt: new Date() }
+		});
+
+		await expect(
+			cancelFamilyInvitation(eventOf(admin.cookie), invitation.id)
+		).rejects.toBeInstanceOf(FamilyInvitationGoneError);
 	});
 });

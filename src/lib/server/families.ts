@@ -7,6 +7,7 @@ import { auth } from '$lib/server/auth.js';
 import prisma from '$lib/server/prisma.js';
 import {
 	FAMILY_ADMIN_ROLE,
+	FAMILY_INVITATION_EXPIRY_HOURS,
 	FAMILY_MEMBER_ROLE,
 	MAX_FAMILIES_PER_USER,
 	MAX_FAMILY_MEMBERS,
@@ -105,6 +106,18 @@ export class FamilyGoneError extends Error {
 	constructor() {
 		super('Family no longer exists');
 		this.name = 'FamilyGoneError';
+	}
+}
+
+/**
+ * La invitación ya no está pendiente (cancelada, aceptada o inexistente): no
+ * hay nada que cancelar (issue #102). Cubre el 404 del endpoint y su 400
+ * «Invitation is {status}».
+ */
+export class FamilyInvitationGoneError extends Error {
+	constructor() {
+		super('Family invitation is no longer pending');
+		this.name = 'FamilyInvitationGoneError';
 	}
 }
 
@@ -246,6 +259,11 @@ export async function inviteFamily(
 				contextType: 'organization',
 				contextId: familyId,
 				roleId: memberRole?.id,
+				// Caducidad de toda invitación (issue #102): sin ella el plugin
+				// guardaría `expiresAt = null` y el enlace serviría para siempre.
+				// El hook `invitation/create` lo fuerza igualmente para llamadas
+				// directas a la API.
+				expiresInHours: FAMILY_INVITATION_EXPIRY_HOURS,
 				// `metadata: undefined` es solo tipado, igual que en `createFamily`:
 				// el tipo de entrada del plugin (3.2.2) lo declara requerido aunque
 				// el zod del endpoint lo tenga opcional (ver
@@ -409,6 +427,22 @@ export interface FamilyDetailView {
 	members: FamilyMember[];
 	/** El usuario de la sesión; `null` si no pertenece (la ruta redirige). */
 	viewer: { memberId: string; isAdmin: boolean } | null;
+	/**
+	 * Invitaciones pendientes, solo para el admin (llevan emails de terceros,
+	 * igual que el endpoint `invitation/list` del plugin exige `member:invite`).
+	 */
+	pendingInvitations: FamilyPendingInvitation[];
+}
+
+/** Una invitación pendiente de la familia, tal y como la gestión la muestra. */
+export interface FamilyPendingInvitation {
+	/** Id de la fila: lo que viaja en «cancelar invitación» (issue #102). */
+	id: string;
+	email: string;
+	/** Cuándo se agota el enlace; `null` solo en invitaciones anteriores a la #102. */
+	expiresAt: Date | null;
+	/** Pendiente en la base pero con la caducidad ya pasada. */
+	expired: boolean;
 }
 
 /**
@@ -451,6 +485,25 @@ export async function familyDetailView(
 	const viewerMembership = memberships.find((membership) => membership.userId === user.id);
 	if (!viewerMembership) return null;
 
+	// Las pendientes solo importan al admin (son las que puede cancelar, #102):
+	// para el resto, lista vacía y ni siquiera se consultan.
+	const isAdmin = viewerMembership.role?.name === FAMILY_ADMIN_ROLE;
+	const now = new Date();
+	const pendingInvitations = isAdmin
+		? (
+				await prisma.invitation.findMany({
+					where: { contextType: 'organization', contextId: familyId, status: 'pending' },
+					select: { id: true, identifier: true, expiresAt: true },
+					orderBy: { createdAt: 'asc' }
+				})
+			).map((invitation) => ({
+				id: invitation.id,
+				email: invitation.identifier ?? '',
+				expiresAt: invitation.expiresAt,
+				expired: invitation.expiresAt !== null && invitation.expiresAt < now
+			}))
+		: [];
+
 	return {
 		id: family.id,
 		name: family.name,
@@ -464,8 +517,9 @@ export async function familyDetailView(
 		})),
 		viewer: {
 			memberId: viewerMembership.id,
-			isAdmin: viewerMembership.role?.name === FAMILY_ADMIN_ROLE
-		}
+			isAdmin
+		},
+		pendingInvitations
 	};
 }
 
@@ -552,6 +606,30 @@ export async function deleteFamily(event: RequestEvent, familyId: string): Promi
 		// Ya borrada (doble envío, otro dispositivo): el estado deseado se ha
 		// alcanzado, pero se distingue para que la ruta redirija sin ruido.
 		if (isNotFoundError(error)) throw new FamilyGoneError();
+		throw error;
+	}
+}
+
+/**
+ * Cancela una invitación pendiente (issue #102): solo el admin de la familia
+ * (statement `invitation:cancel`, que el hook `invitation/revoke` del plugin
+ * evalúa sobre la familia de la invitación YA resuelta). Queda `cancelled`,
+ * desaparece de la vista de gestión y permite volver a invitar ese email.
+ */
+export async function cancelFamilyInvitation(
+	event: RequestEvent,
+	invitationId: string
+): Promise<void> {
+	try {
+		await auth.api.cancelInvitation({ body: { id: invitationId }, headers: event.request.headers });
+	} catch (error) {
+		// Tanto el 404 (ya no existe) como el 400 «Invitation is {status}» (ya
+		// respondida: aceptada desde otro dispositivo, p. ej.) son «nada que
+		// cancelar» para la UI.
+		if (isNotFoundError(error)) throw new FamilyInvitationGoneError();
+		if (error instanceof APIError && error.status === 'BAD_REQUEST') {
+			throw new FamilyInvitationGoneError();
+		}
 		throw error;
 	}
 }

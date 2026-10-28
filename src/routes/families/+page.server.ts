@@ -15,6 +15,7 @@ import {
 	inviteFamily,
 	listFamilies
 } from '$lib/server/families.js';
+import { FAMILY_INVITATION_EXPIRY_HOURS } from '$lib/server/tenancy.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -42,7 +43,9 @@ export const load: PageServerLoad = async (event) => {
 		// `id` aparte para que superforms sepa a cuál de los dos formularios de
 		// la página pertenece cada respuesta de acción.
 		inviteForm: await superValidate(zod4(inviteFormSchema()), { id: 'invite' }),
-		families: await listFamilies(event)
+		families: await listFamilies(event),
+		// Para el hint del modal de invitar: toda invitación caduca (#102).
+		invitationExpiryHours: FAMILY_INVITATION_EXPIRY_HOURS
 	};
 };
 

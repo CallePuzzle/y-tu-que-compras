@@ -8,6 +8,7 @@ import {
 	ALREADY_FAMILY_MEMBER_MESSAGE,
 	FAMILY_ADMIN_ROLE,
 	FAMILY_ADMIN_STATEMENTS,
+	FAMILY_INVITATION_EXPIRY_HOURS,
 	FAMILY_MEMBER_ROLE,
 	FAMILY_MEMBER_STATEMENTS,
 	FAMILY_MEMBERS_LIMIT_MESSAGE,
@@ -1066,6 +1067,49 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 				sessionOf('admin-1')
 			)
 		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
+	});
+});
+
+describe('caducidad de las invitaciones (#102)', () => {
+	const baseRequest = (): { body: Record<string, unknown> } => ({
+		body: { identifier: 'invitado@example.com', contextType: 'organization', contextId: 'fam-1' }
+	});
+
+	/** Lanza el hook completo de invitar (todas las validaciones en verde). */
+	async function crear(body: Record<string, unknown>) {
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.invitation?.create,
+				familyAdapterMock(),
+				{ body },
+				sessionOf('admin-1')
+			)
+		).resolves.toBeUndefined();
+	}
+
+	it('sin expiresInHours el hook fija el tope de la app en el body', async () => {
+		const request = baseRequest();
+		await crear(request.body);
+
+		// El handler del plugin lee `expiresInHours` del mismo body DESPUÉS de
+		// los hooks: con él, `expiresAt` deja de ser null (antes no caducaban).
+		expect(request.body.expiresInHours).toBe(FAMILY_INVITATION_EXPIRY_HOURS);
+	});
+
+	it('recorta las llamadas directas a la API que piden más horas', async () => {
+		const request = baseRequest();
+		request.body.expiresInHours = 24 * 365;
+		await crear(request.body);
+
+		expect(request.body.expiresInHours).toBe(FAMILY_INVITATION_EXPIRY_HOURS);
+	});
+
+	it('un tope menor pedido por el body se respeta', async () => {
+		const request = baseRequest();
+		request.body.expiresInHours = 1;
+		await crear(request.body);
+
+		expect(request.body.expiresInHours).toBe(1);
 	});
 });
 

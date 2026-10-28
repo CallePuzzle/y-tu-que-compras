@@ -1,10 +1,14 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
+import { formatDateTime } from '$lib/format.js';
 import { m } from '$lib/paraglide/messages.js';
+import { getLocale } from '$lib/paraglide/runtime.js';
 import {
 	FamilyGoneError,
+	FamilyInvitationGoneError,
 	FamilyLastAdminError,
 	FamilyMemberGoneError,
+	cancelFamilyInvitation,
 	deleteFamily,
 	familyDetailView,
 	leaveFamily,
@@ -24,7 +28,18 @@ export const load: PageServerLoad = async (event) => {
 		redirect(302, '/families');
 	}
 
-	return { family };
+	// La caducidad de cada pendiente va ya formateada (issue #102): la locale
+	// activa se resuelve en request, nunca en scope de módulo.
+	const locale = getLocale();
+	return {
+		family: {
+			...family,
+			pendingInvitations: family.pendingInvitations.map((invitation) => ({
+				...invitation,
+				expiresLabel: invitation.expiresAt ? formatDateTime(invitation.expiresAt, locale) : null
+			}))
+		}
+	};
 };
 
 /**
@@ -34,6 +49,15 @@ export const load: PageServerLoad = async (event) => {
 async function memberIdOf(event: RequestEvent): Promise<string | null> {
 	const memberId = (await event.request.formData()).get('miembro');
 	return typeof memberId === 'string' && memberId ? memberId : null;
+}
+
+/**
+ * El id de la invitación que viaja en el formulario de cancelar (input hidden
+ * de cada fila de pendientes). `null` si falta: UI rancia o petición a mano.
+ */
+async function invitationIdOf(event: RequestEvent): Promise<string | null> {
+	const invitationId = (await event.request.formData()).get('invitacion');
+	return typeof invitationId === 'string' && invitationId ? invitationId : null;
 }
 
 /** Traduce los fallos de expulsar/abandonar/promover a mensajes de la UI. */
@@ -97,6 +121,28 @@ export const actions: Actions = {
 			await promoteFamilyMember(event, event.params.familyId, memberId);
 		} catch (error) {
 			return memberActionError(error);
+		}
+
+		return { success: true };
+	},
+
+	// Cancelar una invitación pendiente (issue #102): solo admin (lo evalúa el
+	// hook `invitation/revoke` del plugin sobre la familia de la invitación).
+	// Ya no pendiente (aceptada o cancelada desde otro dispositivo): el estado
+	// deseado se alcanzó y el load revalidado lo muestra sin ruido.
+	cancel: async (event) => {
+		const invitationId = await invitationIdOf(event);
+		if (!invitationId) {
+			return fail(400, { error: m.families_invitation_cancel_error() });
+		}
+
+		try {
+			await cancelFamilyInvitation(event, invitationId);
+		} catch (error) {
+			if (!(error instanceof FamilyInvitationGoneError)) {
+				logger.error({ err: error }, 'Error al cancelar la invitación de la familia');
+				return fail(400, { error: m.families_invitation_cancel_error() });
+			}
 		}
 
 		return { success: true };

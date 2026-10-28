@@ -86,6 +86,12 @@
 	"families_last_admin": "Eres el último administrador: haz admin a otro miembro antes de salir, o borra la familia.",
 	"families_member_gone": "Ese miembro ya no pertenece a la familia.",
 	"families_members_error": "No se ha podido realizar la operación. Inténtalo de nuevo.",
+	"families_invitations_pending": "Invitaciones pendientes",
+	"families_invitation_expires": "El enlace caduca el {date}",
+	"families_invitation_expired": "Caducada: el enlace ya no sirve",
+	"families_invitation_cancel": "Cancelar invitación",
+	"families_invitation_cancel_error": "No se pudo cancelar la invitación. Inténtalo de nuevo más tarde.",
+	"families_invite_expiry_hint": "La invitación caduca en {hours} horas.",
 	"ui_close": "Cerrar",
 	"ui_cancel": "Cancelar",
 

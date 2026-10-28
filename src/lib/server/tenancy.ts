@@ -325,6 +325,16 @@ export const MAX_FAMILY_MEMBERS = 20;
  */
 export const FAMILY_MEMBERS_LIMIT_MESSAGE = `Family members limit reached: max ${MAX_FAMILY_MEMBERS}.`;
 
+/**
+ * Horas que vive cualquier invitación de familia (issue #102). Sin este tope el
+ * plugin guarda `expiresAt = null` y el enlace del correo sirve para siempre:
+ * una invitación a una dirección equivocada sería una puerta abierta perpetua
+ * (y el email podría reenviarse años después). El mismo valor lo pasa
+ * `inviteFamily` en su body y lo fuerza el hook `invitation/create` para las
+ * llamadas directas a la API.
+ */
+export const FAMILY_INVITATION_EXPIRY_HOURS = 72;
+
 /** ¿Es este el error de familia llena que lanza el hook de invitar? */
 export function isFamilyMembersLimitReached(error: unknown): boolean {
 	return error instanceof APIError && error.message === FAMILY_MEMBERS_LIMIT_MESSAGE;
@@ -518,6 +528,24 @@ const requireBelowFamilyMemberLimit: EndpointAuthHook = async ({ ctx, session })
 	if (members.length >= MAX_FAMILY_MEMBERS) {
 		throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
 	}
+};
+
+/**
+ * Toda invitación caduca (issue #102). El plugin solo pone `expiresAt` si el
+ * body trae `expiresInHours` — y si no lo trae, la invitación NO caduca nunca.
+ * El handler lee `expiresInHours` del mismo body DESPUÉS de los hooks, así que
+ * fijarlo aquí cubre también las llamadas directas a la API: las que no lo
+ * traen reciben el tope de la app, y las que traen algo mayor se recortan.
+ */
+const requireInvitationExpiry: EndpointAuthHook = async ({ ctx }) => {
+	// Sin body no hay invitación que caduque (el schema del endpoint lo exige:
+	// el guard cubre solo el tipado).
+	if (!ctx.body) return;
+	const requested = ctx.body.expiresInHours;
+	ctx.body.expiresInHours =
+		typeof requested === 'number' && requested > 0
+			? Math.min(requested, FAMILY_INVITATION_EXPIRY_HOURS)
+			: FAMILY_INVITATION_EXPIRY_HOURS;
 };
 
 // ===========================================================================
@@ -775,11 +803,13 @@ export const tenancyConfig: TenancyConfig = {
 		invitation: {
 			// Flujo de invitar (#60): primero el statement (403 a quien no
 			// administra la familia) y después las validaciones (400), con la
-			// más específica delante.
+			// más específica delante. La caducidad va al final y NO corta: fija
+			// `expiresInHours` en el body que el handler lee después (#102).
 			create: combineHooks(
 				requireFamilyStatement('member:invite', fromBodyContext),
 				requireNotAlreadyFamilyMember,
-				requireBelowFamilyMemberLimit
+				requireBelowFamilyMemberLimit,
+				requireInvitationExpiry
 			),
 			// Flujo de responder (#61): solo el invitado (email de la sesión)
 			// puede aceptar o rechazar; el plugin a su vez valida estado y
