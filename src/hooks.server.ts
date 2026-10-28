@@ -129,9 +129,13 @@ export const handleError: HandleServerError = ({ error, event }) => {
 export const handle: Handle = sequence(
 	handleLogging,
 	handleSecurityHeaders,
+	// Paraglide ANTES del auth (issue #78): mejor-auth corre dentro de su
+	// contexto de request y los correos que dispara (el OTP del login) resuelven
+	// `m.*` con la locale de la petición — cookie del selector o, en la primera
+	// visita, Accept-Language — en vez de caer siempre en la base.
+	handleParaglide,
 	betterAuthHandle(auth, building, { skipAssets: true }),
 	handleAuthGuard,
 	handleFamilyContext,
-	handleUserTrace,
-	handleParaglide
+	handleUserTrace
 );

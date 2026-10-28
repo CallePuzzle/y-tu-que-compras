@@ -19,6 +19,9 @@
 	"ui_avatar_alt": "Avatar de {name}",
 	"ui_sign_out": "Cerrar sesión",
 	"ui_user_not_logged": "Necesitas iniciar sesión para ver este contenido.",
+	"ui_language": "Cambiar idioma",
+	"ui_language_es": "Español",
+	"ui_language_en": "English",
 
 	"form_required": "Obligatorio",
 	"form_optional": "Opcional",
