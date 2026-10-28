@@ -71,6 +71,10 @@ const handleLogging: Handle = async ({ event, resolve }) => {
 
 	const startedAt = performance.now();
 	let status = 500;
+	// Las probes del kubelet (/healthz, /readyz, issue #124) llegan cada pocos
+	// segundos y siempre contestan igual: fuera del log de requests, que si no
+	// es puro ruido (el fallo de readiness lo grita igualmente el propio pod).
+	const quiet = event.url.pathname === '/healthz' || event.url.pathname === '/readyz';
 	try {
 		const response = await resolve(event);
 		status = response.status;
@@ -78,15 +82,17 @@ const handleLogging: Handle = async ({ event, resolve }) => {
 	} finally {
 		// `finally`: también se registra cuando la request acaba en error no
 		// manejado (SvelteKit convierte el rechazo en respuesta de error después).
-		event.locals.log.info(
-			{
-				method: event.request.method,
-				path: event.url.pathname,
-				status,
-				durationMs: Math.round(performance.now() - startedAt)
-			},
-			'request completed'
-		);
+		if (!quiet) {
+			event.locals.log.info(
+				{
+					method: event.request.method,
+					path: event.url.pathname,
+					status,
+					durationMs: Math.round(performance.now() - startedAt)
+				},
+				'request completed'
+			);
+		}
 	}
 };
 

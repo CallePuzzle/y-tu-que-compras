@@ -11,13 +11,17 @@ import { redirect, type Handle } from '@sveltejs/kit';
  * `event.locals.user` relleno.
  */
 
-/** Rutas que no exigen sesión: la página de login y la API de better-auth (el propio flujo de login va sin sesión). */
+/** Rutas que no exigen sesión: la página de login, la API de better-auth (el propio flujo de login va sin sesión), las probes del clúster y lo demás que va sin sesión. */
 export function isPublicPathname(pathname: string): boolean {
 	return (
 		// `/login` exacta y su `__data.json` (`/login/...`), que pide el router en cliente.
 		pathname === '/login' ||
 		pathname.startsWith('/login/') ||
 		pathname.startsWith('/api/auth/') ||
+		// Probes de Kubernetes (issue #124): el kubelet va sin sesión.
+		// `/healthz` es liveness (sin BD); `/readyz`, readiness (`SELECT 1`).
+		pathname === '/healthz' ||
+		pathname === '/readyz' ||
 		// Vista de una invitación por token (issue #61): el token del enlace es
 		// la credencial, y quien llega sin sesión debe poder VER que la
 		// invitación existe (o que ya caducó) antes de crear cuenta. Responderla
