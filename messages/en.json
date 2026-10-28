@@ -124,7 +124,7 @@
 	"schema_items_name_placeholder": "e.g. Whole milk",
 	"schema_items_name_error": "Write an item name (max 100 characters).",
 	"schema_items_quantity_label": "Quantity",
-	"schema_items_quantity_error": "The quantity must be a number greater than zero.",
+	"schema_items_quantity_error": "The quantity must be greater than 0, with up to 3 decimal places and at most 9,999,999.999.",
 	"schema_items_unit_label": "Unit",
 	"schema_items_unit_error": "Pick a unit from the list.",
 	"unit_unit": "pc",
@@ -197,7 +197,7 @@
 	"schema_readd_list_error": "Pick a list from the family.",
 	"schema_readd_mode_error": "Pick what to do with the pantry.",
 	"schema_readd_new_quantity_label": "Quantity left in the pantry",
-	"schema_readd_new_quantity_error": "Write a quantity greater than zero.",
+	"schema_readd_new_quantity_error": "Write a quantity greater than 0, with up to 3 decimal places and at most 9,999,999.999.",
 
 	"routes_invitations": "Invitation",
 	"invitations_title": "Family invitation",

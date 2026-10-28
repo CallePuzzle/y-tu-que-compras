@@ -124,7 +124,7 @@
 	"schema_items_name_placeholder": "p. ej. Leche entera",
 	"schema_items_name_error": "Escribe un nombre de item (máximo 100 caracteres).",
 	"schema_items_quantity_label": "Cantidad",
-	"schema_items_quantity_error": "La cantidad debe ser un número mayor que cero.",
+	"schema_items_quantity_error": "La cantidad debe ser mayor que 0, con hasta 3 decimales y sin pasar de 9.999.999,999.",
 	"schema_items_unit_label": "Unidad",
 	"schema_items_unit_error": "Elige una unidad de la lista.",
 	"unit_unit": "ud",
@@ -197,7 +197,7 @@
 	"schema_readd_list_error": "Elige una lista de la familia.",
 	"schema_readd_mode_error": "Elige qué hacer con la despensa.",
 	"schema_readd_new_quantity_label": "Cantidad que queda en la despensa",
-	"schema_readd_new_quantity_error": "Escribe una cantidad mayor que cero.",
+	"schema_readd_new_quantity_error": "Escribe una cantidad mayor que 0, con hasta 3 decimales y sin pasar de 9.999.999,999.",
 
 	"routes_invitations": "Invitación",
 	"invitations_title": "Invitación a la familia",

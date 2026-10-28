@@ -57,7 +57,10 @@ export const FAMILY_ADMIN_STATEMENTS = [
 
 /**
  * Statements del rol básico: ver la familia, que es justo lo que su único
- * statement guarda (la lectura de la organización). Crecerá con las listas.
+ * statement guarda (la lectura de la organización). Las listas, compras y
+ * despensa NO tienen statements: cualquier miembro de la familia tiene
+ * escritura total sobre ellas (decisión intencionada, issue #111) y las
+ * acciones solo comprueban la pertenencia (`requireActiveFamily`).
  */
 export const FAMILY_MEMBER_STATEMENTS = ['organization:get'] as const;
 
