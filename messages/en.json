@@ -4,6 +4,7 @@
 	"app_brand": "What are you buying?",
 	"app_tagline": "Manage your supermarket and market shopping",
 	"app_footer": "What are you buying? Your shopping list, for the supermarket and the market.",
+	"app_unexpected_error": "An unexpected error occurred (id: {id})",
 
 	"routes_home": "Home",
 	"routes_login": "Sign in",

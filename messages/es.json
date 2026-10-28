@@ -4,6 +4,7 @@
 	"app_brand": "¿Y tú qué compras?",
 	"app_tagline": "Gestiona tus compras del super y del mercado",
 	"app_footer": "¿Y tú qué compras? Tu lista de la compra, del super y del mercado.",
+	"app_unexpected_error": "Ha ocurrido un error inesperado (id: {id})",
 
 	"routes_home": "Inicio",
 	"routes_login": "Acceder",

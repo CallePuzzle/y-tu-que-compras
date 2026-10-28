@@ -8,8 +8,9 @@ import { auth } from '$lib/server/auth';
 import { handleAuthGuard } from '$lib/server/auth-guard';
 import { handleFamilyContext } from '$lib/server/family-context.js';
 import logger from '$lib/server/logger';
-import { getTextDirection } from '$lib/paraglide/runtime.js';
+import { extractLocaleFromRequest, getTextDirection, type Locale } from '$lib/paraglide/runtime.js';
 import { paraglideMiddleware } from '$lib/paraglide/server.js';
+import { m } from '$lib/paraglide/messages.js';
 
 // La CSP la genera SvelteKit (`kit.csp` en svelte.config.js); aquí va el resto.
 // `X-Frame-Options` duplica `frame-ancestors 'none'` para navegadores antiguos.
@@ -103,7 +104,18 @@ export const handleError: HandleServerError = ({ error, event }) => {
 		},
 		'unhandled error'
 	);
-	return { message: `Ha ocurrido un error inesperado (id: ${errorId})` };
+	// Mensaje localizado (issue #34). El handleError corre FUERA del contexto de
+	// request de Paraglide (SvelteKit lo invoca en su propio catch, por encima
+	// de la cadena de handles), así que la locale no puede venir de `getLocale()`:
+	// se lee de la request (cookie de Paraglide, o Accept-Language cuando la
+	// estrategia la incluya). Con cualquier fallo de lectura, la base.
+	let locale: Locale | undefined;
+	try {
+		locale = extractLocaleFromRequest(event.request);
+	} catch {
+		// Sin locale legible: `m.*` cae en la base («es»), como antes.
+	}
+	return { message: m.app_unexpected_error({ id: errorId }, { locale }) };
 };
 
 // betterAuthHandle resuelve la sesión una vez por request (event.locals) y
