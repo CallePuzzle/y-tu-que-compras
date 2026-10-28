@@ -173,6 +173,99 @@ test('los kilos bajan a cuartos hasta agotarse (#73)', async ({ page }) => {
 	await expect(leche.getByText('0 kg')).toBeVisible();
 });
 
+// El valor que pinta el badge MIENTRAS el POST viaja es el optimista, y el
+// servidor no lo corrije hasta que responde: para poder observarlo, las dos
+// pruebas siguientes retrasan la respuesta de `?/adjust` interceptándola y
+// ASSERTIONES con timeout acotado — uno generoso esperaría la corrección del
+// servidor y daría por bueno cualquier valor.
+test('el contador optimista aplica el paso de la unidad, kg y g (#113)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 0.5,
+		unit: 'kilogram'
+	});
+	await createPantryItem({ familyId: family.id, name: 'Sal fina', quantity: 500, unit: 'gram' });
+	await seedSession(page, user);
+
+	await page.route(/\/pantry\?\/adjust/, async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 2_500));
+		await route.continue();
+	});
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	// kg: 0,5 − 0,25 = 0,25 en el MISMO instante del click, antes de que el
+	// servidor (2,5 s) pueda decir nada. El bug pintaba 0 (0,5 − 1 recortado):
+	// el producto saltaba a «Agotados» y desaparecía el botón de consumir,
+	// aunque el servidor fuera a guardar 0,25.
+	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
+	await expect(leche.getByText('0.25 kg')).toBeVisible({ timeout: 1_000 });
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toHaveCount(0, { timeout: 1_000 });
+	await expect(leche.getByRole('button', { name: 'Consumir 0.25 kg' })).toBeVisible({
+		timeout: 1_000
+	});
+
+	// g: 500 − 100 = 400, no 499 (el ±1 genérico del bug).
+	const sal = page.locator('li', { hasText: 'Sal fina' });
+	await sal.getByRole('button', { name: 'Consumir 100 g' }).click();
+	await expect(sal.getByText('400 g')).toBeVisible({ timeout: 1_000 });
+
+	// Llegan las respuestas: el servidor confirma exactamente lo pintado.
+	await page.unroute(/\/pantry\?\/adjust/);
+	await expect(leche.getByText('0.25 kg')).toBeVisible();
+	await expect(sal.getByText('400 g')).toBeVisible();
+});
+
+test('los clics en vuelo no pierden su delta al resolver la primera petición (#113)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 0.5,
+		unit: 'kilogram'
+	});
+	await seedSession(page, user);
+
+	// La primera petición resuelve enseguida; la segunda, mucho después: hay
+	// una ventana ancha en la que UNA ha resuelto y la OTRA sigue en vuelo.
+	let enCurso = 0;
+	await page.route(/\/pantry\?\/adjust/, async (route) => {
+		enCurso += 1;
+		await new Promise((resolve) => setTimeout(resolve, enCurso === 1 ? 400 : 3_000));
+		await route.continue();
+	});
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	// Dos devoluciones rápidas: el optimista acumula 0,5 + 0,25 + 0,25 = 1 kg.
+	await leche.getByRole('button', { name: 'Devolver 0.25 kg' }).click();
+	await leche.getByRole('button', { name: 'Devolver 0.25 kg' }).click();
+	await expect(leche.getByText('1 kg')).toBeVisible({ timeout: 1_000 });
+
+	// ~1 s después de los clicks la primera petición ya ha resuelto (el
+	// servidor va por 0,75 y su load ha llegado) y la segunda sigue en vuelo:
+	// al retirar SOLO su delta, el badge se mantiene en 1 kg. El bug borraba
+	// la entrada entera y el badge caía a 0,75 para luego volver a 1. El
+	// timeout corto evita que la aserción espere a la segunda respuesta.
+	await page.waitForTimeout(1_000);
+	await expect(leche.getByText('1 kg')).toBeVisible({ timeout: 250 });
+	await expect(leche.getByText('0.75 kg')).toHaveCount(0, { timeout: 250 });
+
+	// Resuelve la segunda: el servidor confirma el 1 kg final.
+	await page.waitForTimeout(2_500);
+	await expect(leche.getByText('1 kg')).toBeVisible();
+});
+
 test('devolver (+) repone el paso consumido por error (#73)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });

@@ -12,6 +12,7 @@
 	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
 	import { UNITS, itemSchema, type ItemData, type Unit } from '$lib/schemas/item.js';
 	import { purchaseSchema } from '$lib/schemas/purchase.js';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
@@ -200,7 +201,11 @@
 	// (id -> valor): la UI lo pinta ENCIMA de `item.purchased` y lo retira
 	// cuando el load trae la verdad del servidor — o en cuanto falla la
 	// petición, que es la reversión prometida en el checklist.
-	const compras = $state(new Map<string, boolean>());
+	//
+	// SvelteMap y no `$state(new Map())`: el deep-proxy de `$state` no cubre
+	// los Map (ver pantry/+page.svelte), y sin él el checkbox no repintaba el
+	// optimista hasta que llegaba el servidor.
+	const compras = new SvelteMap<string, boolean>();
 	let falloCompra: string | null = $state(null);
 
 	/** El comprado mostrado: el optimista si lo hay; si no, el del servidor. */
