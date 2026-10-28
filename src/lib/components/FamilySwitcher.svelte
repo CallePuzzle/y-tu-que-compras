@@ -4,9 +4,8 @@
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Users from '@lucide/svelte/icons/users';
-	import { Link } from '@callepuzzle/svelte-ui';
+	import { DropdownMenu, Link } from '@callepuzzle/svelte-ui';
 	import { m } from '$lib/paraglide/messages.js';
-	import DropdownMenu from './DropdownMenu.svelte';
 
 	// Selector de familia activa (issue #64). Se renderiza en la cabecera y en
 	// el drawer del layout con las familias que el load del layout trae del
@@ -65,7 +64,7 @@
 		class="btn btn-primary {fullWidth ? 'w-full' : ''}"
 	/>
 {:else}
-	<!-- Menú con apertura por estado, no por foco (#116): ver `DropdownMenu`. -->
+	<!-- Menú con apertura por estado, no por foco (#116): ver `DropdownMenu` de svelte-ui. -->
 	<DropdownMenu
 		label={m.families_switch_label()}
 		triggerClass="btn btn-ghost {fullWidth ? 'w-full' : ''}"

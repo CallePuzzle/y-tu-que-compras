@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Check from '@lucide/svelte/icons/check';
 	import Globe from '@lucide/svelte/icons/globe';
+	import { DropdownMenu } from '@callepuzzle/svelte-ui';
 	import { m } from '$lib/paraglide/messages.js';
-	import DropdownMenu from './DropdownMenu.svelte';
 	import { getLocale, locales, setLocale, type Locale } from '$lib/paraglide/runtime.js';
 
 	// Selector de idioma (issue #78). En la cabecera (`navbar-end` del layout),
@@ -32,7 +32,7 @@
 	};
 </script>
 
-<!-- Menú con apertura por estado, no por foco (#116): ver `DropdownMenu`.
+<!-- Menú con apertura por estado, no por foco (#116): ver `DropdownMenu` de svelte-ui.
      Elegir cierra el menú, aunque `setLocale` recargue la página enseguida. -->
 <DropdownMenu
 	label={m.ui_language()}

@@ -98,12 +98,16 @@
 								<Link href="/login" label={m.routes_login()} class="btn btn-primary" />
 							{/snippet}
 
+							<!-- Marcado de menú (issue #116, svelte-ui 1.1.0): `NavBarEnd`
+							     sigue el patrón «menu button», así que sus entradas van en un
+							     `<li role="none">` con `role="menuitem"`. -->
 							{#snippet menuExtra()}
-								<li>
+								<li role="none">
 									<ButtonSignOut
 										{authClient}
 										redirectTo={null}
 										{onSignOut}
+										role="menuitem"
 										strings={{ signOut: m.ui_sign_out() }}
 									/>
 								</li>

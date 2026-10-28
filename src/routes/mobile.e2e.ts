@@ -148,3 +148,31 @@ test('el idioma inicial sale de Accept-Language, el selector lo cambia y persist
 	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
 	await expect(page.getByRole('heading', { name: '¿Y tú qué compras?' })).toBeVisible();
 });
+
+test('el menú de usuario abre con un toque y cierra sesión', async ({ page }) => {
+	const user = await createUser();
+	await createFamily({ owner: user });
+	await seedSession(page, user);
+
+	await page.goto('/lists');
+	await waitForHydration(page);
+
+	// Issue #116: el menú de usuario lo pinta `NavBarEnd` de svelte-ui, que
+	// abría por `:focus-within`; en WebKit (proyecto `webkit`, un iPhone) un
+	// toque no da foco al botón y el menú no llegaba a abrir. Desde svelte-ui
+	// 1.1.0 abre por estado.
+	const disparador = page.getByRole('button', { name: 'User menu' });
+	await disparador.click();
+	await expect(disparador).toHaveAttribute('aria-expanded', 'true');
+	const menu = page.getByRole('menu', { name: 'User menu' });
+	await expect(menu).toBeVisible();
+
+	// Tocar fuera lo cierra.
+	await page.getByRole('heading', { name: 'Your lists' }).click();
+	await expect(menu).toBeHidden();
+
+	// Y la entrada de cerrar sesión funciona desde el menú: el guard manda a /login.
+	await disparador.click();
+	await page.getByRole('menuitem', { name: 'Sign out' }).click();
+	await expect(page).toHaveURL(/\/login/);
+});
