@@ -204,6 +204,82 @@ test('al volver a la pestaña: lo tecleado NO se machaca y el refresco llega al 
 	await expect(page.locator('#add-name')).toHaveValue('');
 });
 
+test('lo escrito en el alta rápida no se pierde al marcar un comprado (#114)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: lista.id, name: 'Leche', order: 0 });
+	await createItem({ listId: lista.id, name: 'Pan', order: 1 });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// Alta rápida a medias y, mientras está en vuelo, una acción AJENA (el
+	// toggle de comprado): su revalidación no debe machacar el formulario.
+	await page.locator('#add-name').fill('Huevos');
+	await page.getByRole('checkbox', { name: 'Marcar como comprado' }).first().click();
+
+	// El toggle SÍ se aplica (la leche baja a «Comprados»)…
+	await expect(page.locator('li', { hasText: 'Leche' })).toHaveClass(/opacity-60/);
+	// …y «Huevos» sigue en su sitio: lo escrito solo se borra al enviarlo.
+	await expect(page.locator('#add-name')).toHaveValue('Huevos');
+});
+
+test('lo escrito en el alta rápida no se pierde al editar otro item (#114)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	const item = await createItem({ listId: lista.id, name: 'Leche', quantity: 1, order: 0 });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	await page.locator('#add-name').fill('Huevos');
+	await page
+		.locator('li', { hasText: 'Leche' })
+		.getByRole('button', { name: 'Editar item' })
+		.click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.locator('#edit-quantity').fill('3');
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	// La edición SÍ se aplica (el aviso de éxito y la fila actualizada)…
+	await expect(page.getByRole('status')).toContainText('Item actualizado.');
+	await expect(page.locator('li', { hasText: 'Leche' }).getByText('3 ud')).toBeVisible();
+	// …y lo escrito sigue.
+	await expect(page.locator('#add-name')).toHaveValue('Huevos');
+	// `quantity` es Decimal en la BD: se compara como número.
+	const guardado = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
+	expect(Number(guardado.quantity)).toBe(3);
+});
+
+test('la fila del alta rápida no desborda a 360px (#114)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: lista.id, name: 'Leche', order: 0 });
+	await seedSession(page, user);
+
+	await page.setViewportSize({ width: 360, height: 740 });
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// A 360px (móvil pequeño) la fila cabía «justa» y se apretaba: con
+	// flex-wrap el botón baja a su propia línea y sigue dentro del viewport.
+	const boton = page.getByRole('button', { name: 'Añadir' }).last();
+	const caja = await boton.boundingBox();
+	expect(caja).not.toBeNull();
+	expect(caja!.x + caja!.width).toBeLessThanOrEqual(360);
+	// Y nada desborda la página.
+	const ancho = await page.evaluate(() => ({
+		scroll: document.documentElement.scrollWidth,
+		client: document.documentElement.clientWidth
+	}));
+	expect(ancho.scroll).toBeLessThanOrEqual(ancho.client);
+});
+
 test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });

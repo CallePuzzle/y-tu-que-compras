@@ -77,8 +77,9 @@
 				// `onResult` superforms no aplica el resultado.
 				const data = result.data as { form?: { message?: string } } | undefined;
 				exito = data?.form?.message ?? null;
+				// Sin `invalidateAll()` a mano: superforms ya revalida el load
+				// (`invalidateAll: true` por defecto) y otro más era un 2.º load.
 				listasModal?.close();
-				void invalidateAll();
 			} else if (result.type === 'failure') {
 				exito = null;
 			}

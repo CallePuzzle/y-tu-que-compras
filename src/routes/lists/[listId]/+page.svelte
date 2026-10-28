@@ -69,12 +69,19 @@
 
 	// ---- Alta rápida (formulario inline, siempre visible, checklist #68) ----
 	// Con `invalidateAll: 'pessimistic'`, tras crear superforms espera al load
-	// y rellena el formulario con el VACÍO que trae: queda listo para
-	// encadenar otra alta y el item nuevo aparece en la lista.
+	// y el `resetForm` por defecto lo deja VACÍO: queda listo para encadenar
+	// otra alta y el item nuevo aparece en la lista.
+	//
+	// `applyAction: 'never'` (#114): sin él, CUALQUIER recarga de los datos de
+	// página (el toggle de comprado, editar, borrar, finalizar, volver a la
+	// pestaña) rehace el formulario con el `form` vacío del load y machaca lo
+	// que haya a medias. Así solo se actualiza con el resultado de SU acción:
+	// lo escrito solo se borra al enviarlo.
 	// svelte-ignore state_referenced_locally
 	const addForm = superForm(data.form, {
 		validators: zod4Client(schema),
-		invalidateAll: 'pessimistic'
+		invalidateAll: 'pessimistic',
+		applyAction: 'never'
 	});
 	const {
 		form: addFormData,
@@ -247,17 +254,15 @@
 	// barato y suficiente es revalidar al volver a mirar. El efecto limpia su
 	// listener cuando la página se destruye.
 	//
-	// PERO superforms rehace los formularios con el `form`/`editForm` que trae
-	// el load en cuanto se actualizan los datos de página: revalidar ahora
-	// mismo MACHACARÍA lo que el usuario tenga a medias. El refresco espera a
-	// una vuelta sin ningún `<dialog>` abierto y con el alta rápida intacta.
-	// Ojo con `isTainted()` (y no el store `tainted`, que es un OBJETO —
-	// `{}` incluido, truthy siempre que se haya tecleado algo): es la
-	// consulta oficial de superforms, que mira si queda algín campo sucio.
+	// PERO superforms rehace los formularios de los modales con el
+	// `editForm`/`finalizeForm` que trae el load en cuanto se actualizan los
+	// datos de página: revalidar ahora mismo MACHACARÍA lo que el usuario tenga
+	// a medias. El refresco espera a una vuelta sin ningún `<dialog>` abierto
+	// (el alta rápida ya no se rehace con el load: ver `applyAction` arriba).
 	$effect(() => {
 		function alVolver() {
 			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]') || addForm.isTainted()) return;
+			if (document.querySelector('dialog[open]')) return;
 			void invalidateAll();
 		}
 		document.addEventListener('visibilitychange', alVolver);
@@ -330,7 +335,9 @@
 			{/if}
 		</div>
 
-		<div class="flex items-end gap-2">
+		<!-- `flex-wrap` (#114): a 360px los tres no caben en una línea y el
+		     botón baja a la suya en vez de desbordar. -->
+		<div class="flex flex-wrap items-end gap-2">
 			<div class="flex flex-col gap-1">
 				<label class="fieldset-label" for="add-quantity">{m.schema_items_quantity_label()}</label>
 				<input

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
@@ -48,11 +47,11 @@
 		validators: zod4Client(schema),
 		onResult({ result }) {
 			if (result.type === 'success') {
-				// La familia ya existe: el load revalidado la trae a la lista y el
+				// La familia ya existe: el load que revalida superforms (por
+				// defecto, sin `invalidateAll()` a mano) la trae a la lista y el
 				// aviso de éxito queda en la página, no dentro del modal cerrado.
 				exito = m.families_success();
 				modal?.close();
-				void invalidateAll();
 			} else if (result.type === 'failure') {
 				exito = null;
 			}
