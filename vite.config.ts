@@ -8,14 +8,9 @@ export default defineConfig({
 	plugins: [
 		paraglideVitePlugin({
 			project: './project.inlang',
-			outdir: './src/lib/paraglide',
-			// Estrategia de detección (issue #78): la cookie manda (persistencia de
-			// la elección del selector); sin cookie, la inicial sale de
-			// `Accept-Language` (`preferredLanguage`); `globalVariable` mantiene el
-			// override en caliente del runtime en cliente; la base, último recurso.
-			// Ha de coincidir con el `--strategy` del postinstall: el CLI no lee
-			// esta configuración del plugin de Vite.
-			strategy: ['cookie', 'globalVariable', 'preferredLanguage', 'baseLocale']
+			// Estrategia y cookie: en `project.inlang/paraglide.config.js`, la misma
+			// configuración que lee el CLI del postinstall.
+			outdir: './src/lib/paraglide'
 		}),
 		tailwindcss(),
 		sveltekit()

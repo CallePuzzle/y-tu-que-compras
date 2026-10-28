@@ -6,6 +6,7 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { building, dev } from '$app/environment';
 import { getRequestEvent } from '$app/server';
 import { env } from '$env/dynamic/private';
+import { extractLocaleFromRequest } from '$lib/paraglide/runtime.js';
 
 import logger from '$lib/server/logger';
 import { sendOtpEmail } from '$lib/server/emails';
@@ -20,7 +21,14 @@ const sendVerificationOtp: SendVerificationOtp = async ({ email, otp, type }) =>
 		return;
 	}
 
-	await sendOtpEmail({ to: email, otp });
+	// El handle de Paraglide va detrás de better-auth (`hooks.server.ts`), así
+	// que aquí no hay contexto de locale: se resuelve de la request con la
+	// misma estrategia (cookie del selector, Accept-Language, base).
+	await sendOtpEmail({
+		to: email,
+		otp,
+		locale: extractLocaleFromRequest(getRequestEvent().request)
+	});
 };
 
 // better-auth no ve el .env vía process.env en este setup (bun no lo inyecta en

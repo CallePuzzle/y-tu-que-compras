@@ -12,6 +12,7 @@ vi.mock('$app/navigation', async (importOriginal) => ({
 
 import { render } from 'vitest-browser-svelte';
 import FamilySwitcher from './FamilySwitcher.svelte';
+import { firstOf } from './test-utils.js';
 
 const families = [
 	{ id: 'f1', name: 'Familia García' },
@@ -19,11 +20,6 @@ const families = [
 ];
 
 const activa = { id: 'f1', name: 'Familia García' };
-
-/** Primer elemento que resuelve el locator, sin lanzar si no hay ninguno. */
-function firstOf(locator: { elements(): Element[] }): Element | null {
-	return locator.elements()[0] ?? null;
-}
 
 beforeEach(() => {
 	invalidateAll.mockClear();
