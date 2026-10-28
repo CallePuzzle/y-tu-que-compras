@@ -50,7 +50,7 @@ export const load: PageServerLoad = async (event) => {
  * dos lecturas lanzan «Body already used» y la acción entera cae con un 500.
  */
 function listIdOf(data: FormData): string | null {
-	const id = data.get('lista');
+	const id = data.get('listId');
 	return typeof id === 'string' && id ? id : null;
 }
 

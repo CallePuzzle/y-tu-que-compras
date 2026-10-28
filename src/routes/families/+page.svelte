@@ -69,7 +69,7 @@
 
 	// Invitar por email (issue #60): un formulario y una modal compartidos por
 	// todas las filas; cada fila admin la abre con su familia en el estado. La
-	// familia viaja en la query de la acción (`?/invite&familia=<id>`), porque
+	// familia viaja en la query de la acción (`?/invite&familyId=<id>`), porque
 	// el formulario solo pide el email (el rol de entrada es siempre `member`).
 	const inviteSchema = inviteFamilySchema({
 		emailError: m.schema_families_email_error(),
@@ -186,7 +186,7 @@
 
 			<form
 				method="POST"
-				action={`?/invite&familia=${familiaInvitada?.id ?? ''}`}
+				action={`?/invite&familyId=${familiaInvitada?.id ?? ''}`}
 				use:enhanceInvite
 				class="mt-4 flex flex-col gap-4"
 			>

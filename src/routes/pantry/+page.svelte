@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
@@ -11,6 +10,9 @@
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
 	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
+	import { unitLabels } from '$lib/units.js';
+	import { textoError } from '$lib/forms.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
 	import { readdSchema } from '$lib/schemas/pantry.js';
@@ -25,27 +27,8 @@
 	/** Una fila de despensa (la trae el load). */
 	type PantryRow = PageProps['data']['items'][number];
 
-	/** Une el formato de error de superforms (string o lista) a texto plano. */
-	function textoError(error: string | string[] | undefined): string | undefined {
-		if (!error) return undefined;
-		return Array.isArray(error) ? error.join(' ') : error;
-	}
-
-	/**
-	 * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal
-	 * cual (son identificadores estables en inglés), los traduce Paraglide.
-	 * El mapa se construye EN RENDER, no en scope de módulo (regla i18n).
-	 */
-	const UNIT_LABEL: Record<Unit, string> = {
-		unit: m.unit_unit(),
-		kilogram: m.unit_kilogram(),
-		gram: m.unit_gram(),
-		liter: m.unit_liter(),
-		milliliter: m.unit_milliliter(),
-		package: m.unit_package(),
-		can: m.unit_can(),
-		dozen: m.unit_dozen()
-	};
+	// Etiquetas traducidas de las unidades (en render: regla i18n).
+	const UNIT_LABEL = unitLabels();
 
 	// ---- Consumir / devolver (checklist #73): stepper −/+ por fila con
 	// actualización OPTIMISTA, la misma técnica del toggle de comprado. ----
@@ -202,23 +185,11 @@
 		readdModal?.showModal();
 	}
 
-	// Refresco al volver a la pestaña: la despensa la mueven las compras, los
-	// consumos y los re-añadidos de CUALQUIER miembro y la v1 no tiene tiempo
-	// real, así que lo barato y suficiente es revalidar al volver a mirar — el
-	// criterio «actualizada tras cada acción» de la #44. PERO el modal de
-	// re-añadir lleva su formulario de superforms, que el load reharía con lo
-	// que traiga: el refresco espera a una vuelta sin ningún `<dialog>`
-	// abierto y con el formulario intacto (`isTainted`), igual que en la
-	// vista de lista.
-	$effect(() => {
-		function alVolver() {
-			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]') || readdForm.isTainted()) return;
-			void invalidateAll();
-		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
-	});
+	// Refresco al volver a la pestaña (ver `useRefetchOnVisible`): la despensa
+	// la mueven compras, consumos y re-añadidos de cualquier miembro — el
+	// criterio «actualizada tras cada acción» de la #44 —, y no con el
+	// formulario de re-añadir a medias.
+	useRefetchOnVisible(() => readdForm.isTainted());
 
 	/** La etiqueta del botón lleva el paso exacto: «Consumir 0,25 kg». */
 	function etiquetaPaso(

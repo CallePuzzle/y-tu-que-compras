@@ -3,27 +3,14 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { unitLabels } from '$lib/units.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
-	import type { Unit } from '$lib/schemas/item.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	/**
-	 * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal
-	 * cual (son identificadores estables en inglés), los traduce Paraglide.
-	 * El mapa se construye EN RENDER, no en scope de módulo (regla i18n).
-	 */
-	const UNIT_LABEL: Record<Unit, string> = {
-		unit: m.unit_unit(),
-		kilogram: m.unit_kilogram(),
-		gram: m.unit_gram(),
-		liter: m.unit_liter(),
-		milliliter: m.unit_milliliter(),
-		package: m.unit_package(),
-		can: m.unit_can(),
-		dozen: m.unit_dozen()
-	};
+	// Etiquetas traducidas de las unidades (en render: regla i18n).
+	const UNIT_LABEL = unitLabels();
 </script>
 
 <svelte:head>

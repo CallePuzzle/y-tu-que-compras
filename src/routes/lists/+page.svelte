@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
-	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
@@ -10,6 +8,9 @@
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { m } from '$lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
+	import { textoError } from '$lib/forms.js';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import {
 		COLOR_CHIP,
 		ICONS,
@@ -19,7 +20,6 @@
 		type ListIcon
 	} from '$lib/list-visuals.js';
 	import { LIST_COLORS, listSchema, type ListData } from '$lib/schemas/list.js';
-	import type { SubmitFunction } from '@sveltejs/kit';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';
@@ -28,12 +28,6 @@
 
 	/** Una fila de la vista de listas (la trae el load). */
 	type ListRow = PageProps['data']['lists'][number];
-
-	/** Une el formato de error de superforms (string o lista) a texto plano. */
-	function textoError(error: string | string[] | undefined): string | undefined {
-		if (!error) return undefined;
-		return Array.isArray(error) ? error.join(' ') : error;
-	}
 
 	// Modal compartido de crear/editar (un solo formulario, como la invitación
 	// de /families): `undefined` = crear, una fila = editar.
@@ -45,10 +39,9 @@
 	// cerrarlos cuando la operación sale bien (el componente exporta `showModal`
 	// y `close`).
 	let listasModal: { showModal(): void; close(): void } | undefined = $state();
-	let borrarModal: { showModal(): void; close(): void } | undefined = $state();
 
 	// Aviso de éxito FUERA de los modales; el de error se enseña dentro, junto
-	// al formulario, con `$message` (crear/editar) o `borrarError` (borrar).
+	// al formulario, con `$message` (crear/editar) o en el `ConfirmModal` (borrar).
 	let exito: string | null = $state(null);
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
@@ -120,57 +113,18 @@
 		listasModal?.showModal();
 	}
 
-	// Borrar con confirmación (checklist #66): una modal compartida; cada card
-	// fija a quién se borra antes de abrirla. Mismo trato que expulsar en
-	// /families: el fallo se queda dentro del modal, el éxito lo cierra.
-	//
-	// Sin `update()` en fallo (#115): aplicaría `form.error` y el error saldría
-	// también en la alerta de página (la de sin JS), y seguiría tras cerrar.
-	// `borrando` deshabilita el botón mientras la petición está en vuelo: un
-	// doble toque mandaría un 2.º POST que respondería «ya no existe».
-	let borrarError: string | null = $state(null);
-	let borrando = $state(false);
-
-	const onBorrarResult: SubmitFunction = ({ cancel }) => {
-		if (borrando) return cancel();
-		borrando = true;
-		return async ({ result, update }) => {
-			if (result.type === 'failure') {
-				const failure = result.data as { error?: string } | undefined;
-				borrarError = failure?.error ?? m.lists_error();
-			} else {
-				borrarError = null;
-				exito = m.lists_deleted();
-				borrarModal?.close();
-				await update();
-			}
-			borrando = false;
-		};
-	};
+	// Borrar con confirmación (checklist #66): un `ConfirmModal` compartido;
+	// cada card fija qué lista se borra antes de abrirlo.
+	let borrarModal: ConfirmModal | undefined = $state();
 
 	function abrirBorrado(lista: ListRow) {
-		borrarError = null;
 		listaBorrada = lista;
 		borrarModal?.showModal();
 	}
 
-	// Refresco al volver a la pestaña (checklist #69): varios miembros pueden
-	// estar editando las listas (items marcados, altas y borrados) y la v1 no
-	// tiene tiempo real; al volver a mirar se revalidan los contadores.
-	//
-	// PERO superforms rehace el formulario del modal con el `form` que trae el
-	// load en cuanto se actualizan los datos de página: revalidar con un modal
-	// abierto MACHACARÍA lo tecleado. El refresco espera a una vuelta sin
-	// ningún `<dialog>` abierto.
-	$effect(() => {
-		function alVolver() {
-			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]')) return;
-			void invalidateAll();
-		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
-	});
+	// Refresco al volver a la pestaña: los contadores los mueven las altas,
+	// compras y borrados de cualquier miembro (ver `useRefetchOnVisible`).
+	useRefetchOnVisible();
 </script>
 
 <svelte:head>
@@ -281,7 +235,7 @@
 	>
 		<!-- El id de la lista editada viaja con el formulario; crear no lo lleva. -->
 		{#if listaEditada}
-			<input type="hidden" name="lista" value={listaEditada.id} />
+			<input type="hidden" name="listId" value={listaEditada.id} />
 		{/if}
 
 		<FormFields
@@ -356,36 +310,13 @@
 
 <!-- Borrar (checklist #66): una modal compartida; cada botón de la card fija
      a qué lista se borra antes de abrirla. -->
-<Modal
+<ConfirmModal
 	bind:this={borrarModal}
-	type="X"
-	showButton={false}
-	boxClass="modal-box max-w-md"
-	strings={{ close: m.ui_close() }}
->
-	<h2 class="text-lg font-bold">{m.lists_delete_title({ name: listaBorrada?.name ?? '' })}</h2>
-	<p class="mt-1 text-sm opacity-70">{m.lists_delete_description()}</p>
-
-	{#if borrarError}
-		<div class="alert alert-error mt-3 text-sm" role="alert">
-			{borrarError}
-		</div>
-	{/if}
-
-	<!-- El borrado no lleva schema de superforms (solo el id oculto), así que
-	     va con el `enhance` del kit, como en la gestión de miembros. -->
-	<form
-		method="POST"
-		action="?/delete"
-		use:kitEnhance={onBorrarResult}
-		class="mt-4 flex justify-end"
-	>
-		<input type="hidden" name="lista" value={listaBorrada?.id ?? ''} />
-		<button type="submit" class="btn btn-error" disabled={borrando}>
-			{#if borrando}
-				<span class="loading loading-spinner"></span>
-			{/if}
-			{m.lists_delete_confirm()}
-		</button>
-	</form>
-</Modal>
+	title={m.lists_delete_title({ name: listaBorrada?.name ?? '' })}
+	description={m.lists_delete_description()}
+	confirmLabel={m.lists_delete_confirm()}
+	action="?/delete"
+	fields={{ listId: listaBorrada?.id ?? '' }}
+	errorFallback={m.lists_error()}
+	onSuccess={() => (exito = m.lists_deleted())}
+/>

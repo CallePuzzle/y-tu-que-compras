@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
@@ -10,9 +9,13 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
+	import { unitLabels } from '$lib/units.js';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import { textoError } from '$lib/forms.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
-	import { UNITS, itemSchema, type ItemData, type Unit } from '$lib/schemas/item.js';
+	import { UNITS, itemSchema, type ItemData } from '$lib/schemas/item.js';
 	import { purchaseSchema } from '$lib/schemas/purchase.js';
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -25,27 +28,8 @@
 	/** Una fila de items (la trae el load). */
 	type ItemRow = PageProps['data']['items'][number];
 
-	/** Une el formato de error de superforms (string o lista) a texto plano. */
-	function textoError(error: string | string[] | undefined): string | undefined {
-		if (!error) return undefined;
-		return Array.isArray(error) ? error.join(' ') : error;
-	}
-
-	/**
-	 * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal
-	 * cual (son identificadores estables en inglés), los traduce Paraglide.
-	 * El mapa se construye EN RENDER, no en scope de módulo (regla i18n).
-	 */
-	const UNIT_LABEL: Record<Unit, string> = {
-		unit: m.unit_unit(),
-		kilogram: m.unit_kilogram(),
-		gram: m.unit_gram(),
-		liter: m.unit_liter(),
-		milliliter: m.unit_milliliter(),
-		package: m.unit_package(),
-		can: m.unit_can(),
-		dozen: m.unit_dozen()
-	};
+	// Etiquetas traducidas de las unidades (en render: regla i18n).
+	const UNIT_LABEL = unitLabels();
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
 	// la librería). Ojo: `superForm` no soporta cambiar el schema, así que se
@@ -132,34 +116,12 @@
 		editadaModal?.showModal();
 	}
 
-	// ---- Borrar (checklist #68): confirmación en una modal compartida, igual
-	// que en /lists: el fallo se queda dentro del modal, el éxito lo cierra. ----
+	// ---- Borrar (checklist #68): confirmación en un `ConfirmModal` compartido,
+	// igual que en /lists: el fallo se queda dentro, el éxito lo cierra. ----
 	let itemBorrado: ItemRow | undefined = $state();
-	let borrarModal: { showModal(): void; close(): void } | undefined = $state();
-	// Sin `update()` en fallo y con el botón deshabilitado en vuelo (#115),
-	// igual que en /lists.
-	let borrarError: string | null = $state(null);
-	let borrando = $state(false);
-
-	const onBorrarResult: SubmitFunction = ({ cancel }) => {
-		if (borrando) return cancel();
-		borrando = true;
-		return async ({ result, update }) => {
-			if (result.type === 'failure') {
-				const failure = result.data as { error?: string } | undefined;
-				borrarError = failure?.error ?? m.items_error();
-			} else {
-				borrarError = null;
-				exito = m.items_deleted();
-				borrarModal?.close();
-				await update();
-			}
-			borrando = false;
-		};
-	};
+	let borrarModal: ConfirmModal | undefined = $state();
 
 	function abrirBorrado(item: ItemRow) {
-		borrarError = null;
 		itemBorrado = item;
 		borrarModal?.showModal();
 	}
@@ -257,25 +219,9 @@
 			};
 	}
 
-	// Refresco al volver a la pestaña (checklist #69): varios miembros pueden
-	// estar editando la misma lista y la v1 no tiene tiempo real, así que lo
-	// barato y suficiente es revalidar al volver a mirar. El efecto limpia su
-	// listener cuando la página se destruye.
-	//
-	// PERO superforms rehace los formularios de los modales con el
-	// `editForm`/`finalizeForm` que trae el load en cuanto se actualizan los
-	// datos de página: revalidar ahora mismo MACHACARÍA lo que el usuario tenga
-	// a medias. El refresco espera a una vuelta sin ningún `<dialog>` abierto
-	// (el alta rápida ya no se rehace con el load: ver `applyAction` arriba).
-	$effect(() => {
-		function alVolver() {
-			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]')) return;
-			void invalidateAll();
-		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
-	});
+	// Refresco al volver a la pestaña (ver `useRefetchOnVisible`): el alta
+	// rápida no necesita guardia, el load ya no la rehace (`applyAction`).
+	useRefetchOnVisible();
 </script>
 
 <svelte:head>
@@ -624,39 +570,16 @@
 
 <!-- Borrar (checklist #68): una modal compartida; cada botón de la fila fija
      a qué item se borra antes de abrirla. -->
-<Modal
+<ConfirmModal
 	bind:this={borrarModal}
-	type="X"
-	showButton={false}
-	boxClass="modal-box max-w-md"
-	strings={{ close: m.ui_close() }}
->
-	<h2 class="text-lg font-bold">{m.items_delete_title({ name: itemBorrado?.name ?? '' })}</h2>
-	<p class="mt-1 text-sm opacity-70">{m.items_delete_description()}</p>
-
-	{#if borrarError}
-		<div class="alert alert-error mt-3 text-sm" role="alert">
-			{borrarError}
-		</div>
-	{/if}
-
-	<!-- El borrado no lleva schema de superforms (solo el id oculto), así que
-	     va con el `enhance` del kit, como en /lists. -->
-	<form
-		method="POST"
-		action="?/delete"
-		use:kitEnhance={onBorrarResult}
-		class="mt-4 flex justify-end"
-	>
-		<input type="hidden" name="item" value={itemBorrado?.id ?? ''} />
-		<button type="submit" class="btn btn-error" disabled={borrando}>
-			{#if borrando}
-				<span class="loading loading-spinner"></span>
-			{/if}
-			{m.items_delete_confirm()}
-		</button>
-	</form>
-</Modal>
+	title={m.items_delete_title({ name: itemBorrado?.name ?? '' })}
+	description={m.items_delete_description()}
+	confirmLabel={m.items_delete_confirm()}
+	action="?/delete"
+	fields={{ item: itemBorrado?.id ?? '' }}
+	errorFallback={m.items_error()}
+	onSuccess={() => (exito = m.items_deleted())}
+/>
 
 <!-- Finalizar compra (checklist #71): resumen de los items comprados y el
      total del ticket escrito a mano. La confirmación envía `?/finalize`

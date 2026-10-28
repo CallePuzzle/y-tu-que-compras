@@ -85,7 +85,7 @@ export const actions: Actions = {
 			return fail(400, { inviteForm });
 		}
 
-		const familyId = event.url.searchParams.get('familia');
+		const familyId = event.url.searchParams.get('familyId');
 		if (!familyId) {
 			return message(inviteForm, m.families_invite_error(), { status: 400 });
 		}
