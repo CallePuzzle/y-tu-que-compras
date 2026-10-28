@@ -235,8 +235,11 @@ test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => 
 	const respuesta = page.waitForResponse((r) => r.url().includes('?/purchased'));
 	await page.getByRole('checkbox', { name: 'Marcar como comprado' }).click();
 
-	// El recurso que ya no existe vuelve 404, no 400 (issue #110).
-	expect((await respuesta).status()).toBe(404);
+	// El recurso que ya no existe vuelve 404, no 400 (issue #110). Con
+	// use:enhance la respuesta HTTP de la acción es siempre 200: el status de
+	// fail() viaja en el cuerpo JSON ({ type: 'failure', status }).
+	const cuerpo = await (await respuesta).json();
+	expect(cuerpo).toMatchObject({ type: 'failure', status: 404 });
 
 	// El fallo se avisa, el optimista se retira y el item vuelve a pendiente
 	// con los datos que traía la página (no hay update en fallo).
