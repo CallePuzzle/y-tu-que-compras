@@ -10,7 +10,14 @@
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { m } from '$lib/paraglide/messages.js';
-	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
+	import {
+		COLOR_CHIP,
+		ICONS,
+		colorLabels,
+		iconLabels,
+		type ListColor,
+		type ListIcon
+	} from '$lib/list-visuals.js';
 	import { LIST_COLORS, listSchema, type ListData } from '$lib/schemas/list.js';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
@@ -62,6 +69,10 @@
 	// icono llevan selectores propios más ricos que un `<select>` (paleta y
 	// catálogo visual, notas técnicas de la #31), conectados al mismo superforms
 	// y con sus mismos errores.
+	// Nombres traducidos de los selectores de color e icono (#118), en render.
+	const COLOR_LABEL = colorLabels();
+	const ICON_LABEL = iconLabels();
+
 	const fields = zodToFieldsJsonSchema(schema).filter((field) => field.kind === 'string');
 
 	// superForm se llama UNA vez por instancia (gestiona su estado reactivo
@@ -289,8 +300,8 @@
 						type="button"
 						role="radio"
 						aria-checked={$formData.color === color}
-						aria-label={color}
-						title={color}
+						aria-label={COLOR_LABEL[color]}
+						title={COLOR_LABEL[color]}
 						class={`flex size-8 items-center justify-center rounded-full transition ${COLOR_CHIP[color]} ${$formData.color === color ? 'ring-base-content ring-offset-base-100 ring-2 ring-offset-2' : ''}`}
 						onclick={() => ($formData.color = color)}
 					>
@@ -314,8 +325,8 @@
 						type="button"
 						role="radio"
 						aria-checked={$formData.icon === iconName}
-						aria-label={iconName}
-						title={iconName}
+						aria-label={ICON_LABEL[iconName as ListIcon]}
+						title={ICON_LABEL[iconName as ListIcon]}
 						class={`btn btn-square btn-sm ${$formData.icon === iconName ? 'btn-primary' : 'btn-ghost'}`}
 						onclick={() => ($formData.icon = iconName as ListIcon)}
 					>

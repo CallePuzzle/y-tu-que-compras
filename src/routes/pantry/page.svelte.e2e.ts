@@ -66,7 +66,7 @@ test('muestra los productos con nombre, cantidad y unidad', async ({ page }) => 
 
 	const leche = page.locator('li', { hasText: 'Leche entera' });
 	await expect(leche).toBeVisible();
-	await expect(leche.getByText('1.5 L')).toBeVisible();
+	await expect(leche.getByText('1,5 L')).toBeVisible();
 	const pan = page.locator('li', { hasText: 'Pan' });
 	await expect(pan).toBeVisible();
 	await expect(pan.getByText('1 ud')).toBeVisible();
@@ -169,9 +169,9 @@ test('los kilos bajan a cuartos hasta agotarse (#73)', async ({ page }) => {
 	await waitForHydration(page);
 	const leche = page.locator('li', { hasText: 'Leche entera' });
 
-	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
-	await expect(leche.getByText('0.25 kg')).toBeVisible();
-	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
+	await leche.getByRole('button', { name: 'Consumir 0,25 kg' }).click();
+	await expect(leche.getByText('0,25 kg')).toBeVisible();
+	await leche.getByRole('button', { name: 'Consumir 0,25 kg' }).click();
 	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
 	await expect(leche.getByText('0 kg')).toBeVisible();
 });
@@ -206,10 +206,10 @@ test('el contador optimista aplica el paso de la unidad, kg y g (#113)', async (
 	// servidor (2,5 s) pueda decir nada. El bug pintaba 0 (0,5 − 1 recortado):
 	// el producto saltaba a «Agotados» y desaparecía el botón de consumir,
 	// aunque el servidor fuera a guardar 0,25.
-	await leche.getByRole('button', { name: 'Consumir 0.25 kg' }).click();
-	await expect(leche.getByText('0.25 kg')).toBeVisible({ timeout: 1_000 });
+	await leche.getByRole('button', { name: 'Consumir 0,25 kg' }).click();
+	await expect(leche.getByText('0,25 kg')).toBeVisible({ timeout: 1_000 });
 	await expect(page.getByRole('heading', { name: 'Agotados' })).toHaveCount(0, { timeout: 1_000 });
-	await expect(leche.getByRole('button', { name: 'Consumir 0.25 kg' })).toBeVisible({
+	await expect(leche.getByRole('button', { name: 'Consumir 0,25 kg' })).toBeVisible({
 		timeout: 1_000
 	});
 
@@ -220,7 +220,7 @@ test('el contador optimista aplica el paso de la unidad, kg y g (#113)', async (
 
 	// Llegan las respuestas: el servidor confirma exactamente lo pintado.
 	await page.unroute(/\/pantry\?\/adjust/);
-	await expect(leche.getByText('0.25 kg')).toBeVisible();
+	await expect(leche.getByText('0,25 kg')).toBeVisible();
 	await expect(sal.getByText('400 g')).toBeVisible();
 });
 
@@ -251,8 +251,8 @@ test('los clics en vuelo no pierden su delta al resolver la primera petición (#
 	const leche = page.locator('li', { hasText: 'Leche entera' });
 
 	// Dos devoluciones rápidas: el optimista acumula 0,5 + 0,25 + 0,25 = 1 kg.
-	await leche.getByRole('button', { name: 'Devolver 0.25 kg' }).click();
-	await leche.getByRole('button', { name: 'Devolver 0.25 kg' }).click();
+	await leche.getByRole('button', { name: 'Devolver 0,25 kg' }).click();
+	await leche.getByRole('button', { name: 'Devolver 0,25 kg' }).click();
 	await expect(leche.getByText('1 kg')).toBeVisible({ timeout: 1_000 });
 
 	// ~1 s después de los clicks la primera petición ya ha resuelto (el
@@ -262,7 +262,7 @@ test('los clics en vuelo no pierden su delta al resolver la primera petición (#
 	// timeout corto evita que la aserción espere a la segunda respuesta.
 	await page.waitForTimeout(1_000);
 	await expect(leche.getByText('1 kg')).toBeVisible({ timeout: 250 });
-	await expect(leche.getByText('0.75 kg')).toHaveCount(0, { timeout: 250 });
+	await expect(leche.getByText('0,75 kg')).toHaveCount(0, { timeout: 250 });
 
 	// Resuelve la segunda: el servidor confirma el 1 kg final.
 	await page.waitForTimeout(2_500);
@@ -368,7 +368,7 @@ test('re-añadir suma sobre el pendiente equivalente de la lista (#74)', async (
 	// 0,5 + 1 = 1,5 sobre UNA fila (sin duplicado), conservando el nombre escrito.
 	await page.goto(`/lists/${lista.id}`);
 	await expect(
-		page.locator('section li', { hasText: 'leche entera' }).getByText('1.5 L')
+		page.locator('section li', { hasText: 'leche entera' }).getByText('1,5 L')
 	).toBeVisible();
 	await expect(page.locator('section li')).toHaveCount(1);
 });

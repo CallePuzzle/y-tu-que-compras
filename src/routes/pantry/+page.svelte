@@ -9,7 +9,9 @@
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
 	import { readdSchema } from '$lib/schemas/pantry.js';
 	import type { Unit } from '$lib/schemas/item.js';
@@ -218,12 +220,15 @@
 		return () => document.removeEventListener('visibilitychange', alVolver);
 	});
 
-	/** La etiqueta del botón lleva el paso exacto: «Consumir 0.25 kg». */
+	/** La etiqueta del botón lleva el paso exacto: «Consumir 0,25 kg». */
 	function etiquetaPaso(
 		item: PantryRow,
 		verbo: (params: { step: string; unit: string }) => string
 	) {
-		return verbo({ step: String(UNIT_STEP[item.unit]), unit: UNIT_LABEL[item.unit] });
+		return verbo({
+			step: formatQuantity(UNIT_STEP[item.unit], getLocale()),
+			unit: UNIT_LABEL[item.unit]
+		});
 	}
 </script>
 
@@ -297,7 +302,7 @@
 						</button>
 					{/if}
 					<span class="badge badge-ghost tabular-nums">
-						{cantidad}
+						{formatQuantity(cantidad, getLocale())}
 						{UNIT_LABEL[item.unit]}
 					</span>
 					<button

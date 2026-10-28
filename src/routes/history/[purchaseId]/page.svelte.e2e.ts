@@ -50,7 +50,7 @@ test('muestra el detalle con lista de origen, fecha, total e items del snapshot'
 	const tomates = page.locator('li', { hasText: 'Tomates' });
 	// La cantidad va cruda (como en la despensa): la issue #76 localiza fecha
 	// y moneda, no las cantidades.
-	await expect(tomates).toContainText('0.75 kg');
+	await expect(tomates).toContainText('0,75 kg');
 });
 
 test('el enlace de vuelta vuelve al listado', async ({ page }) => {

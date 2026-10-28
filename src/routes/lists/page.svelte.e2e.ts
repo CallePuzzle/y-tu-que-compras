@@ -61,8 +61,8 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 	await dialog.locator('input[name="name"]').fill('Frutería');
 
 	// Los selectores propios (#66): paleta de colores y catálogo de iconos.
-	await dialog.getByRole('radio', { name: 'secondary' }).click();
-	await dialog.getByRole('radio', { name: 'shopping-cart' }).click();
+	await dialog.getByRole('radio', { name: 'Rosa' }).click();
+	await dialog.getByRole('radio', { name: 'Carrito' }).click();
 	await dialog.getByRole('button', { name: 'Nueva lista' }).click();
 
 	await expect(page.getByRole('status')).toContainText('Lista creada: ya aparece en la vista.');

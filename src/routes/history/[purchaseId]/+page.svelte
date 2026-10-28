@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { getLocale } from '$lib/paraglide/runtime.js';
 	import type { Unit } from '$lib/schemas/item.js';
 	import type { PageProps } from './$types';
 
@@ -54,7 +56,9 @@
 		{#each data.purchase.items as item (item.id)}
 			<li class="bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4">
 				<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
-				<span class="badge badge-ghost tabular-nums">{item.quantity} {UNIT_LABEL[item.unit]}</span>
+				<span class="badge badge-ghost tabular-nums"
+					>{formatQuantity(item.quantity, getLocale())} {UNIT_LABEL[item.unit]}</span
+				>
 			</li>
 		{/each}
 	</ul>

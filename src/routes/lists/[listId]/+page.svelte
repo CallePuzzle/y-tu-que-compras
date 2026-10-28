@@ -8,7 +8,9 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
 	import { UNITS, itemSchema, type ItemData, type Unit } from '$lib/schemas/item.js';
 	import { purchaseSchema } from '$lib/schemas/purchase.js';
@@ -471,7 +473,7 @@
 					{item.name}
 				</p>
 				<span class="badge badge-ghost shrink-0 tabular-nums">
-					{item.quantity}
+					{formatQuantity(item.quantity, getLocale())}
 					{UNIT_LABEL[item.unit]}
 				</span>
 				<span class="flex items-center gap-1">
@@ -685,7 +687,7 @@
 			<div class="flex items-center justify-between gap-3 text-sm">
 				<span class="min-w-0 truncate font-medium">{item.name}</span>
 				<span class="badge badge-ghost shrink-0 tabular-nums">
-					{item.quantity}
+					{formatQuantity(item.quantity, getLocale())}
 					{UNIT_LABEL[item.unit]}
 				</span>
 			</div>
@@ -708,7 +710,7 @@
 				class="input w-full"
 				step="0.01"
 				inputmode="decimal"
-				placeholder="0.00"
+				placeholder={m.purchases_total_placeholder()}
 			/>
 			{#if textoError($finalizeErrors.total)}
 				<p class="fieldset-label text-error" role="alert">{textoError($finalizeErrors.total)}</p>
