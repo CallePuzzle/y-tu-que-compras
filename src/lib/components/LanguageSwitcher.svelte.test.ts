@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // El cambio de idioma termina en `setLocale` (cookie de Paraglide + recarga):
 // fuera de la app real no hay página que recargar, así que se simula. El resto
@@ -14,19 +14,11 @@ vi.mock('$lib/paraglide/runtime.js', async (importOriginal) => ({
 
 import { render } from 'vitest-browser-svelte';
 import LanguageSwitcher from './LanguageSwitcher.svelte';
-
-/** Primer elemento que resuelve el locator, sin lanzar si no hay ninguno. */
-function firstOf(locator: { elements(): Element[] }): Element | null {
-	return locator.elements()[0] ?? null;
-}
+import { firstOf } from './test-utils.js';
 
 beforeEach(() => {
 	getLocale.mockClear().mockImplementation(() => 'es');
 	setLocale.mockClear();
-});
-
-afterEach(() => {
-	vi.unstubAllGlobals();
 });
 
 describe('LanguageSwitcher', () => {

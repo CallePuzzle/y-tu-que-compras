@@ -6,8 +6,10 @@ import { getLocale } from '$lib/paraglide/runtime.js';
 // `locale` como getter: `tenancyClient` lo evalúa en cada petición para poner
 // la cabecera `Accept-Language` en las rutas `/tenancy/*`, así que el plugin
 // usa siempre la locale activa de Paraglide, no una fija. La respuesta del
-// servidor (errores, nombres de rol traducidos) sale en ese idioma.
-const tenancyPlugin = tenancyClient({ locale: getLocale });
+// servidor (errores, nombres de rol traducidos) sale en ese idioma. Envuelto en
+// una flecha: `hooks.client.ts` sustituye `getLocale` con `overwriteGetLocale`
+// y la referencia directa podría quedarse con la implementación original.
+const tenancyPlugin = tenancyClient({ locale: () => getLocale() });
 
 // Factoría: se instancia una sola vez aquí. El plugin emailOTP da al cliente
 // los endpoints que consume FormLoginOtp (pedir el código y canjearlo) y
