@@ -189,9 +189,7 @@ test('con todo comprado, el listado lo celebra', async ({ page }) => {
 	await expect(page.locator('li', { hasText: 'Super' }).getByText('Todo comprado')).toBeVisible();
 });
 
-test('al volver a la pestaña: lo tecleado NO se machaca y el refresco llega al estar limpio', async ({
-	page
-}) => {
+test('al volver a la pestaña: el refresco llega y lo tecleado NO se machaca', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	const lista = await createList({ familyId: family.id, name: 'Super' });
@@ -206,17 +204,11 @@ test('al volver a la pestaña: lo tecleado NO se machaca y el refresco llega al 
 
 	// «Otro miembro» añade un item mientras estamos fuera…
 	await createItem({ listId: lista.id, name: 'Papel higiénico', order: 1 });
-	// …y volvemos a la pestaña: el efecto NO debe revalidar con el alta sucia.
-	await volverALaPestana(page);
-	await expect(page.locator('#add-name')).toHaveValue('Huevos');
-	await expect(page.locator('li', { hasText: 'Papel higiénico' })).toHaveCount(0);
-
-	// Formulario devuelto a su valor base (deja de estar tainted): la misma
-	// vuelta a la pestaña ahora SÍ refresca, sin perder lo que no hay.
-	await page.locator('#add-name').fill('');
+	// …y volvemos a la pestaña: el refresco llega aunque el alta esté a
+	// medias, porque el load ya no rehace ese formulario (#114).
 	await volverALaPestana(page);
 	await expect(page.locator('li', { hasText: 'Papel higiénico' })).toBeVisible();
-	await expect(page.locator('#add-name')).toHaveValue('');
+	await expect(page.locator('#add-name')).toHaveValue('Huevos');
 });
 
 test('lo escrito en el alta rápida no se pierde al marcar un comprado (#114)', async ({ page }) => {
