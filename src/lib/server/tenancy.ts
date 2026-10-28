@@ -214,22 +214,29 @@ const fromQueryContext = ({ ctx }: EndpointAuthContext): StatementScope => ({
  * Familia de un miembro: el listado la trae en el query (`member/list`) y
  * `member/:id` solo el id del miembro, que el endpoint no resuelve a su familia
  * hasta después de autorizar.
+ *
+ * El id del params MANDA (issue #101): `member/:id` no declara schema de query
+ * pero better-call parsea el query string de todas formas, así que un
+ * `?contextId=<mi familia>` autorizaría contra la familia del atacante y
+ * devolvería un miembro ajeno. Con `params.id` presente, la familia contra la
+ * que se autoriza es SIEMPRE la del miembro apuntado.
  */
 const fromMemberRef = async ({ ctx }: EndpointAuthContext): Promise<StatementScope> => {
-	if (ctx.query?.contextId) {
-		return { contextType: ctx.query.contextType, contextId: ctx.query.contextId };
-	}
-	if (!ctx.params.id) {
-		return { contextType: 'organization', contextId: '' };
+	if (ctx.params?.id) {
+		const member = (await ctx.context.adapter.findOne({
+			model: 'member',
+			where: [{ field: 'id', value: ctx.params.id }]
+		})) as StatementScope | null;
+		// Miembro inexistente: cae al propio id y el `resolvePermission` lo
+		// denegará (403, sin revelar si el miembro existe).
+		return member ?? { contextType: 'organization', contextId: ctx.params.id };
 	}
 
-	const member = (await ctx.context.adapter.findOne({
-		model: 'member',
-		where: [{ field: 'id', value: ctx.params.id }]
-	})) as StatementScope | null;
-	// Miembro inexistente: cae al propio id y el `resolvePermission` lo denegará
-	// (403, sin revelar si el miembro existe).
-	return member ?? { contextType: 'organization', contextId: ctx.params.id };
+	// `member/list`: su schema zod exige contextType/contextId en el query.
+	if (!ctx.query?.contextId) {
+		return { contextType: 'organization', contextId: '' };
+	}
+	return { contextType: ctx.query.contextType, contextId: ctx.query.contextId };
 };
 
 /**
@@ -742,7 +749,12 @@ export const tenancyConfig: TenancyConfig = {
 			delete: requireFamilyStatement('organization:delete', fromBodyOrganizationId)
 		},
 		member: {
-			add: requireFamilyStatement('member:invite', fromBodyContext),
+			// La entrada en una familia es SIEMPRE por invitación aceptada (issue
+			// #101): `member/add` inserta al miembro directamente, la app no lo
+			// usa y por `member:invite` cualquier admin metería a cualquiera —
+			// saltándose `MAX_FAMILIES_PER_USER` y sin validar siquiera que el
+			// `roleId` fuera de la familia. Denegado como el resto de endpoints
+			// que la app no expone (abajo, con `denyEndpoints`).
 			// Expulsar (#62): el admin, o el propio miembro (abandonar). Y nadie
 			// quita al último admin: debe promover a otro o borrar la familia.
 			remove: combineHooks(allowSelfRemoveOrAdmin, requireNotLastFamilyAdminOnRemove),
@@ -754,9 +766,11 @@ export const tenancyConfig: TenancyConfig = {
 				requireFamilyStatement('member:update', fromResolvedResource),
 				requireNotLastFamilyAdminOnRoleChange
 			),
-			// Ver quiénes son los miembros: cualquiera de la familia.
+			// Ver quiénes son los miembros: cualquiera de la familia. La misma
+			// clave guarda el GET por id (`member/:id`): `fromMemberRef` decide
+			// por query o por la familia del miembro del params (#101).
 			list: requireFamilyStatement('organization:get', fromMemberRef),
-			...denyEndpoints(['bulkAdd', 'bulkRemove', 'transfer'])
+			...denyEndpoints(['add', 'bulkAdd', 'bulkRemove', 'transfer'])
 		},
 		invitation: {
 			// Flujo de invitar (#60): primero el statement (403 a quien no

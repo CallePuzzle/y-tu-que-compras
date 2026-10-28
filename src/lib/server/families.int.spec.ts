@@ -705,3 +705,94 @@ describe('expulsar, abandonar, promover y borrar (#62)', () => {
 		expect(await prisma.organization.findUnique({ where: { id: familyId } })).not.toBeNull();
 	});
 });
+
+/**
+ * Perímetro de miembros entre familias (issue #101): nadie entra en una familia
+ * sin invitación aceptada (`member/add` cerrado) y ningún endpoint devuelve
+ * miembros de familias ajenas (`member/:id` autoriza contra la familia del
+ * miembro, no contra un query falseado).
+ */
+describe('perímetro de miembros entre familias (#101)', () => {
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Limite ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Alta directo en BD de un miembro con rol `member` (como los siembra el plugin). */
+	async function addMemberDirectly(
+		familyId: string
+	): Promise<{ userId: string; memberId: string; cookie: string }> {
+		const session = await sessionCookieFor('Miembro Ajeno');
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+		const membership = await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: memberRole.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { userId: session.userId, memberId: membership.id, cookie: session.cookie };
+	}
+
+	it('member/add responde denegado aunque lo pida el admin de la familia', async () => {
+		const admin = await sessionCookieFor('Admin Inyector');
+		const familyId = await createFamilyFor(admin.cookie);
+		const victim = await sessionCookieFor('Victima Inyeccion');
+
+		// Antes de #101 este endpoint estaba abierto al statement `member:invite`:
+		// un admin metía a cualquiera sin invitación ni aceptación.
+		const response = await auth.handler(
+			tenancyRequest('member/add', admin.cookie, {
+				method: 'POST',
+				body: { userId: victim.userId, contextType: 'organization', contextId: familyId }
+			})
+		);
+		expect(response.status).toBe(403);
+		expect(await response.text()).toContain('disabled');
+
+		// Y el alta no ocurrió: en la familia sigue solo su admin.
+		const memberships = await prisma.member.findMany({ where: { contextId: familyId } });
+		expect(memberships).toHaveLength(1);
+		expect(memberships[0].userId).not.toBe(victim.userId);
+	});
+
+	it('GET member/:id de otra familia con el contextId falseado responde denegado', async () => {
+		const adminAjeno = await sessionCookieFor('Admin Atacante');
+		const attackerFamilyId = await createFamilyFor(adminAjeno.cookie);
+
+		const victimFamilyAdmin = await sessionCookieFor('Admin Victima');
+		const victimFamilyId = await createFamilyFor(victimFamilyAdmin.cookie);
+		const { memberId, cookie: memberCookie } = await addMemberDirectly(victimFamilyId);
+
+		// El agujero: el endpoint no declara schema de query, pero better-call
+		// parsea el query string igualmente y el hook se fiaba primero del
+		// `contextId` — con el de SU familia, el atacante leía un miembro ajeno.
+		const smugled = await auth.handler(
+			tenancyRequest(
+				`member/${memberId}?contextType=organization&contextId=${attackerFamilyId}`,
+				adminAjeno.cookie
+			)
+		);
+		expect(smugled.status).toBe(403);
+		expect(await smugled.text()).not.toContain('@integration.test');
+
+		// Sin query falseado, también denegado: el miembro pertenece a otra familia.
+		const plain = await auth.handler(tenancyRequest(`member/${memberId}`, adminAjeno.cookie));
+		expect(plain.status).toBe(403);
+
+		// El miembro de la familia sí se ve a sí mismo por id (lectura legítima).
+		const own = await auth.handler(tenancyRequest(`member/${memberId}`, memberCookie));
+		expect(own.ok).toBe(true);
+		const seen = (await own.json()) as { id: string };
+		expect(seen.id).toBe(memberId);
+	});
+});

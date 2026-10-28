@@ -241,11 +241,6 @@ describe('tenancyConfig.endpoints (statements de admin)', () => {
 			request: { body: { id: 'fam-1' } }
 		},
 		{
-			statement: 'member:invite (añadir miembro)',
-			hook: tenancyConfig.endpoints?.member?.add,
-			request: { body: { userId: 'new-1', ...familiaResource } }
-		},
-		{
 			statement: 'member:invite (crear invitación)',
 			hook: tenancyConfig.endpoints?.invitation?.create,
 			request: { body: { identifier: 'nueva@familia.es', ...familiaResource } }
@@ -315,6 +310,22 @@ describe('tenancyConfig.endpoints (listados de miembros e invitaciones)', () => 
 				sessionOf('member-1')
 			)
 		).resolves.toBeUndefined();
+	});
+
+	it('member/:id con el query falseado NO autoriza contra la familia del atacante (#101)', async () => {
+		// El endpoint no declara schema de query, pero better-call parsea el
+		// query string igualmente: `?contextType=organization&contextId=fam-1`
+		// (la del atacante) no puede convertir la lectura del miembro de OTRA
+		// familia en una lectura autorizada. El id del params manda.
+		const queryFalso = { contextType: 'organization', contextId: 'fam-1' };
+		await expect(
+			callHook(
+				listMembers,
+				familyAdapterMock(),
+				{ params: { id: 'membership-member' }, query: queryFalso },
+				sessionOf('outsider-1')
+			)
+		).rejects.toThrow('Missing permission: organization:get');
 	});
 
 	it('quien no pertenece no lista miembros ajenos, ni por query ni por id', async () => {
@@ -615,6 +626,7 @@ describe('tenancyConfig.endpoints denegados (administración del plugin)', () =>
 
 	it('las operaciones en bloque de miembros y la limpieza de invitaciones también', async () => {
 		for (const hook of [
+			tenancyConfig.endpoints?.member?.add,
 			tenancyConfig.endpoints?.member?.bulkAdd,
 			tenancyConfig.endpoints?.member?.bulkRemove,
 			tenancyConfig.endpoints?.member?.transfer,
@@ -624,6 +636,17 @@ describe('tenancyConfig.endpoints denegados (administración del plugin)', () =>
 				'disabled'
 			);
 		}
+		// `member/add` en particular (issue #101): ni el admin de la familia con
+		// `member:invite` puede insertar miembros directamente — la entrada en
+		// una familia es siempre por invitación aceptada.
+		await expect(
+			callHook(
+				tenancyConfig.endpoints?.member?.add,
+				familyAdapterMock(),
+				{ body: { userId: 'new-1', contextType: 'organization', contextId: 'fam-1' } },
+				sessionOf('admin-1')
+			)
+		).rejects.toThrow('disabled');
 	});
 });
 
@@ -643,12 +666,14 @@ describe('perímetro del plugin (surface real de endpoints)', () => {
 		['/tenancy/organization/update', 'organization:update'],
 		['/tenancy/organization/delete', 'organization:delete'],
 		['/tenancy/organization/list', 'filterOrganizations (pertenencia)'],
-		// member: la clave `list` guarda también el GET por id, y `updateRole`
+		// member: la clave `list` guarda también el GET por id, y autoriza
+		// contra la familia del MIEMBRO del params (o del query en el listado);
+		// `add` va denegado: la entrada es por invitación (#101). `updateRole`
 		// guarda el cambio de metadatos (así lo cablea el plugin): esa petición
 		// —sin `roleId` en el body— se deniega.
 		['/tenancy/member/list', 'organization:get'],
-		['/tenancy/member/:id', 'organization:get (clave member.list)'],
-		['/tenancy/member/add', 'member:invite'],
+		['/tenancy/member/:id', 'organization:get (clave member.list; familia del miembro, #101)'],
+		['/tenancy/member/add', 'denegado (la entrada es por invitación aceptada, #101)'],
 		['/tenancy/member/remove', 'admin o el propio miembro; el último admin protegido (#62)'],
 		['/tenancy/member/role/update', 'member:update (promover; último admin protegido, #62)'],
 		['/tenancy/member/metadata/update', 'denegado (clave member.updateRole compartida)'],
