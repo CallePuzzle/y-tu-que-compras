@@ -87,6 +87,7 @@
 
 	"routes_lists": "Listas",
 	"routes_pantry": "Despensa",
+	"routes_history": "Historial",
 	"lists_title": "Tus listas",
 	"lists_empty": "Todavía no hay listas en esta familia. Crea la primera y empieza la compra.",
 	"lists_create": "Nueva lista",
@@ -175,6 +176,13 @@
 	"pantry_readd_no_lists": "Esta familia no tiene listas: crea una para poder re-añadir.",
 	"pantry_readd_success": "Añadido a la lista de la compra.",
 	"pantry_readd_error": "No se ha podido añadir a la lista. Inténtalo de nuevo más tarde.",
+
+	"history_title": "Historial de compras",
+	"history_empty": "Todavía no hay compras en esta familia: se registran al finalizar una compra.",
+	"history_go_lists": "Ir a las listas",
+	"history_load_more": "Cargar más",
+	"history_total": "Total",
+	"history_items": "Artículos",
 	"schema_readd_list_label": "Lista de destino",
 	"schema_readd_list_error": "Elige una lista de la familia.",
 	"schema_readd_mode_error": "Elige qué hacer con la despensa.",

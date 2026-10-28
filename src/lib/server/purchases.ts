@@ -1,9 +1,11 @@
 import prisma from '$lib/server/prisma.js';
+import type { Unit } from '$lib/schemas/item.js';
 
-// Finalizar compra (issues #43 y #70): cerrar una lista de la familia moviendo
-// sus items comprados a la despensa. La familia viaja SIEMPRE en los
-// argumentos — es la activa que `requireActiveFamily` dejó verificada — y una
-// lista de otra familia es como si no existiera, como en `lists.ts`/`items.ts`.
+// Finalizar compra (issues #43 y #70) e historial (#75, #76): cerrar una lista
+// de la familia moviendo sus items comprados a la despensa, y consultar lo
+// comprado. La familia viaja SIEMPRE en los argumentos — es la activa que
+// `requireActiveFamily` dejó verificada — y una lista (o compra) de otra
+// familia es como si no existiera, como en `lists.ts`/`items.ts`.
 
 /**
  * El nombre canónico con el que la despensa identifica un producto (#70):
@@ -159,4 +161,112 @@ export async function finalizePurchase(
 		}
 		throw error;
 	}
+}
+
+// ---- Historial de compras (issues #47 y #76): consulta del snapshot que
+// deja `finalizePurchase`. Solo lectura: el registro es inmutable por diseño
+// (los cambios posteriores en listas no alteran el historial, criterio de la
+// #33), así que no hay acciones que lo editen. ----
+
+/** El tamaño de página de la carga incremental del listado (#76). */
+export const PURCHASES_PAGE_SIZE = 20;
+
+/** Una compra del historial tal y como el listado la muestra. */
+export interface PurchaseSummaryView {
+	id: string;
+	/** Nombre de la lista de origen guardado EN EL SNAPSHOT (#75): se muestra aunque la lista se haya borrado. */
+	listName: string;
+	/** `Decimal(10,2)` en la base; la vista lo lee como `number`. */
+	total: number;
+	createdAt: Date;
+}
+
+/** Un item del snapshot de una compra (nombre, cantidad y unidad del momento). */
+export interface PurchaseItemView {
+	id: string;
+	name: string;
+	/** `Decimal(10,3)` en la base; la vista lo lee como `number`. */
+	quantity: number;
+	/** Valor del enum `Unit` (identificador inglés); la UI lo traduce con `unit_*`. */
+	unit: Unit;
+}
+
+/** El detalle completo de una compra: el resumen más su snapshot de items. */
+export interface PurchaseDetailView extends PurchaseSummaryView {
+	items: PurchaseItemView[];
+}
+
+/** De la fila de Prisma a la vista: el Decimal se aplana a `number`. */
+function toSummary(row: {
+	id: string;
+	listName: string;
+	total: unknown;
+	createdAt: Date;
+}): PurchaseSummaryView {
+	return { id: row.id, listName: row.listName, total: Number(row.total), createdAt: row.createdAt };
+}
+
+/**
+ * Las compras de la familia, de la más reciente a la más antigua (#76), con
+ * carga incremental ACUMULATIVA: la página de `offset` trae TODO hasta ese
+ * límite, no solo sus filas. Así el enlace «Cargar más» (`?offset=N+pageSize`)
+ * añade al final de lo ya pintado con y sin JavaScript: en cliente la
+ * navegación sustituye `data.purchases` por el array más largo y el `each`
+ * reutiliza las filas existentes; sin JS, la página completa llega ya crecida.
+ * El orden secundario por `id` desempata los `createdAt` iguales de forma
+ * determinista (dos compras en el mismo instante no bailan entre páginas).
+ */
+export async function listPurchases(
+	familyId: string,
+	offset: number
+): Promise<{ purchases: PurchaseSummaryView[]; hasMore: boolean }> {
+	// El offset viaja en la URL: cualquier cosa que no sea un entero no
+	// negativo es la primera página. Sin tope alto: un `take` desmedido solo
+	// relee las compras de LA FAMILIA (el `where` manda), nunca las de nadie.
+	const from = Number.isInteger(offset) && offset > 0 ? offset : 0;
+
+	const rows = await prisma.purchaseRecord.findMany({
+		where: { organizationId: familyId },
+		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+		select: { id: true, listName: true, total: true, createdAt: true },
+		// Una compra de más para saber si queda historia detrás (#76).
+		take: from + PURCHASES_PAGE_SIZE + 1
+	});
+
+	const hasMore = rows.length > from + PURCHASES_PAGE_SIZE;
+	return { purchases: rows.slice(0, from + PURCHASES_PAGE_SIZE).map(toSummary), hasMore };
+}
+
+/**
+ * El detalle de una compra de la familia con sus items snapshot (#76). `null`
+ * si no existe ahí (id ajeno o rancio): sin revelar si vive en otra familia.
+ * Los items vuelven en el orden en que se compraron, que es el orden de
+ * inserción del snapshot.
+ */
+export async function getPurchase(
+	familyId: string,
+	purchaseId: string
+): Promise<PurchaseDetailView | null> {
+	const row = await prisma.purchaseRecord.findFirst({
+		where: { id: purchaseId, organizationId: familyId },
+		select: {
+			id: true,
+			listName: true,
+			total: true,
+			createdAt: true,
+			items: { select: { id: true, name: true, quantity: true, unit: true } }
+		}
+	});
+	if (!row) {
+		return null;
+	}
+	return {
+		...toSummary(row),
+		items: row.items.map((item) => ({
+			id: item.id,
+			name: item.name,
+			quantity: Number(item.quantity),
+			unit: item.unit
+		}))
+	};
 }

@@ -87,6 +87,7 @@
 
 	"routes_lists": "Lists",
 	"routes_pantry": "Pantry",
+	"routes_history": "History",
 	"lists_title": "Your lists",
 	"lists_empty": "No lists in this family yet. Create the first one and start shopping.",
 	"lists_create": "New list",
@@ -175,6 +176,13 @@
 	"pantry_readd_no_lists": "This family has no lists yet: create one to re-add items.",
 	"pantry_readd_success": "Added to the shopping list.",
 	"pantry_readd_error": "The item could not be added to the list. Please try again later.",
+
+	"history_title": "Purchase history",
+	"history_empty": "No purchases in this family yet: they are recorded when you finalize a purchase.",
+	"history_go_lists": "Go to lists",
+	"history_load_more": "Load more",
+	"history_total": "Total",
+	"history_items": "Items",
 	"schema_readd_list_label": "Destination list",
 	"schema_readd_list_error": "Pick a list from the family.",
 	"schema_readd_mode_error": "Pick what to do with the pantry.",

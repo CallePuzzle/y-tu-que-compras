@@ -11,7 +11,13 @@ import type { ItemData } from '$lib/schemas/item.js';
 import prisma from './prisma.js';
 import { createItem, setItemPurchased } from './items.js';
 import { createList } from './lists.js';
-import { finalizePurchase, normalizeItemName } from './purchases.js';
+import {
+	finalizePurchase,
+	getPurchase,
+	listPurchases,
+	normalizeItemName,
+	PURCHASES_PAGE_SIZE
+} from './purchases.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
 async function familyRow(prefix: string): Promise<string> {
@@ -291,5 +297,157 @@ describe('Finalizar compra: guardas (#70)', () => {
 			['Pan', 1]
 		]);
 		expect(await prisma.item.findMany({ where: { listId: list.id } })).toHaveLength(0);
+	});
+});
+
+// ---- Historial (issues #47 y #76): la consulta del snapshot que deja
+// `finalizePurchase`. Las compras de prueba se siembran a mano con
+// `createdAt` explícitos: es el único modo de controlar el orden y la
+// paginación sin depender del reloj. ----
+
+/** Siembra una compra con su snapshot, como la deja `finalizePurchase`. */
+async function purchaseRow(
+	familyId: string,
+	options: {
+		listName: string;
+		total: number;
+		createdAt: Date;
+		/** Los items del snapshot; si se omite, uno solo de relleno. */
+		items?: Array<{ name: string; quantity: number; unit: ItemData['unit'] }>;
+		listId?: string;
+	}
+) {
+	return prisma.purchaseRecord.create({
+		data: {
+			organizationId: familyId,
+			listId: options.listId,
+			listName: options.listName,
+			total: options.total,
+			createdAt: options.createdAt,
+			items: {
+				create: options.items ?? [{ name: 'Producto', quantity: 1, unit: 'unit' }]
+			}
+		}
+	});
+}
+
+describe('Historial: listado de la familia (#76)', () => {
+	it('lista las compras de la más reciente a la más antigua, y solo las de ESA familia', async () => {
+		const familyId = await familyRow('Familia Historiada');
+		const vieja = await purchaseRow(familyId, {
+			listName: 'Compra vieja',
+			total: 10,
+			createdAt: new Date('2026-01-01T10:00:00Z')
+		});
+		const nueva = await purchaseRow(familyId, {
+			listName: 'Compra reciente',
+			total: 20,
+			createdAt: new Date('2026-06-01T10:00:00Z')
+		});
+
+		// El historial es por familia (criterio de la #33): la compra de otra
+		// no aparece, como si no existiera.
+		const ajena = await familyRow('Familia Historiada Ajena');
+		await purchaseRow(ajena, {
+			listName: 'Caviar ajeno',
+			total: 99,
+			createdAt: new Date('2026-06-02T10:00:00Z')
+		});
+
+		const { purchases, hasMore } = await listPurchases(familyId, 0);
+		expect(purchases.map((row) => row.id)).toEqual([nueva.id, vieja.id]);
+		expect(hasMore).toBe(false);
+		// La vista aplana el Decimal del total y conserva el nombre de lista
+		// del snapshot.
+		expect(purchases[1]).toMatchObject({ listName: 'Compra vieja', total: 10 });
+	});
+
+	it('pagina de forma ACUMULATIVA: la página de un offset incluye todo lo anterior y avisa si queda más', async () => {
+		const familyId = await familyRow('Familia Paginada');
+		const total = PURCHASES_PAGE_SIZE + 5;
+		for (let i = 0; i < total; i++) {
+			// createdAt crecientes: la compra i+1 es la más nueva de las i+1.
+			await purchaseRow(familyId, {
+				listName: `Compra ${i + 1}`,
+				total: i,
+				createdAt: new Date(Date.UTC(2026, 0, 1, 0, i))
+			});
+		}
+
+		const primera = await listPurchases(familyId, 0);
+		expect(primera.purchases).toHaveLength(PURCHASES_PAGE_SIZE);
+		expect(primera.hasMore).toBe(true);
+		// La más nueva primero: la última sembrada.
+		expect(primera.purchases[0].listName).toBe(`Compra ${total}`);
+
+		// La «segunda página» trae TODO el historial, no solo sus 5 filas: es
+		// lo que hace que «Cargar más» añada al final de lo ya pintado.
+		const crecida = await listPurchases(familyId, PURCHASES_PAGE_SIZE);
+		expect(crecida.purchases).toHaveLength(total);
+		expect(crecida.hasMore).toBe(false);
+		// Las filas ya vistas no cambian de sitio ni de contenido.
+		expect(crecida.purchases.slice(0, PURCHASES_PAGE_SIZE)).toEqual(primera.purchases);
+	});
+
+	it('un offset basura o negativo es la primera página', async () => {
+		const familyId = await familyRow('Familia Offset Basura');
+		await purchaseRow(familyId, {
+			listName: 'Única',
+			total: 1,
+			createdAt: new Date('2026-03-01T10:00:00Z')
+		});
+
+		const basura = await listPurchases(familyId, Number.NaN);
+		expect(basura.purchases).toHaveLength(1);
+		expect(basura.hasMore).toBe(false);
+		const negativo = await listPurchases(familyId, -5);
+		expect(negativo.purchases).toHaveLength(1);
+	});
+});
+
+describe('Historial: detalle de una compra (#76)', () => {
+	it('devuelve el snapshot completo: items congelados, total a mano y nombre de lista guardado', async () => {
+		const familyId = await familyRow('Familia Detallada');
+		const lista = await createList(familyId, LISTA);
+		const compra = await purchaseRow(familyId, {
+			listId: lista.id,
+			listName: LISTA.name,
+			total: 42.67,
+			createdAt: new Date('2026-06-01T10:00:00Z'),
+			items: [
+				{ name: 'Leche entera', quantity: 1.5, unit: 'liter' },
+				{ name: 'Pan', quantity: 1, unit: 'unit' }
+			]
+		});
+
+		const detalle = await getPurchase(familyId, compra.id);
+		expect(detalle?.listName).toBe(LISTA.name);
+		expect(detalle?.total).toBe(42.67);
+		expect(detalle?.items.map((item) => [item.name, item.quantity, item.unit])).toEqual([
+			['Leche entera', 1.5, 'liter'],
+			['Pan', 1, 'unit']
+		]);
+
+		// El snapshot no le afecta el presente (#33): renombrar la lista de
+		// origen y añadirle items no altera el detalle de la compra.
+		await prisma.list.update({ where: { id: lista.id }, data: { name: 'Renombrada' } });
+		await createItem(familyId, lista.id, { name: 'Nuevo', quantity: 1, unit: 'unit' });
+		const despues = await getPurchase(familyId, compra.id);
+		expect(despues?.listName).toBe(LISTA.name);
+		expect(despues?.items).toHaveLength(2);
+	});
+
+	it('la compra de otra familia es como si no existiera', async () => {
+		const familyId = await familyRow('Familia Detalle Propia');
+		const ajena = await familyRow('Familia Detalle Ajena');
+		const compra = await purchaseRow(ajena, {
+			listName: 'Ajena',
+			total: 5,
+			createdAt: new Date('2026-06-01T10:00:00Z')
+		});
+
+		expect(await getPurchase(familyId, compra.id)).toBeNull();
+		// Un id inventado tampoco: sin revelar si vive en otra parte.
+		expect(await getPurchase(familyId, 'no-existe')).toBeNull();
 	});
 });

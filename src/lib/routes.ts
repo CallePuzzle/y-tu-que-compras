@@ -1,5 +1,6 @@
 import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
+import History from '@lucide/svelte/icons/history';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
 import Refrigerator from '@lucide/svelte/icons/refrigerator';
@@ -47,6 +48,14 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 		routes['/pantry'] = {
 			label: m.routes_pantry(),
 			icon: Refrigerator,
+			showInMenu: true,
+			showInMobile: true
+		};
+		// El historial de compras de la familia activa (#76): el archivo de lo
+		// ya comprado, con el detalle de cada ticket.
+		routes['/history'] = {
+			label: m.routes_history(),
+			icon: History,
 			showInMenu: true,
 			showInMobile: true
 		};
