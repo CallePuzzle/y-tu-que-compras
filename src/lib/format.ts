@@ -1,4 +1,4 @@
-// Formato localizado de fechas y precios (issue #76): la locale activa viaja
+// Formato localizado de fechas, precios (issue #76) y cantidades (#118): la locale activa viaja
 // SIEMPRE como argumento — quien la llama la resuelve con `getLocale()` de
 // Paraglide en el momento de la petición (o del render), nunca en scope de
 // módulo (regla i18n de la librería). Funciones puras: sin Paraglide ni
@@ -34,4 +34,13 @@ export function formatDateTime(date: Date, locale: string): string {
  */
 export function formatPrice(amount: number, locale: string): string {
 	return new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(amount);
+}
+
+/**
+ * Cantidad de un producto con los separadores de la locale dada («0,25» y
+ * «1.500» en es; «0.25» y «1,500» en en). Hasta 3 decimales, los mismos que
+ * guarda la BD (DECIMAL(10,3)), y sin ceros de relleno: 2 es «2», no «2,000».
+ */
+export function formatQuantity(quantity: number, locale: string): string {
+	return new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(quantity);
 }

@@ -1,14 +1,19 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
+	import { SvelteMap } from 'svelte/reactivity';
 	import Minus from '@lucide/svelte/icons/minus';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
+	import { unitLabels } from '$lib/units.js';
+	import { textoError } from '$lib/forms.js';
+	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
 	import { readdSchema } from '$lib/schemas/pantry.js';
 	import type { Unit } from '$lib/schemas/item.js';
@@ -22,27 +27,8 @@
 	/** Una fila de despensa (la trae el load). */
 	type PantryRow = PageProps['data']['items'][number];
 
-	/** Une el formato de error de superforms (string o lista) a texto plano. */
-	function textoError(error: string | string[] | undefined): string | undefined {
-		if (!error) return undefined;
-		return Array.isArray(error) ? error.join(' ') : error;
-	}
-
-	/**
-	 * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal
-	 * cual (son identificadores estables en inglés), los traduce Paraglide.
-	 * El mapa se construye EN RENDER, no en scope de módulo (regla i18n).
-	 */
-	const UNIT_LABEL: Record<Unit, string> = {
-		unit: m.unit_unit(),
-		kilogram: m.unit_kilogram(),
-		gram: m.unit_gram(),
-		liter: m.unit_liter(),
-		milliliter: m.unit_milliliter(),
-		package: m.unit_package(),
-		can: m.unit_can(),
-		dozen: m.unit_dozen()
-	};
+	// Etiquetas traducidas de las unidades (en render: regla i18n).
+	const UNIT_LABEL = unitLabels();
 
 	// ---- Consumir / devolver (checklist #73): stepper −/+ por fila con
 	// actualización OPTIMISTA, la misma técnica del toggle de comprado. ----
@@ -52,7 +38,12 @@
 	// en cuanto falla la petición, que es la reversión prometida. Como en el
 	// toggle, el delta se anota en el click del botón (ANTES del envío) y el
 	// submit function solo decide qué hacer con el resultado.
-	const ajustes = $state(new Map<string, number>());
+	//
+	// SvelteMap y no `$state(new Map())`: en Svelte 5 el deep-proxy de
+	// `$state` solo cubre objetos y arrays PLANOS — un Map pasa sin proxyar y
+	// sus mutaciones no repintan nada (revisado en código y verificado con un
+	// test de componente: el badge seguía clavado al valor del servidor).
+	const ajustes = new SvelteMap<string, number>();
 	let falloAjuste: string | null = $state(null);
 
 	/** La cantidad mostrada: la del servidor más el ajuste en vuelo, sin negativos. */
@@ -72,10 +63,30 @@
 	const enCasa = $derived(data.items.filter((item) => cantidadVisible(item) > 0));
 	const agotados = $derived(data.items.filter((item) => cantidadVisible(item) === 0));
 
-	/** Anota el delta del botón pulsado como ajuste en vuelo (optimista). */
-	function anotarAjuste(id: string, delta: 1 | -1) {
+	/**
+	 * Anota el delta del botón pulsado como ajuste en vuelo (optimista). El
+	 * delta NO es un ±1 genérico: es el PASO de la unidad (±0,25 en kg/L,
+	 * ±100 en g/ml), el mismo que aplica el servidor — si no, el badge
+	 * pintaría valores que el servidor nunca guardará (#113).
+	 */
+	function anotarAjuste(id: string, delta: number) {
 		ajustes.set(id, redondearCantidad((ajustes.get(id) ?? 0) + delta));
 		falloAjuste = null;
+	}
+
+	/**
+	 * Retira el ajuste de UNA petición resuelta: solo SU delta, no la entrada
+	 * entera. Con clics rápidos hay varias peticiones en vuelo sobre la misma
+	 * fila y borrar al llegar la primera descartaría el delta de las demás:
+	 * el badge volvería al valor viejo para luego volver a subir (#113).
+	 */
+	function retirarAjuste(id: string, delta: number) {
+		const quedan = redondearCantidad((ajustes.get(id) ?? 0) - delta);
+		if (quedan === 0) {
+			ajustes.delete(id);
+		} else {
+			ajustes.set(id, quedan);
+		}
 	} /**
 	 * Resultado de un ajuste: en fallo revierte y avisa; en éxito refresca.
 	 * El optimista se retira ANTES de pedir el load: si se quitara después
@@ -85,22 +96,27 @@
 	 * de la cantidad vieja durante la revalidación, inferior a un badge
 	 * congelado en un valor que el servidor ya desmintió.
 	 */
-	function alAjustar(id: string): SubmitFunction {
+	function alAjustar(id: string, unit: Unit): SubmitFunction {
 		return () =>
-			async ({ result, update }) => {
+			async ({ result, update, formData }) => {
+				// El delta de ESTA petición viaja en el formulario (el value del
+				// botón pulsado, ±1) y aquí se convierte al paso de la unidad:
+				// la misma cuenta que hace el click y que aplica el servidor.
+				const delta = Number(formData.get('delta')) * UNIT_STEP[unit];
 				if (result.type === 'success') {
-					ajustes.delete(id);
+					retirarAjuste(id, delta);
 					await update();
 				} else {
 					// Fallo (el servidor rechazó) o error (sin respuesta): la
-					// reversión es retirar el optimista, y el badge vuelve al
-					// estado que traen los datos. Sin `update` en fallo, como el
-					// toggle de comprado: el aviso vive aquí y no se duplica.
+					// reversión es retirar SOLO el optimista de esta petición, y
+					// el badge vuelve hacia el estado que traen los datos. Sin
+					// `update` en fallo, como el toggle de comprado: el aviso
+					// vive aquí y no se duplica.
 					falloAjuste =
 						result.type === 'failure'
 							? ((result.data as { error?: string } | undefined)?.error ?? m.pantry_error())
 							: m.pantry_error();
-					ajustes.delete(id);
+					retirarAjuste(id, delta);
 				}
 			};
 	}
@@ -169,30 +185,21 @@
 		readdModal?.showModal();
 	}
 
-	// Refresco al volver a la pestaña: la despensa la mueven las compras, los
-	// consumos y los re-añadidos de CUALQUIER miembro y la v1 no tiene tiempo
-	// real, así que lo barato y suficiente es revalidar al volver a mirar — el
-	// criterio «actualizada tras cada acción» de la #44. PERO el modal de
-	// re-añadir lleva su formulario de superforms, que el load reharía con lo
-	// que traiga: el refresco espera a una vuelta sin ningún `<dialog>`
-	// abierto y con el formulario intacto (`isTainted`), igual que en la
-	// vista de lista.
-	$effect(() => {
-		function alVolver() {
-			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]') || readdForm.isTainted()) return;
-			void invalidateAll();
-		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
-	});
+	// Refresco al volver a la pestaña (ver `useRefetchOnVisible`): la despensa
+	// la mueven compras, consumos y re-añadidos de cualquier miembro — el
+	// criterio «actualizada tras cada acción» de la #44 —, y no con el
+	// formulario de re-añadir a medias.
+	useRefetchOnVisible(() => readdForm.isTainted());
 
-	/** La etiqueta del botón lleva el paso exacto: «Consumir 0.25 kg». */
+	/** La etiqueta del botón lleva el paso exacto: «Consumir 0,25 kg». */
 	function etiquetaPaso(
 		item: PantryRow,
 		verbo: (params: { step: string; unit: string }) => string
 	) {
-		return verbo({ step: String(UNIT_STEP[item.unit]), unit: UNIT_LABEL[item.unit] });
+		return verbo({
+			step: formatQuantity(UNIT_STEP[item.unit], getLocale()),
+			unit: UNIT_LABEL[item.unit]
+		});
 	}
 </script>
 
@@ -248,7 +255,7 @@
 				<form
 					method="POST"
 					action="?/adjust"
-					use:kitEnhance={alAjustar(item.id)}
+					use:kitEnhance={alAjustar(item.id, item.unit)}
 					class="flex shrink-0 items-center gap-1"
 				>
 					<input type="hidden" name="item" value={item.id} />
@@ -260,13 +267,13 @@
 							class="btn btn-ghost btn-sm"
 							aria-label={etiquetaPaso(item, m.pantry_consume)}
 							title={etiquetaPaso(item, m.pantry_consume)}
-							onclick={() => anotarAjuste(item.id, -1)}
+							onclick={() => anotarAjuste(item.id, -UNIT_STEP[item.unit])}
 						>
 							<Minus aria-hidden="true" />
 						</button>
 					{/if}
 					<span class="badge badge-ghost tabular-nums">
-						{cantidad}
+						{formatQuantity(cantidad, getLocale())}
 						{UNIT_LABEL[item.unit]}
 					</span>
 					<button
@@ -276,7 +283,7 @@
 						class="btn btn-ghost btn-sm"
 						aria-label={etiquetaPaso(item, m.pantry_restock)}
 						title={etiquetaPaso(item, m.pantry_restock)}
-						onclick={() => anotarAjuste(item.id, 1)}
+						onclick={() => anotarAjuste(item.id, UNIT_STEP[item.unit])}
 					>
 						<Plus aria-hidden="true" />
 					</button>

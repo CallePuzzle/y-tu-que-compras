@@ -2,6 +2,7 @@
 	import Check from '@lucide/svelte/icons/check';
 	import Globe from '@lucide/svelte/icons/globe';
 	import { m } from '$lib/paraglide/messages.js';
+	import DropdownMenu from './DropdownMenu.svelte';
 	import { getLocale, locales, setLocale, type Locale } from '$lib/paraglide/runtime.js';
 
 	// Selector de idioma (issue #78). En la cabecera (`navbar-end` del layout),
@@ -17,10 +18,6 @@
 
 	let { class: className }: Props = $props();
 
-	// Sólo para `aria-expanded`: daisyUI muestra el dropdown por CSS con
-	// `:focus-within`, igual que el `FamilySwitcher` y el `NavBarEnd`.
-	let open = $state(false);
-
 	// La locale activa en render (la de la request en SSR): marca el item con
 	// el check. No es reactiva a propósito: cambiar de idioma RECARGA la
 	// página, no hay estado que reaccionar en caliente.
@@ -35,24 +32,29 @@
 	};
 </script>
 
-<div
-	class="dropdown dropdown-end {className ?? ''}"
-	onfocusin={() => (open = true)}
-	onfocusout={() => (open = false)}
+<!-- Menú con apertura por estado, no por foco (#116): ver `DropdownMenu`.
+     Elegir cierra el menú, aunque `setLocale` recargue la página enseguida. -->
+<DropdownMenu
+	label={m.ui_language()}
+	triggerClass="btn btn-ghost"
+	menuClass="w-40"
+	class={className}
 >
-	<button
-		type="button"
-		aria-label={m.ui_language()}
-		aria-haspopup="menu"
-		aria-expanded={open}
-		class="btn btn-ghost"
-	>
+	{#snippet trigger()}
 		<Globe />
-	</button>
-	<ul class="dropdown-content menu rounded-box bg-base-100 z-1 mt-3 w-40 p-2 shadow">
+	{/snippet}
+	{#snippet items({ close })}
 		{#each locales as locale (locale)}
-			<li>
-				<button type="button" onclick={() => setLocale(locale)}>
+			<li role="none">
+				<button
+					type="button"
+					role="menuitemradio"
+					aria-checked={locale === actual}
+					onclick={() => {
+						close();
+						setLocale(locale);
+					}}
+				>
 					<!-- El hueco del check alinea los nombres cuando uno lo lleva. -->
 					{#if locale === actual}
 						<Check aria-hidden="true" />
@@ -63,5 +65,5 @@
 				</button>
 			</li>
 		{/each}
-	</ul>
-</div>
+	{/snippet}
+</DropdownMenu>

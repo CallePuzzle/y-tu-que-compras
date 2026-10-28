@@ -2,8 +2,6 @@ import { fail, redirect } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { m } from '$lib/paraglide/messages.js';
-import { itemSchema } from '$lib/schemas/item.js';
-import { purchaseSchema } from '$lib/schemas/purchase.js';
 import { requireActiveFamily } from '$lib/server/family-context.js';
 import {
 	createItem,
@@ -15,29 +13,8 @@ import {
 import { getList } from '$lib/server/lists.js';
 import { finalizePurchase } from '$lib/server/purchases.js';
 import logger from '$lib/server/logger';
+import { itemFormSchema, purchaseFormSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
-
-// Los schemas se construyen EN REQUEST, nunca en scope de módulo (regla i18n
-// de la librería): los textos de Paraglide se resuelven con la locale de la
-// petición.
-function itemFormSchema() {
-	return itemSchema({
-		nameError: m.schema_items_name_error(),
-		nameLabel: m.schema_items_name_label(),
-		namePlaceholder: m.schema_items_name_placeholder(),
-		quantityError: m.schema_items_quantity_error(),
-		quantityLabel: m.schema_items_quantity_label(),
-		unitError: m.schema_items_unit_error(),
-		unitLabel: m.schema_items_unit_label()
-	});
-}
-
-function purchaseFormSchema() {
-	return purchaseSchema({
-		totalError: m.schema_purchase_total_error(),
-		totalLabel: m.schema_purchase_total_label()
-	});
-}
 
 /**
  * Valores iniciales del alta rápida: cantidad 1 y unidad «ud», lo más común

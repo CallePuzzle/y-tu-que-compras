@@ -1,27 +1,16 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import type { Unit } from '$lib/schemas/item.js';
+	import { unitLabels } from '$lib/units.js';
+	import { getLocale } from '$lib/paraglide/runtime.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	/**
-	 * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal
-	 * cual (son identificadores estables en inglés), los traduce Paraglide.
-	 * El mapa se construye EN RENDER, no en scope de módulo (regla i18n).
-	 */
-	const UNIT_LABEL: Record<Unit, string> = {
-		unit: m.unit_unit(),
-		kilogram: m.unit_kilogram(),
-		gram: m.unit_gram(),
-		liter: m.unit_liter(),
-		milliliter: m.unit_milliliter(),
-		package: m.unit_package(),
-		can: m.unit_can(),
-		dozen: m.unit_dozen()
-	};
+	// Etiquetas traducidas de las unidades (en render: regla i18n).
+	const UNIT_LABEL = unitLabels();
 </script>
 
 <svelte:head>
@@ -54,7 +43,9 @@
 		{#each data.purchase.items as item (item.id)}
 			<li class="bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4">
 				<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
-				<span class="badge badge-ghost tabular-nums">{item.quantity} {UNIT_LABEL[item.unit]}</span>
+				<span class="badge badge-ghost tabular-nums"
+					>{formatQuantity(item.quantity, getLocale())} {UNIT_LABEL[item.unit]}</span
+				>
 			</li>
 		{/each}
 	</ul>

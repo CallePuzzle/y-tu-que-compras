@@ -52,8 +52,18 @@
 			     incluye todo lo anterior), así que este formulario GET añade al
 			     final de lo ya pintado. El router de SvelteKit maneja los GET como
 			     un enlace (navegación en cliente) y sin JavaScript vale el submit
-			     nativo: el resultado es el mismo. -->
-			<form action={resolve('/history')} class="mt-4">
+			     nativo: el resultado es el mismo.
+			     Como navegación, SvelteKit subiría al principio y reiniciaría el
+			     foco (#117): `noscroll` + `keepfocus` dejan la vista donde estaba,
+			     y `replacestate` evita una entrada de historial por cada tanda
+			     («atrás» sale del historial, no deshace cargas). -->
+			<form
+				action={resolve('/history')}
+				class="mt-4"
+				data-sveltekit-noscroll
+				data-sveltekit-keepfocus
+				data-sveltekit-replacestate
+			>
 				<input type="hidden" name="offset" value={data.nextOffset} />
 				<button type="submit" class="btn btn-ghost w-full">{m.history_load_more()}</button>
 			</form>

@@ -37,6 +37,7 @@ import Ticket from '@lucide/svelte/icons/ticket';
 import WashingMachine from '@lucide/svelte/icons/washing-machine';
 import Wine from '@lucide/svelte/icons/wine';
 import Wrench from '@lucide/svelte/icons/wrench';
+import { m } from '$lib/paraglide/messages.js';
 import type { LIST_COLORS, LIST_ICONS } from '$lib/schemas/list.js';
 
 /** Un color de la paleta daisyUI (catálogo `LIST_COLORS`). */
@@ -111,3 +112,66 @@ export const COLOR_CHIP: Record<ListColor, string> = {
 	warning: 'bg-warning text-warning-content',
 	error: 'bg-error text-error-content'
 };
+
+/**
+ * Nombres traducidos de colores e iconos (#118): los ids del catálogo NUNCA
+ * se muestran tal cual (ni en `aria-label`/`title`). Funciones y no
+ * constantes: el mapa se construye EN RENDER, no en scope de módulo (regla
+ * i18n de la librería). El `Record` exige el catálogo entero en compilación.
+ */
+export function colorLabels(): Record<ListColor, string> {
+	return {
+		primary: m.list_color_primary(),
+		secondary: m.list_color_secondary(),
+		accent: m.list_color_accent(),
+		neutral: m.list_color_neutral(),
+		info: m.list_color_info(),
+		success: m.list_color_success(),
+		warning: m.list_color_warning(),
+		error: m.list_color_error()
+	};
+}
+
+export function iconLabels(): Record<ListIcon, string> {
+	return {
+		'list-checks': m.list_icon_list_checks(),
+		'clipboard-list': m.list_icon_clipboard_list(),
+		'shopping-basket': m.list_icon_shopping_basket(),
+		'shopping-cart': m.list_icon_shopping_cart(),
+		'shopping-bag': m.list_icon_shopping_bag(),
+		star: m.list_icon_star(),
+		heart: m.list_icon_heart(),
+		sparkles: m.list_icon_sparkles(),
+		gift: m.list_icon_gift(),
+		ticket: m.list_icon_ticket(),
+		house: m.list_icon_house(),
+		apple: m.list_icon_apple(),
+		carrot: m.list_icon_carrot(),
+		croissant: m.list_icon_croissant(),
+		egg: m.list_icon_egg(),
+		fish: m.list_icon_fish(),
+		beef: m.list_icon_beef(),
+		milk: m.list_icon_milk(),
+		pizza: m.list_icon_pizza(),
+		candy: m.list_icon_candy(),
+		coffee: m.list_icon_coffee(),
+		beer: m.list_icon_beer(),
+		wine: m.list_icon_wine(),
+		'cup-soda': m.list_icon_cup_soda(),
+		baby: m.list_icon_baby(),
+		dog: m.list_icon_dog(),
+		cat: m.list_icon_cat(),
+		pill: m.list_icon_pill(),
+		leaf: m.list_icon_leaf(),
+		'flower-2': m.list_icon_flower_2(),
+		paintbrush: m.list_icon_paintbrush(),
+		wrench: m.list_icon_wrench(),
+		hammer: m.list_icon_hammer(),
+		'washing-machine': m.list_icon_washing_machine(),
+		laptop: m.list_icon_laptop(),
+		smartphone: m.list_icon_smartphone(),
+		'gamepad-2': m.list_icon_gamepad_2(),
+		book: m.list_icon_book(),
+		music: m.list_icon_music()
+	};
+}

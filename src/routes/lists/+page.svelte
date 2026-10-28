@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
-	import { enhance as kitEnhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
@@ -10,9 +8,19 @@
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { m } from '$lib/paraglide/messages.js';
-	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
+	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
+	import { textoError } from '$lib/forms.js';
+	import { onRadioGroupKeydown } from '$lib/radio-group.js';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import {
+		COLOR_CHIP,
+		ICONS,
+		colorLabels,
+		iconLabels,
+		type ListColor,
+		type ListIcon
+	} from '$lib/list-visuals.js';
 	import { LIST_COLORS, listSchema, type ListData } from '$lib/schemas/list.js';
-	import type { SubmitFunction } from '@sveltejs/kit';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';
@@ -21,12 +29,6 @@
 
 	/** Una fila de la vista de listas (la trae el load). */
 	type ListRow = PageProps['data']['lists'][number];
-
-	/** Une el formato de error de superforms (string o lista) a texto plano. */
-	function textoError(error: string | string[] | undefined): string | undefined {
-		if (!error) return undefined;
-		return Array.isArray(error) ? error.join(' ') : error;
-	}
 
 	// Modal compartido de crear/editar (un solo formulario, como la invitación
 	// de /families): `undefined` = crear, una fila = editar.
@@ -38,10 +40,9 @@
 	// cerrarlos cuando la operación sale bien (el componente exporta `showModal`
 	// y `close`).
 	let listasModal: { showModal(): void; close(): void } | undefined = $state();
-	let borrarModal: { showModal(): void; close(): void } | undefined = $state();
 
 	// Aviso de éxito FUERA de los modales; el de error se enseña dentro, junto
-	// al formulario, con `$message` (crear/editar) o `borrarError` (borrar).
+	// al formulario, con `$message` (crear/editar) o en el `ConfirmModal` (borrar).
 	let exito: string | null = $state(null);
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
@@ -62,6 +63,22 @@
 	// icono llevan selectores propios más ricos que un `<select>` (paleta y
 	// catálogo visual, notas técnicas de la #31), conectados al mismo superforms
 	// y con sus mismos errores.
+	// Los iconos en el orden en que se pintan, para las flechas del selector.
+	const ICON_NAMES = Object.keys(ICONS) as ListIcon[];
+
+	/**
+	 * Roving tabindex de los selectores (#116): solo la opción marcada (o la
+	 * primera, si ninguna lo está) entra en el orden de tabulación.
+	 */
+	function tabindexRadio<T>(values: readonly T[], current: T, value: T): 0 | -1 {
+		const marcada = values.includes(current) ? current : values[0];
+		return value === marcada ? 0 : -1;
+	}
+
+	// Nombres traducidos de los selectores de color e icono (#118), en render.
+	const COLOR_LABEL = colorLabels();
+	const ICON_LABEL = iconLabels();
+
 	const fields = zodToFieldsJsonSchema(schema).filter((field) => field.kind === 'string');
 
 	// superForm se llama UNA vez por instancia (gestiona su estado reactivo
@@ -77,8 +94,9 @@
 				// `onResult` superforms no aplica el resultado.
 				const data = result.data as { form?: { message?: string } } | undefined;
 				exito = data?.form?.message ?? null;
+				// Sin `invalidateAll()` a mano: superforms ya revalida el load
+				// (`invalidateAll: true` por defecto) y otro más era un 2.º load.
 				listasModal?.close();
-				void invalidateAll();
 			} else if (result.type === 'failure') {
 				exito = null;
 			}
@@ -108,48 +126,18 @@
 		listasModal?.showModal();
 	}
 
-	// Borrar con confirmación (checklist #66): una modal compartida; cada card
-	// fija a quién se borra antes de abrirla. Mismo trato que expulsar en
-	// /families: el fallo se queda dentro del modal, el éxito lo cierra.
-	let borrarError: string | null = $state(null);
-
-	const onBorrarResult: SubmitFunction =
-		() =>
-		async ({ result, update }) => {
-			if (result.type === 'failure') {
-				const failure = result.data as { error?: string } | undefined;
-				borrarError = failure?.error ?? m.lists_error();
-			} else {
-				borrarError = null;
-				exito = m.lists_deleted();
-				borrarModal?.close();
-			}
-			await update();
-		};
+	// Borrar con confirmación (checklist #66): un `ConfirmModal` compartido;
+	// cada card fija qué lista se borra antes de abrirlo.
+	let borrarModal: ConfirmModal | undefined = $state();
 
 	function abrirBorrado(lista: ListRow) {
-		borrarError = null;
 		listaBorrada = lista;
 		borrarModal?.showModal();
 	}
 
-	// Refresco al volver a la pestaña (checklist #69): varios miembros pueden
-	// estar editando las listas (items marcados, altas y borrados) y la v1 no
-	// tiene tiempo real; al volver a mirar se revalidan los contadores.
-	//
-	// PERO superforms rehace el formulario del modal con el `form` que trae el
-	// load en cuanto se actualizan los datos de página: revalidar con un modal
-	// abierto MACHACARÍA lo tecleado. El refresco espera a una vuelta sin
-	// ningún `<dialog>` abierto.
-	$effect(() => {
-		function alVolver() {
-			if (document.visibilityState !== 'visible') return;
-			if (document.querySelector('dialog[open]')) return;
-			void invalidateAll();
-		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
-	});
+	// Refresco al volver a la pestaña: los contadores los mueven las altas,
+	// compras y borrados de cualquier miembro (ver `useRefetchOnVisible`).
+	useRefetchOnVisible();
 </script>
 
 <svelte:head>
@@ -260,7 +248,7 @@
 	>
 		<!-- El id de la lista editada viaja con el formulario; crear no lo lleva. -->
 		{#if listaEditada}
-			<input type="hidden" name="lista" value={listaEditada.id} />
+			<input type="hidden" name="listId" value={listaEditada.id} />
 		{/if}
 
 		<FormFields
@@ -273,14 +261,28 @@
 		<!-- Selector de color: la paleta semántica daisyUI (LIST_COLORS). -->
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">{m.schema_lists_color_label()}</legend>
-			<div class="flex flex-wrap gap-2" role="radiogroup" aria-label={m.schema_lists_color_label()}>
+			<!-- Una sola parada de tabulador y flechas para moverse (#116). -->
+			<div
+				class="flex flex-wrap gap-2"
+				role="radiogroup"
+				tabindex="-1"
+				aria-label={m.schema_lists_color_label()}
+				onkeydown={(event) =>
+					onRadioGroupKeydown(
+						event,
+						LIST_COLORS,
+						$formData.color,
+						(color) => ($formData.color = color)
+					)}
+			>
 				{#each LIST_COLORS as color (color)}
 					<button
 						type="button"
 						role="radio"
 						aria-checked={$formData.color === color}
-						aria-label={color}
-						title={color}
+						tabindex={tabindexRadio(LIST_COLORS, $formData.color, color)}
+						aria-label={COLOR_LABEL[color]}
+						title={COLOR_LABEL[color]}
 						class={`flex size-8 items-center justify-center rounded-full transition ${COLOR_CHIP[color]} ${$formData.color === color ? 'ring-base-content ring-offset-base-100 ring-2 ring-offset-2' : ''}`}
 						onclick={() => ($formData.color = color)}
 					>
@@ -298,14 +300,22 @@
 		<!-- Selector de icono: el catálogo lucide (LIST_ICONS), en botones. -->
 		<fieldset class="fieldset">
 			<legend class="fieldset-legend">{m.schema_lists_icon_label()}</legend>
-			<div class="flex flex-wrap gap-1" role="radiogroup" aria-label={m.schema_lists_icon_label()}>
+			<div
+				class="flex flex-wrap gap-1"
+				role="radiogroup"
+				tabindex="-1"
+				aria-label={m.schema_lists_icon_label()}
+				onkeydown={(event) =>
+					onRadioGroupKeydown(event, ICON_NAMES, $formData.icon, (icon) => ($formData.icon = icon))}
+			>
 				{#each Object.entries(ICONS) as [iconName, Icono] (iconName)}
 					<button
 						type="button"
 						role="radio"
 						aria-checked={$formData.icon === iconName}
-						aria-label={iconName}
-						title={iconName}
+						tabindex={tabindexRadio(ICON_NAMES, $formData.icon, iconName as ListIcon)}
+						aria-label={ICON_LABEL[iconName as ListIcon]}
+						title={ICON_LABEL[iconName as ListIcon]}
 						class={`btn btn-square btn-sm ${$formData.icon === iconName ? 'btn-primary' : 'btn-ghost'}`}
 						onclick={() => ($formData.icon = iconName as ListIcon)}
 					>
@@ -335,31 +345,13 @@
 
 <!-- Borrar (checklist #66): una modal compartida; cada botón de la card fija
      a qué lista se borra antes de abrirla. -->
-<Modal
+<ConfirmModal
 	bind:this={borrarModal}
-	type="X"
-	showButton={false}
-	boxClass="modal-box max-w-md"
-	strings={{ close: m.ui_close() }}
->
-	<h2 class="text-lg font-bold">{m.lists_delete_title({ name: listaBorrada?.name ?? '' })}</h2>
-	<p class="mt-1 text-sm opacity-70">{m.lists_delete_description()}</p>
-
-	{#if borrarError}
-		<div class="alert alert-error mt-3 text-sm" role="alert">
-			{borrarError}
-		</div>
-	{/if}
-
-	<!-- El borrado no lleva schema de superforms (solo el id oculto), así que
-	     va con el `enhance` del kit, como en la gestión de miembros. -->
-	<form
-		method="POST"
-		action="?/delete"
-		use:kitEnhance={onBorrarResult}
-		class="mt-4 flex justify-end"
-	>
-		<input type="hidden" name="lista" value={listaBorrada?.id ?? ''} />
-		<button type="submit" class="btn btn-error">{m.lists_delete_confirm()}</button>
-	</form>
-</Modal>
+	title={m.lists_delete_title({ name: listaBorrada?.name ?? '' })}
+	description={m.lists_delete_description()}
+	confirmLabel={m.lists_delete_confirm()}
+	action="?/delete"
+	fields={{ listId: listaBorrada?.id ?? '' }}
+	errorFallback={m.lists_error()}
+	onSuccess={() => (exito = m.lists_deleted())}
+/>

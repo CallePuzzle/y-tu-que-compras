@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
@@ -48,11 +47,11 @@
 		validators: zod4Client(schema),
 		onResult({ result }) {
 			if (result.type === 'success') {
-				// La familia ya existe: el load revalidado la trae a la lista y el
+				// La familia ya existe: el load que revalida superforms (por
+				// defecto, sin `invalidateAll()` a mano) la trae a la lista y el
 				// aviso de éxito queda en la página, no dentro del modal cerrado.
 				exito = m.families_success();
 				modal?.close();
-				void invalidateAll();
 			} else if (result.type === 'failure') {
 				exito = null;
 			}
@@ -70,7 +69,7 @@
 
 	// Invitar por email (issue #60): un formulario y una modal compartidos por
 	// todas las filas; cada fila admin la abre con su familia en el estado. La
-	// familia viaja en la query de la acción (`?/invite&familia=<id>`), porque
+	// familia viaja en la query de la acción (`?/invite&familyId=<id>`), porque
 	// el formulario solo pide el email (el rol de entrada es siempre `member`).
 	const inviteSchema = inviteFamilySchema({
 		emailError: m.schema_families_email_error(),
@@ -187,7 +186,7 @@
 
 			<form
 				method="POST"
-				action={`?/invite&familia=${familiaInvitada?.id ?? ''}`}
+				action={`?/invite&familyId=${familiaInvitada?.id ?? ''}`}
 				use:enhanceInvite
 				class="mt-4 flex flex-col gap-4"
 			>

@@ -93,6 +93,34 @@ test('aceptar con la sesion del invitado: alta en la familia y al selector', asy
 	expect(members.map((member) => member.userId)).toContain(invited.id);
 });
 
+test('un doble toque en «Aceptar» envía un solo POST (#115)', async ({ page }) => {
+	const admin = await createUser({ name: 'Papá' });
+	const invited = await createUser({ name: 'María', email: 'maria@example.com' });
+	const family = await createFamily({ name: 'Familia Pérez', owner: admin });
+	const invitation = await createInvitation({
+		familyId: family.id,
+		invitedBy: admin,
+		email: invited.email
+	});
+	await seedSession(page, invited);
+
+	// La respuesta se retiene: el 2.º toque llega con la 1.ª petición en vuelo.
+	let posts = 0;
+	await page.route('**/invitations/*?/accept', async (route) => {
+		posts++;
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		await route.continue();
+	});
+
+	await page.goto(`/invitations/${invitation.token}`);
+	await waitForHydration(page);
+	await page.getByRole('button', { name: 'Aceptar invitación' }).click({ clickCount: 2 });
+
+	await expect(page).toHaveURL(/\/families$/);
+	await expect(page.getByRole('link', { name: 'Familia Pérez' })).toBeVisible();
+	expect(posts).toBe(1);
+});
+
 test('rechazar: estado rechazada, sin alta en la familia', async ({ page }) => {
 	const admin = await createUser({ name: 'Papá' });
 	const invited = await createUser({ name: 'María', email: 'maria@example.com' });

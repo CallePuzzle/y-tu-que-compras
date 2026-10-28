@@ -47,7 +47,7 @@ export const load: PageServerLoad = async (event) => {
  * `null` si falta: UI rancia o petición hecha a mano.
  */
 async function memberIdOf(event: RequestEvent): Promise<string | null> {
-	const memberId = (await event.request.formData()).get('miembro');
+	const memberId = (await event.request.formData()).get('memberId');
 	return typeof memberId === 'string' && memberId ? memberId : null;
 }
 
@@ -56,7 +56,7 @@ async function memberIdOf(event: RequestEvent): Promise<string | null> {
  * de cada fila de pendientes). `null` si falta: UI rancia o petición a mano.
  */
 async function invitationIdOf(event: RequestEvent): Promise<string | null> {
-	const invitationId = (await event.request.formData()).get('invitacion');
+	const invitationId = (await event.request.formData()).get('invitationId');
 	return typeof invitationId === 'string' && invitationId ? invitationId : null;
 }
 

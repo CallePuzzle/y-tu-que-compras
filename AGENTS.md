@@ -47,7 +47,7 @@ antes). Un test suelto:
 ## Tests
 
 - Tres proyectos de vitest (`vite.config.ts`): **client** corre `.svelte.{test,spec}.*` en Chromium
-  real (vitest browser mode; requiere `bunx playwright install --with-deps chromium` la primera vez),
+  real (vitest browser mode; requiere `bunx playwright install --with-deps chromium webkit` la primera vez; WebKit solo lo usa el proyecto e2e `webkit`, el spec móvil en un iPhone),
   **server** corre el resto en node (sin base de datos) y **integration** corre `*.int.spec.ts`
   contra Postgres real. Los tests de `src/lib/server/**` son siempre de servidor.
 - **BD de integración**: vitest corre en modo `test`, así que Vite carga `.env.test` por encima de

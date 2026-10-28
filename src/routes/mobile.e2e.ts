@@ -134,7 +134,7 @@ test('el idioma inicial sale de Accept-Language, el selector lo cambia y persist
 
 	// Cambio a español: setLocale escribe la cookie de Paraglide y recarga.
 	await page.getByRole('button', { name: 'Change language' }).click();
-	await page.getByRole('button', { name: 'Español' }).click();
+	await page.getByRole('menuitemradio', { name: 'Español' }).click();
 
 	// Tras la recarga, todo el chrome sale en español — incluido el dock.
 	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
