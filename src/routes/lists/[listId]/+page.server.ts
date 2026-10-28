@@ -97,11 +97,12 @@ export const actions: Actions = {
 		try {
 			const created = await createItem(family.id, event.params.listId, form.data);
 			if (!created) {
-				return message(form, m.lists_gone(), { status: 400 });
+				// Lista ya no existe (borrada por otro miembro): 404 (issue #110).
+				return message(form, m.lists_gone(), { status: 404 });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al crear el item');
-			return message(form, m.items_error(), { status: 400 });
+			return message(form, m.items_error(), { status: 500 });
 		}
 
 		return message(form, m.items_success());
@@ -131,11 +132,12 @@ export const actions: Actions = {
 		try {
 			const updated = await updateItem(family.id, event.params.listId, id, form.data);
 			if (!updated) {
-				return message(form, m.items_gone(), { status: 400 });
+				// Item (o lista) ya no existe aquí: 404 (issue #110).
+				return message(form, m.items_gone(), { status: 404 });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al actualizar el item');
-			return message(form, m.items_error(), { status: 400 });
+			return message(form, m.items_error(), { status: 500 });
 		}
 
 		return message(form, m.items_updated());
@@ -153,11 +155,11 @@ export const actions: Actions = {
 		try {
 			const deleted = await deleteItem(family.id, event.params.listId, id);
 			if (!deleted) {
-				return fail(400, { error: m.items_gone() });
+				return fail(404, { error: m.items_gone() });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al borrar el item');
-			return fail(400, { error: m.items_error() });
+			return fail(500, { error: m.items_error() });
 		}
 
 		return { success: true };
@@ -181,11 +183,11 @@ export const actions: Actions = {
 		try {
 			const ok = await setItemPurchased(family.id, event.params.listId, id, purchased);
 			if (!ok) {
-				return fail(400, { error: m.items_gone() });
+				return fail(404, { error: m.items_gone() });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al marcar el item');
-			return fail(400, { error: m.items_error() });
+			return fail(500, { error: m.items_error() });
 		}
 
 		return { success: true };
@@ -220,14 +222,17 @@ export const actions: Actions = {
 				user.id
 			);
 			if (outcome === 'list-gone') {
-				return message(form, m.lists_gone(), { status: 400 });
+				// La lista ya no existe: 404 (issue #110). «Nada comprado» se
+				// queda en 400: no es un recurso que falte, es la regla de
+				// negocio que rechaza cerrar una compra vacía.
+				return message(form, m.lists_gone(), { status: 404 });
 			}
 			if (outcome === 'nothing-purchased') {
 				return message(form, m.purchases_empty(), { status: 400 });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al finalizar la compra');
-			return message(form, m.purchases_error(), { status: 400 });
+			return message(form, m.purchases_error(), { status: 500 });
 		}
 
 		return message(form, m.purchases_success());

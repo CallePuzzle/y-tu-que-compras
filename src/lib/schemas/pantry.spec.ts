@@ -26,6 +26,15 @@ describe('readdSchema (#74)', () => {
 		expect(readdSchema().safeParse({ ...VALID, quantity: -2 }).success).toBe(false);
 	});
 
+	it('la cantidad de la lista lleva el contrato de DECIMAL(10,3) (#107)', () => {
+		// El mismo rango que el item: mínimo una milésima, techo de columna y
+		// múltiplo de la milésima.
+		expect(readdSchema().safeParse({ ...VALID, quantity: 0.0001 }).success).toBe(false);
+		expect(readdSchema().safeParse({ ...VALID, quantity: 10_000_000 }).success).toBe(false);
+		expect(readdSchema().safeParse({ ...VALID, quantity: 1.2345 }).success).toBe(false);
+		expect(readdSchema().safeParse({ ...VALID, quantity: 0.001 }).success).toBe(true);
+	});
+
 	it('rechaza modos fuera del catálogo', () => {
 		const result = readdSchema().safeParse({ ...VALID, pantryMode: 'vender' });
 
@@ -62,6 +71,16 @@ describe('readdSchema (#74)', () => {
 		}
 
 		expect(readdSchema().safeParse({ ...setMode, newQuantity: 0.25 }).success).toBe(true);
+	});
+
+	it('la cantidad que queda en la despensa lleva el mismo contrato que la lista (#107)', () => {
+		const setMode = { ...VALID, pantryMode: 'set' } as const;
+
+		// La columna es DECIMAL(10,3) también en pantryItem: mismo mínimo, techo
+		// y precisión que la cantidad del item.
+		expect(readdSchema().safeParse({ ...setMode, newQuantity: 0.0001 }).success).toBe(false);
+		expect(readdSchema().safeParse({ ...setMode, newQuantity: 1.2345 }).success).toBe(false);
+		expect(readdSchema().safeParse({ ...setMode, newQuantity: 9_999_999.999 }).success).toBe(true);
 	});
 
 	it('con «keep» y «remove» ignora la cantidad nueva que venga', () => {
