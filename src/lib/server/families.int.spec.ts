@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { makeSignature } from 'better-auth/crypto';
 import { describe, expect, it } from 'vitest';
+import { with_request_store } from '@sveltejs/kit/internal/server';
 import type { RequestEvent } from '@sveltejs/kit';
 
 // Test de INTEGRACIÓN (proyecto vitest `integration`): a diferencia de
@@ -113,6 +114,25 @@ async function createFamilyViaApi(cookie: string, name: string): Promise<Respons
 			body: { name, slug: familySlug(name) }
 		})
 	);
+}
+
+/**
+ * Corre `fn` como si SvelteKit la hubiera invocado dentro de `handle`
+ * (issue #103): la locale del correo de invitación sale de `getRequestEvent()`,
+ * que necesita el ALS de Kit — los tests no lo levantan, así que este
+ * envoltorio hace de servidor con el evento del test. Sus cabeceras (sesión,
+ * cookie de idioma) son las que verán better-auth y la resolución de locale.
+ */
+function withinEvent<T>(event: RequestEvent, fn: () => Promise<T>): Promise<T> {
+	return with_request_store({ event } as never, fn);
+}
+
+/** Un RequestEvent mínimo con esa cookie, para las llamadas por HTTP. */
+function testEvent(cookie: string): RequestEvent {
+	return {
+		request: new Request(BASE, { headers: { cookie } }),
+		locals: {}
+	} as unknown as RequestEvent;
 }
 
 describe('seed de una familia (adaptador Prisma real)', () => {
@@ -285,11 +305,15 @@ describe('invitar por email (#60)', () => {
 	}
 
 	async function inviteViaApi(cookie: string, familyId: string, email: string): Promise<Response> {
-		return auth.handler(
-			tenancyRequest('invitation/create', cookie, {
-				method: 'POST',
-				body: { identifier: email, contextType: 'organization', contextId: familyId }
-			})
+		// El correo de la invitación resuelve su locale del request event (#103):
+		// el handler va envuelto, como estaría en `handle` de SvelteKit.
+		return withinEvent(testEvent(cookie), () =>
+			auth.handler(
+				tenancyRequest('invitation/create', cookie, {
+					method: 'POST',
+					body: { identifier: email, contextType: 'organization', contextId: familyId }
+				})
+			)
 		);
 	}
 
@@ -411,7 +435,8 @@ describe('aceptar y rechazar invitación (#61)', () => {
 
 		// La invitación va por la función de app (`inviteFamily`): es la que fija
 		// el rol `member` de entrada que la aceptación debe respetar.
-		await inviteFamily(eventOf(admin.cookie), { familyId, email: guestEmail });
+		const event = eventOf(admin.cookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email: guestEmail }));
 
 		const invitation = await prisma.invitation.findFirstOrThrow({
 			where: { identifier: guestEmail, contextId: familyId }
@@ -687,7 +712,10 @@ describe('expulsar, abandonar, promover y borrar (#62)', () => {
 
 		// Una invitación pendiente también desaparece con la familia.
 		const guestEmail = `borrada-${randomUUID().slice(0, 8)}@example.com`;
-		await inviteFamily(eventOf(admin.cookie), { familyId, email: guestEmail });
+		const inviteEvent = eventOf(admin.cookie);
+		await withinEvent(inviteEvent, () =>
+			inviteFamily(inviteEvent, { familyId, email: guestEmail })
+		);
 		expect(await prisma.invitation.findFirst({ where: { contextId: familyId } })).not.toBeNull();
 
 		await deleteFamily(eventOf(admin.cookie), familyId);
@@ -828,7 +856,8 @@ describe('caducidad y cancelación de invitaciones (#102)', () => {
 
 	/** Invita por la app y devuelve la fila MÁS RECIENTE de esa invitación. */
 	async function invitedRow(cookie: string, familyId: string, email: string) {
-		await inviteFamily(eventOf(cookie), { familyId, email });
+		const event = eventOf(cookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
 		return prisma.invitation.findFirstOrThrow({
 			where: { identifier: email, contextId: familyId },
 			orderBy: { createdAt: 'desc' }
@@ -881,11 +910,13 @@ describe('caducidad y cancelación de invitaciones (#102)', () => {
 
 		// Llamada cruda al endpoint del plugin, SIN expiresInHours: antes de la
 		// #102 guardaba expiresAt = null y el enlace servía para siempre.
-		const response = await auth.handler(
-			tenancyRequest('invitation/create', admin.cookie, {
-				method: 'POST',
-				body: { identifier: email, contextType: 'organization', contextId: familyId }
-			})
+		const response = await withinEvent(testEvent(admin.cookie), () =>
+			auth.handler(
+				tenancyRequest('invitation/create', admin.cookie, {
+					method: 'POST',
+					body: { identifier: email, contextType: 'organization', contextId: familyId }
+				})
+			)
 		);
 		expect(response.ok).toBe(true);
 
@@ -965,5 +996,61 @@ describe('caducidad y cancelación de invitaciones (#102)', () => {
 		await expect(
 			cancelFamilyInvitation(eventOf(admin.cookie), invitation.id)
 		).rejects.toBeInstanceOf(FamilyInvitationGoneError);
+	});
+});
+
+/**
+ * Locale del correo de invitación (issue #103): sale del request event de
+ * SvelteKit (`getRequestEvent`), no del `ctx.request` del endpoint — que
+ * better-call deja vacío cuando `inviteFamily` llama a `auth.api.
+ * createInvitation` desde una server action. Con la app en inglés, el email
+ * sale en inglés.
+ */
+describe('locale del correo de invitación (#103)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Locale ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	it('con la app en inglés (cookie del selector) el correo sale en inglés', async () => {
+		const admin = await sessionCookieFor('Admin Anglo');
+		const familyId = await createFamilyFor(admin.cookie);
+		clearCapturedEmailsForTests();
+
+		const email = `anglo-${randomUUID().slice(0, 8)}@example.com`;
+		// Una sola petición con las dos cookies (sesión + idioma), como llega
+		// del navegador; dentro, `inviteFamily` llama programáticamente al
+		// endpoint — el agujero que hacía el correo siempre en español.
+		const event = eventOf(`${admin.cookie}; PARAGLIDE_LOCALE=en`);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+
+		const [captured] = capturedEmailsForTests();
+		expect(captured?.to).toBe(email);
+		expect(captured?.subject).toContain('has invited you');
+		expect(captured?.text).toContain('has invited you to the family');
+	});
+
+	it('sin cookie de idioma el correo sale en español (base)', async () => {
+		const admin = await sessionCookieFor('Admin Hispano');
+		const familyId = await createFamilyFor(admin.cookie);
+		clearCapturedEmailsForTests();
+
+		const email = `hispano-${randomUUID().slice(0, 8)}@example.com`;
+		const event = eventOf(admin.cookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+
+		const [captured] = capturedEmailsForTests();
+		expect(captured?.subject).toContain('te ha invitado');
 	});
 });

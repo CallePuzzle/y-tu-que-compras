@@ -3,6 +3,7 @@ import type { GenericEndpointContext } from '@better-auth/core';
 import type { EntityCreatedEvent } from '@zytera/better-auth-tenancy';
 import { tenancy } from '@zytera/better-auth-tenancy/server';
 import type { EndpointAuthHook } from '@zytera/better-auth-tenancy/server';
+import { with_request_store } from '@sveltejs/kit/internal/server';
 
 import {
 	ALREADY_FAMILY_MEMBER_MESSAGE,
@@ -868,6 +869,23 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 		} as unknown as GenericEndpointContext;
 	}
 
+	/**
+	 * Corre `fn` dentro del request event de SvelteKit con esas cabeceras
+	 * (issue #103): la locale del correo sale de ahí (`getRequestEvent`), no
+	 * del `ctx.request` del endpoint, que better-call deja vacío en las
+	 * llamadas programáticas a `auth.api.createInvitation`.
+	 */
+	function withRequestEvent(headers: Record<string, string>, fn: () => unknown): Promise<unknown> {
+		return with_request_store(
+			{
+				event: {
+					request: new Request('http://localhost/api/auth/tenancy/invitation/create', { headers })
+				}
+			} as never,
+			async () => fn()
+		);
+	}
+
 	function invitationEvent(
 		identifier: string,
 		contextType: 'organization' | 'team' = 'organization'
@@ -890,9 +908,11 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 	});
 
 	it('envía el correo con el enlace del token, la familia y el invitador', async () => {
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com'),
-			ctxOfRequest(adapterOfInvitation(), 'es')
+		await withRequestEvent({ 'accept-language': 'es' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
 
 		expect(capturedEmailsForTests()).toHaveLength(1);
@@ -903,34 +923,64 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 		expect(email.subject).toContain('Ana');
 	});
 
-	it('el idioma del correo sigue el Accept-Language de quien invita', async () => {
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com'),
-			ctxOfRequest(adapterOfInvitation(), 'es')
+	it('el idioma del correo sigue la locale del request (cookie del selector)', async () => {
+		// Cookie del selector de idioma: la vía principal de la app.
+		await withRequestEvent({ cookie: 'PARAGLIDE_LOCALE=en' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com'),
-			ctxOfRequest(adapterOfInvitation(), 'en-GB,en;q=0.9')
+		await withRequestEvent({ cookie: 'PARAGLIDE_LOCALE=es' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
 
-		const [es, en] = capturedEmailsForTests();
-		expect(es.subject).not.toBe(en.subject);
+		const [en, es] = capturedEmailsForTests();
+		expect(en.subject).toContain('has invited you');
+		expect(es.subject).toContain('te ha invitado');
+	});
+
+	it('sin cookie, el Accept-Language decide (estrategia de Paraglide)', async () => {
+		await withRequestEvent({ 'accept-language': 'en-GB,en;q=0.9' }, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
+		);
+		await withRequestEvent({}, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
+		);
+
+		const [en, base] = capturedEmailsForTests();
+		expect(en.subject).toContain('has invited you');
+		// Sin ninguna señal, la base («es»).
+		expect(base.subject).toContain('te ha invitado');
 	});
 
 	it('una invitación sin email no envía ningún correo', async () => {
 		await expect(
-			tenancyConfig.actions?.onInvitationCreated?.(
-				invitationEvent(''),
-				ctxOfRequest(adapterOfInvitation(), 'es')
+			withRequestEvent({}, () =>
+				tenancyConfig.actions?.onInvitationCreated?.(
+					invitationEvent(''),
+					ctxOfRequest(adapterOfInvitation(), 'es')
+				)
 			)
 		).resolves.toBeUndefined();
 		expect(capturedEmailsForTests()).toHaveLength(0);
 	});
 
 	it('los teams no generan correo de familia', async () => {
-		await tenancyConfig.actions?.onInvitationCreated?.(
-			invitationEvent('invitado@example.com', 'team'),
-			ctxOfRequest(adapterOfInvitation(), 'es')
+		await withRequestEvent({}, () =>
+			tenancyConfig.actions?.onInvitationCreated?.(
+				invitationEvent('invitado@example.com', 'team'),
+				ctxOfRequest(adapterOfInvitation(), 'es')
+			)
 		);
 		expect(capturedEmailsForTests()).toHaveLength(0);
 	});
@@ -943,9 +993,11 @@ describe('tenancyConfig.actions.onInvitationCreated (correo de invitación, #60)
 		};
 
 		await expect(
-			tenancyConfig.actions?.onInvitationCreated?.(
-				invitationEvent('invitado@example.com'),
-				ctxOfRequest(adapter, 'es')
+			withRequestEvent({}, () =>
+				tenancyConfig.actions?.onInvitationCreated?.(
+					invitationEvent('invitado@example.com'),
+					ctxOfRequest(adapter, 'es')
+				)
 			)
 		).rejects.toThrow(/not found/i);
 	});
