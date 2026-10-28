@@ -8,6 +8,7 @@ import type {
 	Member,
 	Organization,
 	PantryItem,
+	PurchaseRecord,
 	Unit,
 	User
 } from '../../src/lib/generated/prisma/client';
@@ -40,9 +41,9 @@ const FAMILY_ROLE_TRANSLATIONS: Record<string, Record<string, string>> = {
 
 // Deja la BD de test vacía entre tests. TRUNCATE ... CASCADE resuelve las
 // referencias cruzadas (member→user/role, list→organization, item→list,
-// pantryItem→organization…).
+// pantryItem→organization, purchaseRecord→organization…).
 export async function resetDb(): Promise<void> {
-	await prisma.$executeRaw`TRUNCATE TABLE "user", "session", "account", "verification", "rateLimit", "organization", "team", "role", "roleStatement", "roleTranslation", "statement", "statementTranslation", "member", "permissionGrant", "permissionDeny", "invitation", "list", "item", "pantryItem" RESTART IDENTITY CASCADE`;
+	await prisma.$executeRaw`TRUNCATE TABLE "user", "session", "account", "verification", "rateLimit", "organization", "team", "role", "roleStatement", "roleTranslation", "statement", "statementTranslation", "member", "permissionGrant", "permissionDeny", "invitation", "list", "item", "pantryItem", "purchaseRecord", "purchaseItem" RESTART IDENTITY CASCADE`;
 }
 
 export async function createUser(options: { email?: string; name?: string } = {}): Promise<User> {
@@ -227,6 +228,42 @@ export async function createPantryItem(options: {
 			unit: options.unit ?? 'unit',
 			createdAt: now,
 			updatedAt: now
+		}
+	});
+}
+
+/**
+ * Una compra finalizada (issues #70 y #75): el snapshot que deja
+ * `finalizePurchase` — lista de origen (nombre guardado, `listId` opcional
+ * para ejercitar listas borradas), total a mano, fecha explícita para poder
+ * ordenar el historial y los items congelados del momento.
+ */
+export async function createPurchaseRecord(options: {
+	familyId: string;
+	listName?: string;
+	listId?: string | null;
+	total?: number;
+	userId?: string | null;
+	createdAt?: Date;
+	items?: Array<{ name?: string; quantity?: number; unit?: Unit }>;
+}): Promise<PurchaseRecord> {
+	const listName = options.listName ?? `Lista E2E ${randomUUID().slice(0, 8)}`;
+	const items = options.items ?? [{}];
+	return prisma.purchaseRecord.create({
+		data: {
+			organizationId: options.familyId,
+			listId: options.listId ?? null,
+			listName,
+			total: options.total ?? 0,
+			userId: options.userId ?? null,
+			createdAt: options.createdAt ?? new Date(),
+			items: {
+				create: items.map((item) => ({
+					name: item.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`,
+					quantity: item.quantity ?? 1,
+					unit: item.unit ?? 'unit'
+				}))
+			}
 		}
 	});
 }
