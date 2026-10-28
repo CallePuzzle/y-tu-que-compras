@@ -31,6 +31,10 @@ export default defineConfig({
 		expect: { requireAssertions: true },
 		// El proyecto `client` corre en Chromium real (vitest browser mode):
 		// los tests de componentes de la app empiezan con el `FamilySwitcher`.
+		// `locale` fija `navigator.language`/Accept-Language del contexto: sin
+		// ella el Chromium hereda la locale del sistema y, con la detección por
+		// Accept-Language de la #78, los textos de los componentes saldrían en
+		// el idioma del runner (en-US en CI) rompiendo las aserciones.
 		// Si algún día no queda ninguno, que no falle la suite por eso.
 		passWithNoTests: true,
 		projects: [
@@ -40,7 +44,7 @@ export default defineConfig({
 					name: 'client',
 					browser: {
 						enabled: true,
-						provider: playwright(),
+						provider: playwright({ contextOptions: { locale: 'es-ES' } }),
 						instances: [{ browser: 'chromium', headless: true }]
 					},
 					include: ['src/**/*.svelte.{test,spec}.{js,ts}'],
