@@ -303,8 +303,9 @@ describe('Finalizar compra: guardas (#70)', () => {
 		await createItemOrFail(familyId, list.id, { name: 'Pan', quantity: 1, unit: 'unit' }, true);
 		await createItemOrFail(familyId, list.id, { ...ITEM, quantity: 0.5 }, true);
 
-		// Dos peticiones concurrentes (doble click, dos miembros): el reclamo
-		// atómico deja pasar a una y revierte a la otra SIN rastro.
+		// Dos peticiones concurrentes (doble click, dos miembros): los locks
+		// FOR UPDATE dejan pasar a una y la otra se queda sin filas que
+		// reclamar, SIN rastro.
 		const outcomes = await Promise.all([
 			finalizePurchase(familyId, list.id, 20, await userRow('Miembro Uno')),
 			finalizePurchase(familyId, list.id, 25, await userRow('Miembro Dos'))
@@ -325,6 +326,41 @@ describe('Finalizar compra: guardas (#70)', () => {
 			['Pan', 1]
 		]);
 		expect(await prisma.item.findMany({ where: { listId: list.id } })).toHaveLength(0);
+	});
+
+	it('dos listas con los mismos productos en ORDEN INVERSO finalizan a la vez sin deadlock (#108)', async () => {
+		// El upsert de despensa anterior seguía el orden de un findMany sin
+		// orderBy: {leche, pan} contra {pan, leche} podía bloquear las filas
+		// de despensa en orden inverso y Postgres abortaba a uno (40P01), que
+		// el usuario veía como `purchases_error`. El bucle canónico ordenado
+		// lo hace imposible: las dos transacciones piden las filas en el
+		// MISMO orden, una espera a la otra y las dos terminan bien.
+		const familyId = await familyRow('Familia Cruzada');
+		const primera = await createList(familyId, LISTA);
+		const segunda = await createList(familyId, { ...LISTA, name: 'Compra cruzada' });
+		await createItemOrFail(familyId, primera.id, { ...ITEM, quantity: 1.5 }, true);
+		await createItemOrFail(familyId, primera.id, { name: 'Pan', quantity: 1, unit: 'unit' }, true);
+		await createItemOrFail(familyId, segunda.id, { name: 'Pan', quantity: 1, unit: 'unit' }, true);
+		await createItemOrFail(familyId, segunda.id, { ...ITEM, quantity: 1 }, true);
+
+		const outcomes = await Promise.all([
+			finalizePurchase(familyId, primera.id, 10, await userRow('Comprador Uno')),
+			finalizePurchase(familyId, segunda.id, 12, await userRow('Comprador Dos'))
+		]);
+		expect(outcomes).toEqual(['finalized', 'finalized']);
+
+		// Despensa sumada de las dos compras, sin duplicados; dos historiales.
+		const pantry = await prisma.pantryItem.findMany({
+			where: { organizationId: familyId },
+			orderBy: { name: 'asc' }
+		});
+		expect(pantry.map((row) => [row.name, Number(row.quantity)])).toEqual([
+			['Leche entera', 2.5],
+			['Pan', 2]
+		]);
+		expect(
+			await prisma.purchaseRecord.findMany({ where: { organizationId: familyId } })
+		).toHaveLength(2);
 	});
 });
 

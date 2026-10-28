@@ -1,4 +1,5 @@
 import prisma from '$lib/server/prisma.js';
+import { Prisma } from '$lib/generated/prisma/client';
 import type { Unit } from '$lib/schemas/item.js';
 
 // Finalizar compra (issues #43 y #70) e historial (#75, #76): cerrar una lista
@@ -37,15 +38,27 @@ export type FinalizeOutcome =
 	| 'nothing-purchased';
 
 /**
- * Error centinela para revolver el ROLLBACK de la transacción cuando otro
- * miembro se llevó los items comprados mientras esta transacción los leía
- * (doble click, dos miembros a la vez): solo vive dentro del try de abajo,
- * que lo traduce a `nothing-purchased`.
+ * Error centinela para revolver el ROLLBACK de la transacción si el reclamo
+ * de abajo borrara menos filas de las bloqueadas: solo vive dentro del try,
+ * que lo traduce a `nothing-purchased`. Con los locks `FOR UPDATE` es un
+ * invariante que nunca salta (nadie puede cambiar `purchased` de una fila
+ * bloqueada); queda como guardia por si el orden de lectura se toca algún día.
  */
 class ConcurrentFinalizeError extends Error {
 	constructor() {
 		super('La compra ya fue finalizada por otro miembro a la vez');
 	}
+}
+
+/**
+ * El orden canónico GLOBAL de los aterrizajes en despensa: comparación por
+ * unidades de código UTF-16, idéntica en todo proceso y sin depender de la
+ * locale (el `localeCompare` varía). Es la que ordena el bucle de upserts
+ * para que ninguna pareja de transacciones bloquee las filas de despensa en
+ * orden inverso.
+ */
+function ordenCanonico(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**
@@ -59,16 +72,25 @@ class ConcurrentFinalizeError extends Error {
  * queda rastro de nada. El total ya llega validado por `purchaseSchema` (>= 0)
  * y el usuario es el que confirma, para el `PurchaseRecord.userId`.
  *
- * La protección contra la doble finalización es un RECLAMO atómico: en vez de
- * «leo comprados, luego borro» (dos miembros podrían leer los mismos y acabar
- * con dos historiales), el `deleteMany` condicional borra solo los que SIGUEN
- * comprados y devuelve cuántos pudo borrarse. Si borra menos de los que había
- * leído, otro ganó la carrera: se lanza dentro y la transacción entera se
- * revierte (sin historial duplicado ni despensa inflada) para devolver
- * `nothing-purchased` — exactamente lo que ve el segundo click de un doble
- * click: ya no hay nada que finalizar. El que sí borra los suyos sigue con la
- * compra, y dos compras de listas distintas no se estorban: el reclamo es por
- * los items de ESTA lista.
+ * La protección contra la doble finalización es un RECLAMO POR BLOQUEO
+ * (issue #108): los comprados se leen con `SELECT … FOR UPDATE` — en orden de
+ * lista (`order`, luego antigüedad), que es también el orden del snapshot —
+ * y después se borran con un `deleteMany` que, con las filas bloqueadas,
+ * borra EXACTAMENTE lo leído. El lock congela el conjunto: un desmarcado
+ * concurrente espera al COMMIT (y se queda sin fila que desmarcar), así que
+ * ya no existe la ventana «leo comprados, otro desmarca, borro menos de lo
+ * leído» que deshacía todo con un falso «nada comprado». Dos finalizaciones
+ * de la MISMA lista serializan en los locks; la segunda no encuentra filas y
+ * devolvemos `nothing-purchased` — exactamente lo que ve el segundo click de
+ * un doble click.
+ *
+ * Los upserts de despensa tampoco pueden deadlockear: los comprados se
+ * AGREGAN por (nombre canónico, unidad) — los duplicados de la misma lista
+ * aterrizan juntos — y el bucle de upserts sigue el orden canónico GLOBAL del
+ * par. Dos compras concurrentes de listas distintas ({leche, pan} y {pan,
+ * leche}) tocan así las filas de despensa SIEMPRE en el mismo orden: sin
+ * ciclos de locks, sin el 40P01 que antes abortaba a uno con
+ * `purchases_error`.
  */
 export async function finalizePurchase(
 	familyId: string,
@@ -88,18 +110,26 @@ export async function finalizePurchase(
 				return 'list-gone';
 			}
 
-			const purchased = await tx.item.findMany({
-				where: { listId: list.id, purchased: true },
-				select: { id: true, name: true, quantity: true, unit: true }
-			});
+			// El reclamo (ver arriba): filas bloqueadas EN ORDEN DE LISTA — el
+			// mismo que el alta rápida y el que mostrará el historial. `quantity`
+			// vuelve como Decimal de la base y `unit` como el string del enum.
+			const purchased = await tx.$queryRaw<
+				Array<{ id: string; name: string; quantity: Prisma.Decimal; unit: Unit }>
+			>`
+				SELECT "id", "name", quantity, unit
+				FROM "item"
+				WHERE "listId" = ${list.id} AND purchased = true
+				ORDER BY "order" ASC, "createdAt" ASC, "id" ASC
+				FOR UPDATE
+			`;
 			// «No permitir finalizar sin items comprados»: sin comprados no hay
 			// compra que cerrar (y tampoco historial sin items).
 			if (purchased.length === 0) {
 				return 'nothing-purchased';
 			}
 
-			// El reclamo (ver arriba): gana quien se lleve los rows. Ningún
-			// write posterior ocurre si la carrera se perdió.
+			// La confirmación del reclamo: invariante bajo lock, guardia por si
+			// acaso. Ningún write posterior ocurre si saltara.
 			const claim = await tx.item.deleteMany({
 				where: { id: { in: purchased.map((item) => item.id) }, purchased: true }
 			});
@@ -108,7 +138,8 @@ export async function finalizePurchase(
 			}
 
 			// Historial (issue #75): snapshot inmutable de la lista y de cada
-			// item comprado, con el total a mano y quién finalizó.
+			// item comprado — en el ORDEN DE LA LISTA en que se compraron —,
+			// con el total a mano y quién finalizó.
 			await tx.purchaseRecord.create({
 				data: {
 					organizationId: familyId,
@@ -127,30 +158,59 @@ export async function finalizePurchase(
 			});
 
 			// Despensa: cada comprado aterriza en SU producto — el único
-			// (familia, nombre normalizado, unidad) decide si es nuevo o se suma.
-			// El upsert es el INSERT ON CONFLICT nativo de Postgres, así que dos
-			// compras concurrentes de listas distintas que traen el mismo
-			// producto también suman sin partirse.
+			// (familia, nombre normalizado, unidad) decide si es nuevo o se
+			// suma. Los duplicados de la MISMA lista (mismo canónico y unidad)
+			// se agregan en un solo aterrizaje, y el bucle va en orden
+			// canónico global: es lo que hace imposible el deadlock entre
+			// compras concurrentes (ver arriba).
+			interface Aterrizaje {
+				name: string;
+				normalizedName: string;
+				unit: Unit;
+				quantity: number;
+			}
+			const aterrizajes = new Map<string, Aterrizaje>();
 			for (const item of purchased) {
 				const normalizedName = normalizeItemName(item.name);
+				const clave = `${normalizedName}\n${item.unit}`;
+				const previo = aterrizajes.get(clave);
+				if (previo) {
+					previo.quantity += Number(item.quantity);
+					continue;
+				}
+				aterrizajes.set(clave, {
+					name: item.name,
+					normalizedName,
+					unit: item.unit,
+					quantity: Number(item.quantity)
+				});
+			}
+			const enOrden = [...aterrizajes.values()].sort(
+				(a, b) => ordenCanonico(a.normalizedName, b.normalizedName) || ordenCanonico(a.unit, b.unit)
+			);
+
+			// El upsert es el INSERT ON CONFLICT nativo de Postgres, así que dos
+			// compras concurrentes que traen el mismo producto también suman
+			// sin partirse.
+			for (const aterrizaje of enOrden) {
 				await tx.pantryItem.upsert({
 					where: {
 						organizationId_normalizedName_unit: {
 							organizationId: familyId,
-							normalizedName,
-							unit: item.unit
+							normalizedName: aterrizaje.normalizedName,
+							unit: aterrizaje.unit
 						}
 					},
 					// La primera vez manda el nombre tal y como se escribió en la
 					// lista: es el que la despensa mostrará de ahí en adelante.
 					create: {
 						organizationId: familyId,
-						name: item.name,
-						normalizedName,
-						quantity: item.quantity,
-						unit: item.unit
+						name: aterrizaje.name,
+						normalizedName: aterrizaje.normalizedName,
+						quantity: aterrizaje.quantity,
+						unit: aterrizaje.unit
 					},
-					update: { quantity: { increment: item.quantity } }
+					update: { quantity: { increment: aterrizaje.quantity } }
 				});
 			}
 
