@@ -9,7 +9,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import UserMinus from '@lucide/svelte/icons/user-minus';
 	import { m } from '$lib/paraglide/messages.js';
-	import type { ActionResult, SubmitFunction } from '@sveltejs/kit';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -36,65 +36,55 @@
 	let leaveError: string | null = $state(null);
 	let deleteError: string | null = $state(null);
 
-	/** El `update` que `use:enhance` da a su callback (aplica el resultado). */
-	type EnhanceUpdate = () => Promise<void>;
+	// Solo hay un modal abierto a la vez: un único `enviando` basta para
+	// deshabilitar su botón de confirmar mientras la petición está en vuelo
+	// (#115) — un doble toque mandaría un 2.º POST que respondería «ya no
+	// existe» y se vería como error tras el éxito.
+	let enviando = $state(false);
 
 	/**
-	 * Trata el resultado de una acción cuyo formulario vive en un modal: el
+	 * `SubmitFunction` de una acción cuyo formulario vive en un modal: el
 	 * fallo lo deja abierto con su mensaje; el éxito lo cierra y deja que
 	 * `update` revalide (el redirect de salir/borrar lo sigue el router igual
-	 * que un formulario sin JS).
+	 * que un formulario sin JS). Sin `update()` en fallo (#115): aplicaría
+	 * `form.error` y el error saldría duplicado en la alerta de página.
+	 *
+	 * La referencia al modal y el `setError` se leen al RESOLVERSE (`?.` sobre
+	 * la `$state`), no al montar la página.
 	 */
-	async function modalResult(
-		result: ActionResult,
-		update: EnhanceUpdate,
+	function modalSubmit(
 		setError: (message: string | null) => void,
 		close: () => void
-	): Promise<void> {
-		if (result.type === 'failure') {
-			const failure = result.data as { error?: string } | undefined;
-			setError(failure?.error ?? m.families_members_error());
-		} else {
-			setError(null);
-			close();
-		}
-		await update();
+	): SubmitFunction {
+		return ({ cancel }) => {
+			if (enviando) return cancel();
+			enviando = true;
+			return async ({ result, update }) => {
+				if (result.type === 'failure') {
+					const failure = result.data as { error?: string } | undefined;
+					setError(failure?.error ?? m.families_members_error());
+				} else {
+					setError(null);
+					close();
+					await update();
+				}
+				enviando = false;
+			};
+		};
 	}
 
-	// Un `SubmitFunction` por acción: la referencia al modal y el `setError` se
-	// leen al RESOLVERSE (`?.` sobre la `$state`), no al montar la página.
-	const onKickResult: SubmitFunction =
-		() =>
-		async ({ result, update }) => {
-			await modalResult(
-				result,
-				update,
-				(message) => (kickError = message),
-				() => kickModal?.close()
-			);
-		};
-
-	const onLeaveResult: SubmitFunction =
-		() =>
-		async ({ result, update }) => {
-			await modalResult(
-				result,
-				update,
-				(message) => (leaveError = message),
-				() => leaveModal?.close()
-			);
-		};
-
-	const onDeleteResult: SubmitFunction =
-		() =>
-		async ({ result, update }) => {
-			await modalResult(
-				result,
-				update,
-				(message) => (deleteError = message),
-				() => deleteModal?.close()
-			);
-		};
+	const onKickResult = modalSubmit(
+		(message) => (kickError = message),
+		() => kickModal?.close()
+	);
+	const onLeaveResult = modalSubmit(
+		(message) => (leaveError = message),
+		() => leaveModal?.close()
+	);
+	const onDeleteResult = modalSubmit(
+		(message) => (deleteError = message),
+		() => deleteModal?.close()
+	);
 
 	// Al (re)abrir cada modal se limpia el rastro del intento anterior.
 	function abrirExpulsion(miembro: Member) {
@@ -255,7 +245,9 @@
 				class="mt-4 flex justify-end"
 			>
 				<input type="hidden" name="miembro" value={viewer?.memberId ?? ''} />
-				<button type="submit" class="btn btn-error">{m.families_leave_confirm()}</button>
+				<button type="submit" class="btn btn-error" disabled={enviando}
+					>{m.families_leave_confirm()}</button
+				>
 			</form>
 		</Modal>
 	</div>
@@ -300,7 +292,9 @@
 					use:enhance={onDeleteResult}
 					class="mt-4 flex justify-end"
 				>
-					<button type="submit" class="btn btn-error">{m.families_delete_confirm()}</button>
+					<button type="submit" class="btn btn-error" disabled={enviando}
+						>{m.families_delete_confirm()}</button
+					>
 				</form>
 			</Modal>
 		</div>
@@ -329,6 +323,8 @@
 
 	<form method="POST" action="?/kick" use:enhance={onKickResult} class="mt-4 flex justify-end">
 		<input type="hidden" name="miembro" value={miembroExpulsado?.id ?? ''} />
-		<button type="submit" class="btn btn-error">{m.families_kick_confirm()}</button>
+		<button type="submit" class="btn btn-error" disabled={enviando}
+			>{m.families_kick_confirm()}</button
+		>
 	</form>
 </Modal>

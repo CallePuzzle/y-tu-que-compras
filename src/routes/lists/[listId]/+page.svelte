@@ -134,11 +134,15 @@
 	// que en /lists: el fallo se queda dentro del modal, el éxito lo cierra. ----
 	let itemBorrado: ItemRow | undefined = $state();
 	let borrarModal: { showModal(): void; close(): void } | undefined = $state();
+	// Sin `update()` en fallo y con el botón deshabilitado en vuelo (#115),
+	// igual que en /lists.
 	let borrarError: string | null = $state(null);
+	let borrando = $state(false);
 
-	const onBorrarResult: SubmitFunction =
-		() =>
-		async ({ result, update }) => {
+	const onBorrarResult: SubmitFunction = ({ cancel }) => {
+		if (borrando) return cancel();
+		borrando = true;
+		return async ({ result, update }) => {
 			if (result.type === 'failure') {
 				const failure = result.data as { error?: string } | undefined;
 				borrarError = failure?.error ?? m.items_error();
@@ -146,9 +150,11 @@
 				borrarError = null;
 				exito = m.items_deleted();
 				borrarModal?.close();
+				await update();
 			}
-			await update();
+			borrando = false;
 		};
+	};
 
 	function abrirBorrado(item: ItemRow) {
 		borrarError = null;
@@ -641,7 +647,12 @@
 		class="mt-4 flex justify-end"
 	>
 		<input type="hidden" name="item" value={itemBorrado?.id ?? ''} />
-		<button type="submit" class="btn btn-error">{m.items_delete_confirm()}</button>
+		<button type="submit" class="btn btn-error" disabled={borrando}>
+			{#if borrando}
+				<span class="loading loading-spinner"></span>
+			{/if}
+			{m.items_delete_confirm()}
+		</button>
 	</form>
 </Modal>
 

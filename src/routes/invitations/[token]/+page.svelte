@@ -1,8 +1,25 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import { m } from '$lib/paraglide/messages.js';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
+
+	// Aceptar y rechazar con `enhance` y deshabilitados mientras hay una
+	// respuesta en vuelo (#115): un doble toque mandaba dos POST y el 2.º
+	// respondía «ya no está disponible» tras el éxito. Una sola bandera para
+	// los dos: tampoco tiene sentido rechazar mientras se acepta.
+	let respondiendo = $state(false);
+
+	const responder: SubmitFunction = ({ cancel }) => {
+		if (respondiendo) return cancel();
+		respondiendo = true;
+		return async ({ update }) => {
+			await update();
+			respondiendo = false;
+		};
+	};
 
 	// Mismos estados que la invitación (los del modelo del plugin); `expired` lo
 	// calcula el load para no esperar al barrido del cron de cleanup.
@@ -59,13 +76,13 @@
 				{/if}
 
 				<div class="flex flex-col gap-2 sm:flex-row">
-					<form method="POST" action="?/accept" class="flex-1">
-						<button class="btn btn-accent w-full" type="submit">
+					<form method="POST" action="?/accept" use:enhance={responder} class="flex-1">
+						<button class="btn btn-accent w-full" type="submit" disabled={respondiendo}>
 							{m.invitations_accept()}
 						</button>
 					</form>
-					<form method="POST" action="?/reject" class="flex-1">
-						<button class="btn btn-error btn-outline w-full" type="submit">
+					<form method="POST" action="?/reject" use:enhance={responder} class="flex-1">
+						<button class="btn btn-error btn-outline w-full" type="submit" disabled={respondiendo}>
 							{m.invitations_reject()}
 						</button>
 					</form>

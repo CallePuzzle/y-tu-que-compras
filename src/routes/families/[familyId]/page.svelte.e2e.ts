@@ -138,6 +138,14 @@ test('el ultimo admin no puede salir y el error se queda en el modal', async ({ 
 	).toBeVisible();
 	// Sigue en la familia (el modal abierto es la prueba de que no hubo éxito).
 	await expect(dialog).toBeVisible();
+
+	// El error sale UNA vez (#115): no se duplica en la alerta de página, que
+	// tampoco aparece al cerrar el modal.
+	const aviso = page.getByText('Eres el último administrador', { exact: false });
+	await expect(aviso).toHaveCount(1);
+	await page.keyboard.press('Escape');
+	await expect(page.locator('dialog[open]')).toHaveCount(0);
+	await expect(aviso).toBeHidden();
 });
 
 test('abandonar la familia redirige al listado y quita la membresia', async ({ page }) => {

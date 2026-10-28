@@ -114,6 +114,35 @@ test('borrar lista con confirmacion', async ({ page }) => {
 	await expect(page.locator('li', { hasText: 'Frutería' })).toHaveCount(0);
 });
 
+test('un doble toque en «Borrar definitivamente» envía un solo POST (#115)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createList({ familyId: family.id, name: 'Frutería' });
+	await seedSession(page, user);
+
+	// La respuesta se retiene: el 2.º toque llega con la 1.ª petición en vuelo.
+	let posts = 0;
+	await page.route('**/lists?/delete', async (route) => {
+		posts++;
+		await new Promise((resolve) => setTimeout(resolve, 500));
+		await route.continue();
+	});
+
+	await page.goto('/lists');
+	await waitForHydration(page);
+
+	await page.locator('li', { hasText: 'Frutería' }).getByRole('button', { name: 'Borrar' }).click();
+	const confirmar = page
+		.locator('dialog[open]')
+		.getByRole('button', { name: 'Borrar definitivamente' });
+	await confirmar.click({ clickCount: 2 });
+
+	// Un único éxito y ningún «ya no existe» detrás.
+	await expect(page.getByRole('status')).toContainText('Lista borrada.');
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(posts).toBe(1);
+});
+
 test('contadores de pendientes por lista', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });

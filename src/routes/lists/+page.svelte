@@ -112,11 +112,18 @@
 	// Borrar con confirmación (checklist #66): una modal compartida; cada card
 	// fija a quién se borra antes de abrirla. Mismo trato que expulsar en
 	// /families: el fallo se queda dentro del modal, el éxito lo cierra.
+	//
+	// Sin `update()` en fallo (#115): aplicaría `form.error` y el error saldría
+	// también en la alerta de página (la de sin JS), y seguiría tras cerrar.
+	// `borrando` deshabilita el botón mientras la petición está en vuelo: un
+	// doble toque mandaría un 2.º POST que respondería «ya no existe».
 	let borrarError: string | null = $state(null);
+	let borrando = $state(false);
 
-	const onBorrarResult: SubmitFunction =
-		() =>
-		async ({ result, update }) => {
+	const onBorrarResult: SubmitFunction = ({ cancel }) => {
+		if (borrando) return cancel();
+		borrando = true;
+		return async ({ result, update }) => {
 			if (result.type === 'failure') {
 				const failure = result.data as { error?: string } | undefined;
 				borrarError = failure?.error ?? m.lists_error();
@@ -124,9 +131,11 @@
 				borrarError = null;
 				exito = m.lists_deleted();
 				borrarModal?.close();
+				await update();
 			}
-			await update();
+			borrando = false;
 		};
+	};
 
 	function abrirBorrado(lista: ListRow) {
 		borrarError = null;
@@ -361,6 +370,11 @@
 		class="mt-4 flex justify-end"
 	>
 		<input type="hidden" name="lista" value={listaBorrada?.id ?? ''} />
-		<button type="submit" class="btn btn-error">{m.lists_delete_confirm()}</button>
+		<button type="submit" class="btn btn-error" disabled={borrando}>
+			{#if borrando}
+				<span class="loading loading-spinner"></span>
+			{/if}
+			{m.lists_delete_confirm()}
+		</button>
 	</form>
 </Modal>
