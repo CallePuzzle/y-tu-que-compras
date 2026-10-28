@@ -354,6 +354,11 @@ export async function familyInvitationView(token: string): Promise<FamilyInvitat
  * llegan por carrera con otro dispositivo o con la UI rancia.
  */
 function invitationResponseError(error: unknown): Error | undefined {
+	if (isFamilyLimitReached(error)) {
+		// El invitado ya está en `FAMILIES_MAX` familias (issue #104): el alta
+		// la deshizo `onInvitationAccepted` y la invitación sigue pendiente.
+		return new FamilyLimitReachedError();
+	}
 	if (isFamilyMembersLimitReached(error)) {
 		// La familia se llenó desde que se envió la invitación: el alta la
 		// deshizo `onInvitationAccepted` y la invitación sigue pendiente.

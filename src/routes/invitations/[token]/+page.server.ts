@@ -1,9 +1,11 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages.js';
 import {
+	FAMILIES_MAX,
 	FAMILY_MEMBERS_MAX,
 	FamilyInvitationNotForAccountError,
 	FamilyInvitationUnavailableError,
+	FamilyLimitReachedError,
 	FamilyMemberLimitReachedError,
 	acceptFamilyInvitation,
 	familyInvitationView,
@@ -96,6 +98,9 @@ async function answer(event: Parameters<Actions[keyof Actions]>[0], response: 'a
 	} catch (error) {
 		if (error instanceof FamilyMemberLimitReachedError) {
 			return fail(400, { error: m.families_invite_limit({ max: FAMILY_MEMBERS_MAX }) });
+		}
+		if (error instanceof FamilyLimitReachedError) {
+			return fail(403, { error: m.families_limit({ max: FAMILIES_MAX }) });
 		}
 		if (error instanceof FamilyInvitationUnavailableError) {
 			return fail(400, { error: m.invitations_unavailable() });

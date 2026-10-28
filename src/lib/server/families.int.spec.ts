@@ -22,12 +22,15 @@ import {
 	FAMILY_ADMIN_ROLE,
 	FAMILY_INVITATION_EXPIRY_HOURS,
 	FAMILY_MEMBER_ROLE,
-	MAX_FAMILIES_PER_USER
+	MAX_FAMILIES_PER_USER,
+	MAX_FAMILY_MEMBERS
 } from './tenancy.js';
 import {
 	FamilyInvitationGoneError,
 	FamilyLastAdminError,
+	FamilyLimitReachedError,
 	FamilyMemberGoneError,
+	acceptFamilyInvitation,
 	cancelFamilyInvitation,
 	deleteFamily,
 	familyDetailView,
@@ -1052,5 +1055,223 @@ describe('locale del correo de invitación (#103)', () => {
 
 		const [captured] = capturedEmailsForTests();
 		expect(captured?.subject).toContain('te ha invitado');
+	});
+});
+
+/**
+ * Invariantes de familia frente a peticiones concurrentes (issue #104): los
+ * hooks cuentan y el plugin escribe después y sin transacción, así que la
+ * garantía la dan los triggers de la migración `family_invariants`. Estos
+ * tests lanzan las peticiones A LA VEZ (todas pasan el recuento del hook con
+ * el mismo valor) y comprueban el estado final en la BD.
+ */
+describe('carreras y límites de familia (#104)', () => {
+	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	function eventOf(cookie: string): RequestEvent {
+		return {
+			request: new Request(BASE, { headers: { cookie } }),
+			locals: { user: undefined }
+		} as unknown as RequestEvent;
+	}
+
+	/** Crea familia y devuelve su id (el creador queda de admin). */
+	async function createFamilyFor(cookie: string): Promise<string> {
+		const created = await createFamilyViaApi(cookie, `Familia Carrera ${randomUUID().slice(0, 8)}`);
+		expect(created.ok).toBe(true);
+		const { id } = (await created.json()) as { id: string };
+		return id;
+	}
+
+	/** Da de alta a un usuario (con sesión) en la familia con ese rol. */
+	async function addSessionMember(
+		familyId: string,
+		roleName: typeof FAMILY_ADMIN_ROLE | typeof FAMILY_MEMBER_ROLE = FAMILY_MEMBER_ROLE
+	): Promise<{ cookie: string; userId: string; email: string; memberId: string }> {
+		const session = await sessionCookieFor('Miembro Carrera');
+		const role = await prisma.role.findFirstOrThrow({
+			where: { contextType: 'organization', contextId: familyId, name: roleName }
+		});
+		const membership = await prisma.member.create({
+			data: {
+				id: randomUUID(),
+				contextType: 'organization',
+				contextId: familyId,
+				userId: session.userId,
+				roleId: role.id,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+		return { ...session, memberId: membership.id };
+	}
+
+	/** Admins que le quedan a la familia. */
+	async function adminCount(familyId: string): Promise<number> {
+		return prisma.member.count({
+			where: { contextId: familyId, role: { name: FAMILY_ADMIN_ROLE } }
+		});
+	}
+
+	/** Invita al email por la app y devuelve el token. */
+	async function invitationToken(
+		adminCookie: string,
+		familyId: string,
+		email: string
+	): Promise<string> {
+		const event = eventOf(adminCookie);
+		await withinEvent(event, () => inviteFamily(event, { familyId, email }));
+		const invitation = await prisma.invitation.findFirstOrThrow({
+			where: { identifier: email, contextId: familyId }
+		});
+		return invitation.token;
+	}
+
+	it('dos admins que abandonan A LA VEZ: uno sale, el otro sigue de admin', async () => {
+		const first = await sessionCookieFor('Admin Uno');
+		const familyId = await createFamilyFor(first.cookie);
+		const firstMember = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: first.userId }
+		});
+		const second = await addSessionMember(familyId, FAMILY_ADMIN_ROLE);
+		// Un miembro raso: la familia sigue viva y necesita a alguien que la administre.
+		await addSessionMember(familyId);
+
+		const results = await Promise.allSettled([
+			leaveFamily(eventOf(first.cookie), firstMember.id),
+			leaveFamily(eventOf(second.cookie), second.memberId)
+		]);
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		const [rejected] = results.filter((result) => result.status === 'rejected');
+		expect(rejected?.reason).toBeInstanceOf(FamilyLastAdminError);
+		expect(await adminCount(familyId)).toBe(1);
+	});
+
+	it('dos admins que se expulsan mutuamente A LA VEZ: la familia no se queda sin admin', async () => {
+		const first = await sessionCookieFor('Admin Expulsor');
+		const familyId = await createFamilyFor(first.cookie);
+		const firstMember = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: first.userId }
+		});
+		const second = await addSessionMember(familyId, FAMILY_ADMIN_ROLE);
+
+		const results = await Promise.allSettled([
+			removeFamilyMember(eventOf(first.cookie), second.memberId),
+			removeFamilyMember(eventOf(second.cookie), firstMember.id)
+		]);
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		expect(await adminCount(familyId)).toBe(1);
+	});
+
+	it('la BD rechaza quitar o degradar al último admin aunque se salte los hooks', async () => {
+		const admin = await sessionCookieFor('Admin Blindado');
+		const familyId = await createFamilyFor(admin.cookie);
+		await addSessionMember(familyId);
+		const adminMember = await prisma.member.findFirstOrThrow({
+			where: { contextId: familyId, userId: admin.userId }
+		});
+		const memberRole = await prisma.role.findFirstOrThrow({
+			where: { contextId: familyId, name: FAMILY_MEMBER_ROLE }
+		});
+
+		await expect(prisma.member.delete({ where: { id: adminMember.id } })).rejects.toThrow(
+			/last admin/
+		);
+		await expect(
+			prisma.member.update({ where: { id: adminMember.id }, data: { roleId: memberRole.id } })
+		).rejects.toThrow(/last admin/);
+		expect(await adminCount(familyId)).toBe(1);
+
+		// Borrar la familia entera sí: ahí no queda familia que administrar.
+		await deleteFamily(eventOf(admin.cookie), familyId);
+		expect(await prisma.member.count({ where: { contextId: familyId } })).toBe(0);
+		expect(await prisma.role.count({ where: { contextId: familyId } })).toBe(0);
+	});
+
+	it(`crear familias en paralelo no supera las ${MAX_FAMILIES_PER_USER} del usuario ni deja restos`, async () => {
+		const startedAt = new Date();
+		const { cookie, userId } = await sessionCookieFor('Creador Ansioso');
+		const names = Array.from(
+			{ length: MAX_FAMILIES_PER_USER + 2 },
+			(_, i) => `Familia Paralela ${randomUUID().slice(0, 8)} ${i}`
+		);
+
+		const responses = await Promise.all(names.map((name) => createFamilyViaApi(cookie, name)));
+
+		expect(responses.filter((response) => response.ok)).toHaveLength(MAX_FAMILIES_PER_USER);
+		for (const response of responses.filter((r) => !r.ok)) {
+			expect(response.status).toBe(403);
+		}
+		expect(await prisma.member.count({ where: { userId, contextType: 'organization' } })).toBe(
+			MAX_FAMILIES_PER_USER
+		);
+		// Las creaciones rechazadas se llevan su familia y sus roles sembrados:
+		// ningún rol creado durante el test se queda sin su organización.
+		expect(await prisma.organization.count({ where: { name: { in: names } } })).toBe(
+			MAX_FAMILIES_PER_USER
+		);
+		const [{ orphans }] = await prisma.$queryRaw<{ orphans: bigint }[]>`
+			SELECT count(*) AS orphans FROM "role" r
+			WHERE r."contextType" = 'organization' AND r."createdAt" >= ${startedAt}
+				AND NOT EXISTS (SELECT 1 FROM "organization" o WHERE o."id" = r."contextId")`;
+		expect(orphans).toBe(0n);
+	});
+
+	it(`aceptar una invitación con ${MAX_FAMILIES_PER_USER} familias se deniega y la deja pendiente`, async () => {
+		const admin = await sessionCookieFor('Admin Invitador');
+		const familyId = await createFamilyFor(admin.cookie);
+		const guest = await sessionCookieFor('Invitado Lleno');
+		for (let i = 0; i < MAX_FAMILIES_PER_USER; i++) {
+			await createFamilyFor(guest.cookie);
+		}
+		const token = await invitationToken(admin.cookie, familyId, guest.email);
+
+		await expect(acceptFamilyInvitation(eventOf(guest.cookie), token)).rejects.toBeInstanceOf(
+			FamilyLimitReachedError
+		);
+		expect(
+			await prisma.member.findFirst({ where: { contextId: familyId, userId: guest.userId } })
+		).toBeNull();
+		expect((await prisma.invitation.findUniqueOrThrow({ where: { token } })).status).toBe(
+			'pending'
+		);
+	});
+
+	it('aceptar dos invitaciones A LA VEZ con un hueco libre: solo entra en una', async () => {
+		const guest = await sessionCookieFor('Invitado Doble');
+		for (let i = 0; i < MAX_FAMILIES_PER_USER - 1; i++) {
+			await createFamilyFor(guest.cookie);
+		}
+		const invitations = await Promise.all(
+			[0, 1].map(async () => {
+				const admin = await sessionCookieFor('Admin Doble');
+				const familyId = await createFamilyFor(admin.cookie);
+				return invitationToken(admin.cookie, familyId, guest.email);
+			})
+		);
+
+		const results = await Promise.allSettled(
+			invitations.map((token) => acceptFamilyInvitation(eventOf(guest.cookie), token))
+		);
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		const [rejected] = results.filter((result) => result.status === 'rejected');
+		expect(rejected?.reason).toBeInstanceOf(FamilyLimitReachedError);
+		expect(
+			await prisma.member.count({ where: { userId: guest.userId, contextType: 'organization' } })
+		).toBe(MAX_FAMILIES_PER_USER);
+	});
+
+	it(`la BD no da de alta a un miembro más allá de ${MAX_FAMILY_MEMBERS}`, async () => {
+		const admin = await sessionCookieFor('Admin Aforo');
+		const familyId = await createFamilyFor(admin.cookie);
+		for (let i = 1; i < MAX_FAMILY_MEMBERS; i++) {
+			await addSessionMember(familyId);
+		}
+		expect(await prisma.member.count({ where: { contextId: familyId } })).toBe(MAX_FAMILY_MEMBERS);
+
+		await expect(addSessionMember(familyId)).rejects.toThrow(/Family members limit reached/);
+		expect(await prisma.member.count({ where: { contextId: familyId } })).toBe(MAX_FAMILY_MEMBERS);
 	});
 });

@@ -804,9 +804,34 @@ describe('tenancyConfig.endpoints.organization.read (statement del miembro)', ()
 });
 
 describe('tenancyConfig.permissionFiltering.filterOrganizations', () => {
+	type Where = { field: string; operator?: string; value: unknown }[];
+
+	/**
+	 * Adaptador con membresías y organizaciones: el hook lee las familias del
+	 * usuario por id, y no filtra la página (truncada) que le pasa el plugin.
+	 */
+	function listingAdapterMock(
+		memberships: { contextId: string }[],
+		organizations: { id: string }[]
+	) {
+		const queries: { model: string; where?: Where }[] = [];
+		return {
+			queries,
+			async findMany({ model, where }: { model: string; where?: Where }) {
+				queries.push({ model, where });
+				if (model === 'member') return memberships;
+				const ids = (where?.find((clause) => clause.field === 'id')?.value ?? []) as string[];
+				return organizations.filter((organization) => ids.includes(organization.id));
+			}
+		};
+	}
+
 	it('devuelve solo las familias donde el usuario es miembro', async () => {
-		const adapter = adapterMock([{ contextId: 'fam-1' }, { contextId: 'fam-3' }]);
 		const organizations = [{ id: 'fam-1' }, { id: 'fam-2' }, { id: 'fam-3' }];
+		const adapter = listingAdapterMock(
+			[{ contextId: 'fam-1' }, { contextId: 'fam-3' }],
+			organizations
+		);
 
 		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
 			ctxOf(adapter, { user: { id: 'user-1' } }),
@@ -816,28 +841,44 @@ describe('tenancyConfig.permissionFiltering.filterOrganizations', () => {
 		expect(filtered).toEqual([{ id: 'fam-1' }, { id: 'fam-3' }]);
 	});
 
+	it('incluye las familias del usuario que no venían en la página truncada del plugin', async () => {
+		// El plugin pasa como mucho 100 organizaciones (tope por defecto del
+		// adaptador): la del usuario puede no estar entre ellas.
+		const adapter = listingAdapterMock([{ contextId: 'fam-200' }], [{ id: 'fam-200' }]);
+
+		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
+			ctxOf(adapter, { user: { id: 'user-1' } }),
+			[{ id: 'fam-1' }, { id: 'fam-2' }]
+		);
+
+		expect(filtered).toEqual([{ id: 'fam-200' }]);
+		expect(adapter.queries.at(-1)?.where).toEqual([
+			{ field: 'id', operator: 'in', value: ['fam-200'] }
+		]);
+	});
+
 	it('sin sesión no devuelve ninguna', async () => {
-		const adapter = adapterMock();
-		const organizations = [{ id: 'fam-1' }];
+		const adapter = listingAdapterMock([{ contextId: 'fam-1' }], [{ id: 'fam-1' }]);
 
 		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
 			ctxOf(adapter),
-			organizations
+			[{ id: 'fam-1' }]
 		);
 
 		expect(filtered).toEqual([]);
 	});
 
 	it('con sesión pero sin pertenencias no devuelve ninguna', async () => {
-		const adapter = adapterMock([]);
-		const organizations = [{ id: 'fam-1' }];
+		const adapter = listingAdapterMock([], [{ id: 'fam-1' }]);
 
 		const filtered = await tenancyConfig.permissionFiltering?.filterOrganizations?.(
 			ctxOf(adapter, { user: { id: 'user-1' } }),
-			organizations
+			[{ id: 'fam-1' }]
 		);
 
 		expect(filtered).toEqual([]);
+		// Sin pertenencias no hace falta ni leer organizaciones.
+		expect(adapter.queries.map((query) => query.model)).toEqual(['member']);
 	});
 });
 

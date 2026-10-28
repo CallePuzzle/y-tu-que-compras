@@ -281,16 +281,21 @@ const fromOrganizationParams = async ({ ctx }: EndpointAuthContext): Promise<Sta
 };
 
 /**
- * Filtra organizaciones dejando solo las donde el usuario es miembro.
+ * Las organizaciones del listado: solo las donde el usuario es miembro.
  *
  * Sin este hook `organization/list` devolvería las familias de todo el mundo a
  * cualquier usuario autenticado (el plugin solo exige sesión por defecto); con
  * él, el listado alimenta el selector de familias tal y como pide la issue
  * padre (#38).
+ *
+ * No usa las organizaciones que le pasa el plugin (2.º argumento): lee las del usuario
+ * por id: el plugin las saca con un `findMany` sin `limit`, que el adaptador
+ * de better-auth corta en 100 filas (`defaultFindManyLimit`) y sin orden.
+ * Filtrar esa página dejaba sin familias a cualquier usuario en cuanto
+ * hubiera más de 100 en total (lo destapó la suite de la issue #104).
  */
 async function filterOrganizations<T extends { id: string }>(
-	ctx: GenericEndpointContext,
-	organizations: T[]
+	ctx: GenericEndpointContext
 ): Promise<T[]> {
 	const session = await getSessionFromCtx(ctx).catch(() => null);
 	if (!session?.user) return [];
@@ -304,12 +309,31 @@ async function filterOrganizations<T extends { id: string }>(
 			{ field: 'contextType', value: 'organization' }
 		]
 	});
+	if (memberships.length === 0) return [];
 
-	const familyIds = new Set(memberships.map((membership) => membership.contextId));
-	return organizations.filter((organization) => familyIds.has(organization.id));
+	// Mismo orden que habría aplicado el plugin si la query lo pide.
+	const orderBy = ctx.query?.orderBy;
+	return ctx.context.adapter.findMany<T>({
+		model: 'organization',
+		where: [
+			{
+				field: 'id',
+				operator: 'in',
+				value: memberships.map((membership) => membership.contextId)
+			}
+		],
+		sortBy:
+			typeof orderBy === 'string'
+				? { field: orderBy, direction: ctx.query?.orderDirection === 'desc' ? 'desc' : 'asc' }
+				: undefined
+	});
 }
 
-/** Máximo de familias a las que puede pertenecer un usuario (issue #38). */
+/**
+ * Máximo de familias a las que puede pertenecer un usuario (issue #38). La
+ * migración `family_invariants` lo repite en un trigger (issue #104): cambiar
+ * los dos a la vez.
+ */
 export const MAX_FAMILIES_PER_USER = 5;
 
 /**
@@ -317,7 +341,8 @@ export const MAX_FAMILIES_PER_USER = 5;
  * miembro (`limits.maxMembersPerOrganization`, que se aplica al aceptar una
  * invitación), pero no al INVITAR, y una invitación ya cuesta un correo: se
  * comprueba también aquí, para que el admin lo vea como error de formulario y
- * no como un registro que fallará después (issue #60).
+ * no como un registro que fallará después (issue #60). Mismo tope en el
+ * trigger de la migración `family_invariants` (issue #104).
  */
 export const MAX_FAMILY_MEMBERS = 20;
 
@@ -341,6 +366,17 @@ export const FAMILY_INVITATION_EXPIRY_HOURS = 72;
 /** ¿Es este el error de familia llena que lanza el hook de invitar? */
 export function isFamilyMembersLimitReached(error: unknown): boolean {
 	return error instanceof APIError && error.message === FAMILY_MEMBERS_LIMIT_MESSAGE;
+}
+
+/**
+ * ¿Es este error el `RAISE` de un trigger de invariantes de familia (migración
+ * `family_invariants`, issue #104)? Los triggers lanzan los mismos mensajes que
+ * los hooks, y Prisma los deja en el mensaje de su error
+ * («Database error. Code: `P0001`. Message: `…`»). Solo llegan cuando una
+ * petición concurrente se coló entre el recuento del hook y la escritura.
+ */
+function isFamilyGuardViolation(error: unknown, message: string): boolean {
+	return !(error instanceof APIError) && error instanceof Error && error.message.includes(message);
 }
 
 /** Mensaje del 400 para invitar a quien ya es miembro de la familia. */
@@ -388,9 +424,16 @@ export function isInvitationNotForAccount(error: unknown): boolean {
  */
 export const LAST_FAMILY_ADMIN_MESSAGE = 'Cannot remove the last admin of the family';
 
-/** ¿Es este el error de quitar al último admin de la familia? */
+/**
+ * ¿Es este el error de quitar al último admin de la familia? El del hook, o el
+ * del trigger de la BD cuando dos admins salen a la vez (issue #104): ahí el
+ * plugin ya ha pasado sus hooks y el error es el de Prisma al borrar.
+ */
 export function isLastFamilyAdmin(error: unknown): boolean {
-	return error instanceof APIError && error.message === LAST_FAMILY_ADMIN_MESSAGE;
+	return (
+		(error instanceof APIError && error.message === LAST_FAMILY_ADMIN_MESSAGE) ||
+		isFamilyGuardViolation(error, LAST_FAMILY_ADMIN_MESSAGE)
+	);
 }
 
 /**
@@ -400,7 +443,10 @@ export function isLastFamilyAdmin(error: unknown): boolean {
  */
 export const FAMILY_LIMIT_MESSAGE = `Family limit reached: max ${MAX_FAMILIES_PER_USER}.`;
 
-/** ¿Es este el error de tope de familias que lanza el hook de creación? */
+/**
+ * ¿Es este el error de tope de familias? Lo lanzan el hook de creación y el
+ * alta por invitación (`actions.onInvitationAccepted`, issue #104).
+ */
 export function isFamilyLimitReached(error: unknown): boolean {
 	return error instanceof APIError && error.message === FAMILY_LIMIT_MESSAGE;
 }
@@ -415,6 +461,39 @@ async function countUserFamilies(adapter: Adapter, userId: string): Promise<numb
 		]
 	});
 	return memberships.length;
+}
+
+/**
+ * Da de alta al miembro de una familia. Los topes de miembros y de familias
+ * los vuelve a aplicar un trigger de la BD con bloqueo (issue #104): si una
+ * petición concurrente llenó el hueco después del recuento de la app, el
+ * trigger rechaza el INSERT y aquí se traduce al mismo 4xx que el recuento.
+ */
+async function createFamilyMember(
+	adapter: Adapter,
+	data: { familyId: string; userId: string; roleId: string }
+): Promise<void> {
+	try {
+		await adapter.create({
+			model: 'member',
+			data: {
+				contextType: 'organization',
+				contextId: data.familyId,
+				userId: data.userId,
+				roleId: data.roleId,
+				createdAt: new Date(),
+				updatedAt: new Date()
+			}
+		});
+	} catch (error) {
+		if (isFamilyGuardViolation(error, FAMILY_LIMIT_MESSAGE)) {
+			throw new APIError('FORBIDDEN', { message: FAMILY_LIMIT_MESSAGE });
+		}
+		if (isFamilyGuardViolation(error, FAMILY_MEMBERS_LIMIT_MESSAGE)) {
+			throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
+		}
+		throw error;
+	}
 }
 
 /**
@@ -608,6 +687,10 @@ async function familyAdminRoleWithCount(
  * Quita al miembro su administración si con ello la familia se queda sin
  * admines: `nextRoleId` es el rol que le quedaría (el mismo al expulsar; el
  * del body al cambiar el rol). Promover NO corta: el rol destino es otro.
+ *
+ * Es la comprobación de UX (400 con mensaje): la garantía frente a dos admins
+ * que salen a la vez la da el trigger `member_last_family_admin` de la BD
+ * (issue #104), que serializa por familia y vuelve a contar.
  */
 async function rejectIfLastFamilyAdmin(
 	context: EndpointAuthContext,
@@ -878,18 +961,29 @@ export const tenancyConfig: TenancyConfig = {
 		// tiene subgrupos).
 		onEntityCreated: async (event: EntityCreatedEvent, ctx) => {
 			if (event.entityType !== 'organization') return;
-			const adminRoleId = await seedFamilyRoles(ctx.context.adapter, event.entityId);
-			await ctx.context.adapter.create({
-				model: 'member',
-				data: {
-					contextType: 'organization',
-					contextId: event.entityId,
+			const adapter = ctx.context.adapter;
+			const adminRoleId = await seedFamilyRoles(adapter, event.entityId);
+			try {
+				await createFamilyMember(adapter, {
+					familyId: event.entityId,
 					userId: event.createdBy,
-					roleId: adminRoleId,
-					createdAt: new Date(),
-					updatedAt: new Date()
-				}
-			});
+					roleId: adminRoleId
+				});
+			} catch (error) {
+				// Creaciones en paralelo (issue #104): todas pasan el hook con el
+				// mismo recuento y el trigger de la BD rechaza las que sobran. Lanzar
+				// hace que el plugin borre la familia, pero los roles (sin FK a la
+				// organización) los sembró este hook: se van con ella. Sus
+				// statements y traducciones caen por la FK en cascada del rol.
+				await adapter.deleteMany({
+					model: 'role',
+					where: [
+						{ field: 'contextType', value: 'organization' },
+						{ field: 'contextId', value: event.entityId }
+					]
+				});
+				throw error;
+			}
 		},
 
 		// El email de invitación es parte del flujo de invitar (issue #60, con el
@@ -951,6 +1045,14 @@ export const tenancyConfig: TenancyConfig = {
 				throw new APIError('BAD_REQUEST', { message: FAMILY_MEMBERS_LIMIT_MESSAGE });
 			}
 
+			// El tope de familias del usuario (issue #104): crear una familia lo
+			// comprueba en su hook, y sin esto aceptar invitaciones daría una 6.ª,
+			// 7.ª… Mismo 403 y mensaje que al crear; la invitación sigue pendiente
+			// por si el usuario deja otra familia.
+			if ((await countUserFamilies(adapter, user.id)) >= MAX_FAMILIES_PER_USER) {
+				throw new APIError('FORBIDDEN', { message: FAMILY_LIMIT_MESSAGE });
+			}
+
 			// Rol de entrada: el que lleva la invitación (siempre `member`, lo
 			// fija `inviteFamily`); si la invitación viniera sin rol, el rol
 			// básico de la familia. Sin ninguno de los dos, mejor fallar que
@@ -973,17 +1075,9 @@ export const tenancyConfig: TenancyConfig = {
 				});
 			}
 
-			await adapter.create({
-				model: 'member',
-				data: {
-					contextType: 'organization',
-					contextId: event.contextId,
-					userId: user.id,
-					roleId,
-					createdAt: new Date(),
-					updatedAt: new Date()
-				}
-			});
+			// Los dos topes los vuelve a aplicar el trigger de la BD con bloqueo:
+			// aceptaciones en paralelo no los superan (issue #104).
+			await createFamilyMember(adapter, { familyId: event.contextId, userId: user.id, roleId });
 		}
 	}
 };

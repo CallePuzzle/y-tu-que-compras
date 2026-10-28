@@ -27,6 +27,9 @@ test('sin familia elegida manda a /families, y con una sola la elige sola', asyn
 
 	// Una sola familia: selección automática (issue #63), la despensa funciona
 	// sin preguntar nada.
+	// Sin roles antes que sin miembros: el trigger de la BD no deja quitar al
+	// último admin de una familia que sigue viva (issue #104).
+	await prisma.role.deleteMany({ where: { contextId: familiaA.id } });
 	await prisma.member.deleteMany({ where: { contextId: familiaA.id } });
 	await page.goto('/pantry');
 	await waitForHydration(page);
