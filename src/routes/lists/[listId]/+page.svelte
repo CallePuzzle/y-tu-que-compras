@@ -114,10 +114,15 @@
 	// (su id lo decide el mapa) y el contenido de cada una lo decide el mapa;
 	// con `manualSwap` es Svelte quien mueve el contenido al cambiar el mapa
 	// — si Swapy moviera el DOM por su cuenta se pisaría con el keyed each.
-	// Un swap intercambia el contenido de dos slots: se pinta al instante
-	// (optimista) y el POST viaja cuando la sesión de arrastre termina; en
-	// fallo, el mapa vuelve al orden que trae el load con el aviso delante,
-	// el mismo trato que el toggle de comprado.
+	// Y con `swapMode: 'drop'`: el swap ocurre al SOLTAR sobre otra fila,
+	// porque el modo hover de Swapy 1.0.5 revienta el drag (su animación de
+	// asentamiento lee `dragEvent()` justo después de cerrarse y lanza
+	// «Cannot read properties of null (reading 'relativeX')» — verificado en
+	// Brave y Firefox —, aborta el flujo de `pointerup` y `onSwapEnd` nunca
+	// dispara el POST). El swap se pinta al instante (optimista) y el POST
+	// viaja cuando la sesión de arrastre termina; en fallo, el mapa vuelve al
+	// orden que trae el load con el aviso delante, el mismo trato que el
+	// toggle de comprado.
 	//
 	// El mapa es un `$derived` ESCRIBIBLE: su valor base es la identidad del
 	// orden que trae el load, y cada asignación (swap en el aire, teclado,
@@ -153,12 +158,11 @@
 		if (!contenedorPendientes) {
 			return;
 		}
-		const instancia = createSwapy(contenedorPendientes, { manualSwap: true });
+		const instancia = createSwapy(contenedorPendientes, { manualSwap: true, swapMode: 'drop' });
 		instancia.onSwap((event) => {
-			// Optimista EN EL AIRE: el modo hover puede disparar varios swaps
-			// en una sesión de arrastre y cada uno repinta al instante. El
-			// rAF deja pasar el ciclo del evento, como en el ejemplo de la
-			// documentación para Svelte.
+			// Optimista EN EL AIRE: con `swapMode: 'drop'` el swap dispara UNA
+			// vez, al soltar sobre otra fila. El rAF deja pasar el ciclo del
+			// evento, como en el ejemplo de la documentación para Svelte.
 			requestAnimationFrame(() => {
 				slotItemMap = event.newSlotItemMap.asArray;
 			});

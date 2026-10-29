@@ -98,9 +98,15 @@
 	// una lo decide su mapa, con `manualSwap` para que sea Svelte quien mueve
 	// el contenido al cambiar el mapa — si Swapy moviera el DOM por su cuenta
 	// se pisaría con el keyed each. Dos contenedores también impiden cruzar
-	// particiones arrastrando: un swap solo cabe dentro de la suya. Como en
-	// el ajuste de arriba, el swap se pinta al instante y el POST viaja al
-	// asentarse; en fallo el mapa vuelve al orden del load con el aviso.
+	// particiones arrastrando: un swap solo cabe dentro de la suya. Y con
+	// `swapMode: 'drop'`: el swap ocurre al SOLTAR sobre otra fila, porque
+	// el modo hover de Swapy 1.0.5 revienta el drag (su animación de
+	// asentamiento lee `dragEvent()` justo después de cerrarse y lanza
+	// «Cannot read properties of null (reading 'relativeX')» — verificado en
+	// Brave y Firefox —, aborta el flujo de `pointerup` y `onSwapEnd` nunca
+	// dispara el POST). Como en el ajuste de arriba, el swap se pinta al
+	// instante y el POST viaja al asentarse; en fallo el mapa vuelve al
+	// orden del load con el aviso.
 	// Cada mapa es un `$derived` ESCRIBIBLE: su valor base es la identidad del
 	// orden que trae el load, y cada asignación (swap en el aire, teclado,
 	// reversión) lo pisa HASTA que los productos de la sección cambien — que
@@ -162,17 +168,17 @@
 	});
 
 	/**
-	 * Una instancia de Swapy para una sección: swaps optimistas en el aire
-	 * (el modo hover dispara varios por sesión de arrastre) y el POST del
-	 * orden nuevo cuando la sesión asienta — en Swapy 1.x eso es
-	 * `onSwapEnd` con `hasChanged`.
+	 * Una instancia de Swapy para una sección: el swap optimista dispara UNA
+	 * vez, al soltar (`swapMode: 'drop'`), y el POST del orden nuevo viaja
+	 * cuando la sesión asienta — en Swapy 1.x eso es `onSwapEnd` con
+	 * `hasChanged`.
 	 */
 	function crearInstancia(
 		contenedor: HTMLElement,
 		seccion: 'enCasa' | 'agotados',
 		fijarMapa: (mapa: Array<{ slot: string; item: string }>) => void
 	): Swapy {
-		const instancia = createSwapy(contenedor, { manualSwap: true });
+		const instancia = createSwapy(contenedor, { manualSwap: true, swapMode: 'drop' });
 		instancia.onSwap((event) => {
 			// El rAF deja pasar el ciclo del evento, como en el ejemplo de la
 			// documentación para Svelte.
