@@ -115,6 +115,11 @@ describe('Finalizar compra: comprados a despensa, fuera de la lista (#70)', () =
 		expect(pantry.map((row) => row.name)).toEqual(['Leche entera', 'Pan']);
 		expect(pantry.map((row) => row.normalizedName)).toEqual(['leche entera', 'pan']);
 		expect(pantry.map((row) => Number(row.quantity))).toEqual([1.5, 1]);
+		// El orden (#134): los NUEVOS aterrizan por el final (max + 1), en el
+		// orden canónico del bucle de upserts (leche antes que pan). Es el
+		// mismo arranque que `createItem`: el primero de una despensa vacía
+		// empieza por 0.
+		expect(pantry.map((row) => row.order)).toEqual([0, 1]);
 
 		// La lista NO se borra: sigue existiendo y solo conserva los
 		// pendientes, sin cambios (criterio de aceptación de la #43).
@@ -141,6 +146,38 @@ describe('Finalizar compra: comprados a despensa, fuera de la lista (#70)', () =
 		]);
 	});
 
+	it('los NUEVOS entran por el final de la despensa sin tocar el orden de los que ya estaban (#134)', async () => {
+		const familyId = await familyRow('Familia Con Orden');
+		const list = await createList(familyId, LISTA);
+		// La despensa ya tiene producto con SU orden (la dejó un reorden): la
+		// leche no se mueve cuando aterrice la compra, solo suma cantidad.
+		await prisma.pantryItem.create({
+			data: {
+				organizationId: familyId,
+				name: 'Leche entera',
+				normalizedName: 'leche entera',
+				quantity: 1,
+				unit: 'liter',
+				order: 1
+			}
+		});
+		await createItemOrFail(familyId, list.id, { ...ITEM, quantity: 1 }, true);
+		await createItemOrFail(familyId, list.id, { name: 'Pan', quantity: 1, unit: 'unit' }, true);
+
+		const userId = await userRow('Quien Finaliza');
+		expect(await finalizePurchase(familyId, list.id, 10, userId)).toBe('finalized');
+
+		// El existente conserva su orden; el nuevo aterriza detrás (max + 1).
+		const pantry = await prisma.pantryItem.findMany({
+			where: { organizationId: familyId },
+			orderBy: { order: 'asc' }
+		});
+		expect(pantry.map((row) => [row.name, row.order])).toEqual([
+			['Leche entera', 1],
+			['Pan', 2]
+		]);
+	});
+
 	it('suma cantidades cuando el producto ya estaba en la despensa (mismo canónico y unidad), y separa por unidad', async () => {
 		const familyId = await familyRow('Familia Repetidora');
 		const list = await createList(familyId, LISTA);
@@ -154,7 +191,8 @@ describe('Finalizar compra: comprados a despensa, fuera de la lista (#70)', () =
 				name: 'Leche Entera',
 				normalizedName: normalizeItemName('Leche Entera'),
 				quantity: 1.25,
-				unit: 'liter'
+				unit: 'liter',
+				order: 1
 			}
 		});
 
@@ -245,7 +283,8 @@ describe('Finalizar compra: guardas (#70)', () => {
 				name: 'Sal',
 				normalizedName: 'sal',
 				quantity: 1,
-				unit: 'unit'
+				unit: 'unit',
+				order: 1
 			}
 		});
 

@@ -5,7 +5,12 @@ import { m } from '$lib/paraglide/messages.js';
 import { readdSchema } from '$lib/schemas/pantry.js';
 import { requireActiveFamily } from '$lib/server/family-context.js';
 import { listLists } from '$lib/server/lists.js';
-import { adjustPantryItem, listPantryItems, readdPantryItem } from '$lib/server/pantry.js';
+import {
+	adjustPantryItem,
+	listPantryItems,
+	readdPantryItem,
+	reorderPantryItems
+} from '$lib/server/pantry.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -129,5 +134,37 @@ export const actions: Actions = {
 		}
 
 		return message(form, m.pantry_readd_success());
+	},
+
+	// Reordenar una sección de la despensa (#134, drag-to-swap con Swapy):
+	// «en casa» y «agotados» envían cada una SU orden nuevo (ids repetidos en
+	// el FormData). Sin schema de superforms (solo ids), como el `adjust`; la
+	// pertenencia y la renumeración 1..n las aplica `reorderPantryItems` en
+	// su transacción — la otra sección conserva su orden relativo — y el
+	// cliente revierte su optimismo si el envío falla.
+	reorder: async (event) => {
+		const family = requireActiveFamily(event);
+		const data = await event.request.formData();
+		const ids = data
+			.getAll('ids')
+			.filter((id): id is string => typeof id === 'string' && id !== '');
+
+		// Payload vacío o con repetidos: UI rancia o petición hecha a mano.
+		if (ids.length === 0 || new Set(ids).size !== ids.length) {
+			return fail(400, { error: m.pantry_error() });
+		}
+
+		try {
+			const ok = await reorderPantryItems(family.id, ids);
+			if (!ok) {
+				// Algún producto ya no está en esta despensa: 404 (issue #110).
+				return fail(404, { error: m.pantry_gone() });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al reordenar la despensa');
+			return fail(500, { error: m.pantry_error() });
+		}
+
+		return { success: true };
 	}
 };

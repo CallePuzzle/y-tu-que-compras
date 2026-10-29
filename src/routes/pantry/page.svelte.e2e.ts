@@ -423,3 +423,116 @@ test('un agotado se re-añade a la compra y se queda en la despensa a cero (#74)
 	await page.goto(`/lists/${lista.id}`);
 	await expect(page.locator('section li', { hasText: 'Pan' }).getByText('1 ud')).toBeVisible();
 });
+
+// El reorden (#134) se ejercita SIN simular el drag (frágil en Playwright;
+// con ratón y táctil se verifica a mano): el teclado del handle recorre el
+// MISMO camino que el drag (mapa optimista + POST al asentarse), y el POST
+// directo ejercita la persistencia del action.
+test('el reorden de la despensa persiste tras recargar, sin cruzar secciones (#134)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// «En casa»: L, P. «Agotados»: G (consumido a cero).
+	const leche = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 1,
+		unit: 'liter',
+		order: 1
+	});
+	const pan = await createPantryItem({
+		familyId: family.id,
+		name: 'Pan',
+		quantity: 1,
+		unit: 'unit',
+		order: 2
+	});
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Cerveza',
+		quantity: 0,
+		unit: 'unit',
+		order: 3
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// Handles en TODAS las filas: las dos secciones son reordenables.
+	await expect(page.getByRole('button', { name: /Reordenar/ })).toHaveCount(3);
+
+	// El mismo POST que hace la página, desde dentro: la sección «En casa»
+	// viaja en su orden nuevo (P, L); el agotado ni se menciona.
+	await page.evaluate(
+		async (ids) => {
+			const body = new FormData();
+			for (const id of ids) {
+				body.append('ids', id);
+			}
+			const respuesta = await fetch('?/reorder', { method: 'POST', body });
+			if (!respuesta.ok) {
+				throw new Error(`?/reorder -> ${respuesta.status}`);
+			}
+		},
+		[pan.id, leche.id]
+	);
+
+	// Recargado: «En casa» conserva el orden nuevo y «Agotados» el suyo —
+	// el POST de una sección no movió a la otra.
+	await page.reload();
+	await waitForHydration(page);
+	const enCasa = page.locator('ul[data-swapy-container="en-casa"] > li');
+	await expect(enCasa).toHaveCount(2);
+	await expect(enCasa.nth(0)).toContainText('Pan');
+	await expect(enCasa.nth(1)).toContainText('Leche entera');
+	const agotados = page.locator('ul[data-swapy-container="agotados"] > li');
+	await expect(agotados).toHaveCount(1);
+	await expect(agotados.nth(0)).toContainText('Cerveza');
+});
+
+test('el handle de la despensa mueve con el teclado dentro de su sección (#134)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const leche = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 1,
+		unit: 'liter',
+		order: 1
+	});
+	const pan = await createPantryItem({
+		familyId: family.id,
+		name: 'Pan',
+		quantity: 1,
+		unit: 'unit',
+		order: 2
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// Flecha abajo sobre la leche: intercambia con el pan (L, P → P, L).
+	const respuesta = page.waitForResponse((peticion) => peticion.url().includes('?/reorder'));
+	await page.getByRole('button', { name: 'Reordenar Leche entera' }).press('ArrowDown');
+	await respuesta;
+
+	const enCasa = page.locator('ul[data-swapy-container="en-casa"] > li');
+	await expect(enCasa.nth(0)).toContainText('Pan');
+	await expect(enCasa.nth(1)).toContainText('Leche entera');
+
+	// Sobrevive a la recarga, con la columna `order` guardada por el action.
+	await page.reload();
+	await waitForHydration(page);
+	await expect(page.locator('ul[data-swapy-container="en-casa"] > li').nth(0)).toContainText('Pan');
+	await expect(
+		prisma.pantryItem.findUniqueOrThrow({ where: { id: pan.id }, select: { order: true } })
+	).resolves.toMatchObject({ order: 1 });
+	await expect(
+		prisma.pantryItem.findUniqueOrThrow({ where: { id: leche.id }, select: { order: true } })
+	).resolves.toMatchObject({ order: 2 });
+});

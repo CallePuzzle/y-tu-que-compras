@@ -7,6 +7,7 @@ import {
 	createItem,
 	deleteItem,
 	listItems,
+	reorderItems,
 	setItemPurchased,
 	updateItem
 } from '$lib/server/items.js';
@@ -164,6 +165,38 @@ export const actions: Actions = {
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al marcar el item');
+			return fail(500, { error: m.items_error() });
+		}
+
+		return { success: true };
+	},
+
+	// Reordenar los pendientes (#134, drag-to-swap con Swapy): el cliente
+	// manda los ids de la sección en su orden nuevo (campo repetido «ids» del
+	// FormData). Sin schema de superforms (solo ids), como el toggle de
+	// comprado; la pertenencia y la renumeración 1..n las aplica
+	// `reorderItems` en su transacción, y el cliente revierte su optimismo
+	// si el envío falla.
+	reorder: async (event) => {
+		const family = requireActiveFamily(event);
+		const data = await event.request.formData();
+		const ids = data
+			.getAll('ids')
+			.filter((id): id is string => typeof id === 'string' && id !== '');
+
+		// Payload vacío o con repetidos: UI rancia o petición hecha a mano.
+		if (ids.length === 0 || new Set(ids).size !== ids.length) {
+			return fail(400, { error: m.items_error() });
+		}
+
+		try {
+			const ok = await reorderItems(family.id, event.params.listId, ids);
+			if (!ok) {
+				// La lista o algún item ya no existe aquí: 404 (issue #110).
+				return fail(404, { error: m.items_gone() });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al reordenar los items');
 			return fail(500, { error: m.items_error() });
 		}
 

@@ -87,6 +87,7 @@
 	"families_invite_expiry_hint": "The invitation expires in {hours} hours.",
 	"ui_close": "Close",
 	"ui_cancel": "Cancel",
+	"ui_reorder_handle": "Reorder {name}: drag, or move up and down with the arrow keys",
 	"routes_lists": "Lists",
 	"routes_pantry": "Pantry",
 	"routes_history": "History",

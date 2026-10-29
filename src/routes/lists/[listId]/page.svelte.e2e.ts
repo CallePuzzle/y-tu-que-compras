@@ -436,3 +436,121 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 	await expect(page.locator('dialog[open]')).toBeVisible();
 	await expect(page.locator('#finalize-total')).toHaveValue('');
 });
+
+// El reorden (#134) se ejercita SIN simular el drag (frágil en Playwright;
+// con ratón y táctil se verifica a mano): el teclado del handle recorre el
+// MISMO camino que el drag (mapa optimista + POST al asentarse), y el POST
+// directo ejercita la persistencia del action.
+test('el reorden de pendientes persiste tras recargar (#134)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	// Orden inicial: A, B, C.
+	const a = await createItem({ listId: lista.id, name: 'Leche entera', order: 1 });
+	const b = await createItem({ listId: lista.id, name: 'Pan', order: 2 });
+	const c = await createItem({ listId: lista.id, name: 'Huevos', order: 3 });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// El mismo POST que hace la página, desde dentro: el orden nuevo (C, A, B).
+	await page.evaluate(
+		async (ids) => {
+			const body = new FormData();
+			for (const id of ids) {
+				body.append('ids', id);
+			}
+			const respuesta = await fetch('?/reorder', { method: 'POST', body });
+			if (!respuesta.ok) {
+				throw new Error(`?/reorder -> ${respuesta.status}`);
+			}
+		},
+		[c.id, a.id, b.id]
+	);
+
+	// Recargado, el orden guardado es el que mandó el POST.
+	await page.reload();
+	await waitForHydration(page);
+	const filas = page.locator('ol[data-swapy-container="pendientes"] > li');
+	await expect(filas).toHaveCount(3);
+	await expect(filas.nth(0)).toContainText('Huevos');
+	await expect(filas.nth(1)).toContainText('Leche entera');
+	await expect(filas.nth(2)).toContainText('Pan');
+});
+
+test('el handle mueve con el teclado y el swap llega al servidor (#134)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	const a = await createItem({ listId: lista.id, name: 'Leche entera', order: 1 });
+	const b = await createItem({ listId: lista.id, name: 'Pan', order: 2 });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// Cada pendiente lleva su handle de arrastre.
+	const handles = page.getByRole('button', { name: /Reordenar Leche entera|Reordenar Pan/ });
+	await expect(handles).toHaveCount(2);
+
+	// Flecha abajo sobre el primero: intercambia con el vecino (A, B → B, A).
+	const respuesta = page.waitForResponse((peticion) => peticion.url().includes('?/reorder'));
+	await page.getByRole('button', { name: 'Reordenar Leche entera' }).press('ArrowDown');
+	await respuesta;
+
+	const filas = page.locator('ol[data-swapy-container="pendientes"] > li');
+	await expect(filas.nth(0)).toContainText('Pan');
+	await expect(filas.nth(1)).toContainText('Leche entera');
+
+	// Y sobrevive a la recarga: el POST ya lo guardó.
+	await page.reload();
+	await waitForHydration(page);
+	const filasRecargadas = page.locator('ol[data-swapy-container="pendientes"] > li');
+	await expect(filasRecargadas.nth(0)).toContainText('Pan');
+	await expect(filasRecargadas.nth(1)).toContainText('Leche entera');
+	await expect(
+		prisma.item.findUniqueOrThrow({ where: { id: b.id }, select: { order: true } })
+	).resolves.toMatchObject({ order: 1 });
+	await expect(
+		prisma.item.findUniqueOrThrow({ where: { id: a.id }, select: { order: true } })
+	).resolves.toMatchObject({ order: 2 });
+});
+
+test('si el POST del reorden falla, el orden se revierte y avisa (#134)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	const a = await createItem({ listId: lista.id, name: 'Leche entera', order: 1 });
+	const b = await createItem({ listId: lista.id, name: 'Pan', order: 2 });
+	await seedSession(page, user);
+
+	// El servidor no responde: el swap ya está pintado, pero al fallar el
+	// envío el orden vuelve al guardado y queda el aviso delante. (Regex y no
+	// glob: el `?` de los patrones de Playwright es un comodín de UN carácter
+	// y no pilla el `?/reorder` literal.)
+	await page.route(/\/reorder$/, (route) => route.abort());
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	await page.getByRole('button', { name: 'Reordenar Leche entera' }).press('ArrowDown');
+	// El aviso propio del reorden (acotado: tras una revalidación, el alta
+	// rápida puede lucir SU error de campo vacío, y ambos son role=alert) es
+	// la señal de que el POST falló; el swap optimista se pintó y se deshizo
+	// demasiado rápido para asertar su estado transitorio sin carreras.
+	await expect(
+		page.locator('div.alert-warning', { hasText: 'No se ha podido realizar la operación' })
+	).toBeVisible();
+
+	// La reversión devolvió el orden inicial…
+	const filas = page.locator('ol[data-swapy-container="pendientes"] > li');
+	await expect(filas.nth(0)).toContainText('Leche entera');
+	await expect(filas.nth(1)).toContainText('Pan');
+	// …y la base tampoco cambió.
+	await expect(
+		prisma.item.findUniqueOrThrow({ where: { id: a.id }, select: { order: true } })
+	).resolves.toMatchObject({ order: 1 });
+	await expect(
+		prisma.item.findUniqueOrThrow({ where: { id: b.id }, select: { order: true } })
+	).resolves.toMatchObject({ order: 2 });
+});

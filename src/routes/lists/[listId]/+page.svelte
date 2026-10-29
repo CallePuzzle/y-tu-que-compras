@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -8,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { createSwapy, utils, type Swapy } from 'swapy';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import EditItemModal from './EditItemModal.svelte';
 	import FinalizeModal from './FinalizeModal.svelte';
@@ -107,6 +109,127 @@
 			};
 	}
 
+	// ---- Reordenar pendientes (#134): drag-to-swap con Swapy. ----
+	// El patrón «dinámico» de la librería: los slots son POSICIONES estables
+	// (su id lo decide el mapa) y el contenido de cada una lo decide el mapa;
+	// con `manualSwap` es Svelte quien mueve el contenido al cambiar el mapa
+	// — si Swapy moviera el DOM por su cuenta se pisaría con el keyed each.
+	// Un swap intercambia el contenido de dos slots: se pinta al instante
+	// (optimista) y el POST viaja cuando la sesión de arrastre termina; en
+	// fallo, el mapa vuelve al orden que trae el load con el aviso delante,
+	// el mismo trato que el toggle de comprado.
+	//
+	// El mapa es un `$derived` ESCRIBIBLE: su valor base es la identidad del
+	// orden que trae el load, y cada asignación (swap en el aire, teclado,
+	// reversión) lo pisa HASTA que los pendientes cambien — que es justo el
+	// reset a la verdad del servidor: un POST confirmado llega con este
+	// mismo orden (no se mueve nada) y un fallo vuelve aquí al revocarse.
+	let slotItemMap = $derived(utils.initSlotItemMap(pendientes, 'id'));
+	let falloReorden: string | null = $state(null);
+
+	/** El contenedor Swapy de pendientes (el `<ol>` de la sección). */
+	let contenedorPendientes: HTMLElement | undefined = $state();
+	let swapyPendientes: Swapy | null = null;
+
+	/**
+	 * Las filas pintadas: slots en orden fijo con su item asignado. Las
+	 * referencias colgantes (un item borrado por otro miembro antes de que
+	 * el load re-sincronice el mapa) se saltan.
+	 */
+	const slottedPendientes = $derived(
+		utils.toSlottedItems(pendientes, 'id', slotItemMap).filter((par) => par.item)
+	);
+
+	// Cualquier repintado de la sección deja el DOM distinto de lo que Swapy
+	// cree: relee slots e items. El rAF espera a que el keyed each haya
+	// movido sus nodos (los efectos corren con el DOM ya parcheado, pero el
+	// reset del mapa de arriba encadena otro ciclo de render).
+	$effect(() => {
+		void slottedPendientes;
+		requestAnimationFrame(() => swapyPendientes?.update());
+	});
+
+	$effect(() => {
+		if (!contenedorPendientes) {
+			return;
+		}
+		const instancia = createSwapy(contenedorPendientes, { manualSwap: true });
+		instancia.onSwap((event) => {
+			// Optimista EN EL AIRE: el modo hover puede disparar varios swaps
+			// en una sesión de arrastre y cada uno repinta al instante. El
+			// rAF deja pasar el ciclo del evento, como en el ejemplo de la
+			// documentación para Svelte.
+			requestAnimationFrame(() => {
+				slotItemMap = event.newSlotItemMap.asArray;
+			});
+		});
+		instancia.onSwapEnd((event) => {
+			// La sesión terminó: aquí — y solo aquí — viaja el POST, con el
+			// orden asentado de la última pasada de hover (el «settled» del
+			// issue).
+			if (event.hasChanged) {
+				enviarOrden(event.slotItemMap.asArray.map((par) => par.item));
+			}
+		});
+		swapyPendientes = instancia;
+		return () => {
+			instancia.destroy();
+			swapyPendientes = null;
+		};
+	});
+
+	let colaReorden: Promise<void> = Promise.resolve();
+
+	/**
+	 * El POST del orden nuevo, ENCADENADO: dos arrastres seguidos no pueden
+	 * cruzar sus envíos — el servidor aplica el array completo de cada uno,
+	 * así que manda el último ENVIADO, no el último recibido. La lista puede
+	 * ser parcial (un pendiente creado por otro miembro mientras tanto no
+	 * viaja): el servidor conserva su orden relativo detrás.
+	 */
+	function enviarOrden(ids: string[]) {
+		colaReorden = colaReorden.then(async () => {
+			const body = new FormData();
+			for (const id of ids) {
+				body.append('ids', id);
+			}
+			try {
+				const respuesta = await fetch('?/reorder', { method: 'POST', body });
+				if (!respuesta.ok) {
+					throw new Error(`?/reorder -> ${respuesta.status}`);
+				}
+				falloReorden = null;
+				// La verdad del servidor ya es este orden: el reset del mapa
+				// que trae la invalidación es una no-operación a la vista.
+				await invalidateAll();
+			} catch {
+				// Fallo (el servidor rechazó) o error (sin respuesta): la
+				// reversión es volver al orden que traen los datos.
+				slotItemMap = utils.initSlotItemMap(pendientes, 'id');
+				falloReorden = m.items_error();
+			}
+		});
+		return colaReorden;
+	}
+
+	/**
+	 * El handle con teclado (#134): las flechas intercambian con el vecino
+	 * directamente (un paso de teclado ya es una sesión terminada), por el
+	 * mismo camino de mapa optimista + POST que el drag.
+	 */
+	function moverPendiente(itemId: string, delta: 1 | -1) {
+		const de = slotItemMap.findIndex((par) => par.item === itemId);
+		const a = de + delta;
+		if (de === -1 || a < 0 || a >= slotItemMap.length) {
+			return;
+		}
+		const mapa = slotItemMap.map((par) => ({ ...par }));
+		[mapa[de].item, mapa[a].item] = [mapa[a].item, mapa[de].item];
+		slotItemMap = mapa;
+		falloReorden = null;
+		enviarOrden(mapa.map((par) => par.item));
+	}
+
 	// Refresco al volver a la pestaña (ver `useRefetchOnVisible`): el alta
 	// rápida no necesita guardia, el load ya no la rehace (`applyAction`).
 	useRefetchOnVisible();
@@ -150,6 +273,14 @@
 		</div>
 	{/if}
 
+	<!-- Fallo del reorden (#134): el optimista ya se revirtió al orden
+	     guardado; el aviso lo explica, como el del toggle de comprado. -->
+	{#if falloReorden}
+		<div class="alert alert-warning mt-4 text-sm" role="alert">
+			{falloReorden}
+		</div>
+	{/if}
+
 	<QuickAddForm bind:this={altaRapida} form={data.form} />
 
 	{#if data.items.length === 0}
@@ -163,10 +294,14 @@
 			</button>
 		</div>
 	{:else}
-		{#snippet filaItem(item: Item)}
+		<!-- La fila reordenable viaja con el id de SU slot de Swapy (undefined
+		     en los comprados: sección fija, sin handle). -->
+		{#snippet filaItem(item: Item, slotId?: string)}
 			<ItemRow
 				{item}
 				comprado={valorComprado(item)}
+				{slotId}
+				onMover={slotId ? (delta) => moverPendiente(item.id, delta) : undefined}
 				onPurchasedResult={alComprar(item.id)}
 				onToggle={(nuevo) => alTocar(item.id, nuevo)}
 				onEdit={() => abrirEdicion(item)}
@@ -176,16 +311,24 @@
 
 		<!-- Separación visual (checklist #69): pendientes arriba; los
 		     comprados, debajo, atenuados y tachados. La cabecera de
-		     «Pendientes» solo cuando hay comprados (si no, sobra). -->
+		     «Pendientes» solo cuando hay comprados (si no, sobra).
+		     Pendientes ES el contenedor Swapy (#134): una sección por
+		     contenedor, para que los swaps no crucen particiones. -->
 		{#if pendientes.length > 0}
 			{#if comprados.length > 0}
 				<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
 					{m.items_section_pending()}
 				</h2>
 			{/if}
-			<ol class="mt-4 flex list-none flex-col gap-2">
-				{#each pendientes as item (item.id)}
-					{@render filaItem(item)}
+			<ol
+				class="mt-4 flex list-none flex-col gap-2"
+				data-swapy-container="pendientes"
+				bind:this={contenedorPendientes}
+			>
+				{#each slottedPendientes as par (par.slotId)}
+					{#if par.item}
+						{@render filaItem(par.item, par.slotId)}
+					{/if}
 				{/each}
 			</ol>
 		{/if}

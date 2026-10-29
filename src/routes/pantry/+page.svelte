@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { enhance as kitEnhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
 	import { SvelteMap } from 'svelte/reactivity';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import Minus from '@lucide/svelte/icons/minus';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
@@ -17,6 +19,7 @@
 	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
 	import { readdSchema } from '$lib/schemas/pantry.js';
 	import type { Unit } from '$lib/schemas/item.js';
+	import { createSwapy, utils, type Swapy } from 'swapy';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
@@ -86,6 +89,195 @@
 			ajustes.delete(id);
 		} else {
 			ajustes.set(id, quedan);
+		}
+	}
+
+	// ---- Reordenar (#134): drag-to-swap con Swapy en LAS DOS secciones. ----
+	// El patrón «dinámico» de la librería, un contenedor POR SECCIÓN (en casa
+	// y agotados): los slots son POSICIONES estables y el contenido de cada
+	// una lo decide su mapa, con `manualSwap` para que sea Svelte quien mueve
+	// el contenido al cambiar el mapa — si Swapy moviera el DOM por su cuenta
+	// se pisaría con el keyed each. Dos contenedores también impiden cruzar
+	// particiones arrastrando: un swap solo cabe dentro de la suya. Como en
+	// el ajuste de arriba, el swap se pinta al instante y el POST viaja al
+	// asentarse; en fallo el mapa vuelve al orden del load con el aviso.
+	// Cada mapa es un `$derived` ESCRIBIBLE: su valor base es la identidad del
+	// orden que trae el load, y cada asignación (swap en el aire, teclado,
+	// reversión) lo pisa HASTA que los productos de la sección cambien — que
+	// es justo el reset a la verdad del servidor: un POST confirmado llega
+	// con este mismo orden (no se mueve nada), un fallo vuelve aquí al
+	// revocarse, y un producto que entra o sale de la sección (consumido a
+	// cero, repuesto) aterriza en su sitio sin mapas rancios.
+	let mapaEnCasa = $derived(utils.initSlotItemMap(enCasa, 'id'));
+	let mapaAgotados = $derived(utils.initSlotItemMap(agotados, 'id'));
+	let falloReorden: string | null = $state(null);
+
+	/** Los contenedores Swapy de cada sección (los `<ul>`). */
+	let contenedorEnCasa: HTMLElement | undefined = $state();
+	let contenedorAgotados: HTMLElement | undefined = $state();
+	let swapyEnCasa: Swapy | null = null;
+	let swapyAgotados: Swapy | null = null;
+
+	/** Las filas pintadas por sección: slots fijos con su producto asignado.
+	 *  Las referencias colgantes (un producto quitado por otro miembro antes
+	 *  de que el load re-sincronice el mapa) se saltan. */
+	const slottedEnCasa = $derived(
+		utils.toSlottedItems(enCasa, 'id', mapaEnCasa).filter((par) => par.item)
+	);
+	const slottedAgotados = $derived(
+		utils.toSlottedItems(agotados, 'id', mapaAgotados).filter((par) => par.item)
+	);
+
+	// Cualquier repintado deja el DOM distinto de lo que Swapy cree: relee
+	// slots e items. El rAF espera a que el keyed each haya movido sus nodos
+	// (el reset del mapa de arriba encadena otro ciclo de render).
+	$effect(() => {
+		void slottedEnCasa;
+		requestAnimationFrame(() => swapyEnCasa?.update());
+	});
+	$effect(() => {
+		void slottedAgotados;
+		requestAnimationFrame(() => swapyAgotados?.update());
+	});
+
+	$effect(() => {
+		if (!contenedorEnCasa) {
+			return;
+		}
+		swapyEnCasa = crearInstancia(contenedorEnCasa, 'enCasa', (mapa) => (mapaEnCasa = mapa));
+		return () => {
+			swapyEnCasa?.destroy();
+			swapyEnCasa = null;
+		};
+	});
+	$effect(() => {
+		if (!contenedorAgotados) {
+			return;
+		}
+		swapyAgotados = crearInstancia(contenedorAgotados, 'agotados', (mapa) => (mapaAgotados = mapa));
+		return () => {
+			swapyAgotados?.destroy();
+			swapyAgotados = null;
+		};
+	});
+
+	/**
+	 * Una instancia de Swapy para una sección: swaps optimistas en el aire
+	 * (el modo hover dispara varios por sesión de arrastre) y el POST del
+	 * orden nuevo cuando la sesión asienta — en Swapy 1.x eso es
+	 * `onSwapEnd` con `hasChanged`.
+	 */
+	function crearInstancia(
+		contenedor: HTMLElement,
+		seccion: 'enCasa' | 'agotados',
+		fijarMapa: (mapa: Array<{ slot: string; item: string }>) => void
+	): Swapy {
+		const instancia = createSwapy(contenedor, { manualSwap: true });
+		instancia.onSwap((event) => {
+			// El rAF deja pasar el ciclo del evento, como en el ejemplo de la
+			// documentación para Svelte.
+			requestAnimationFrame(() => fijarMapa(event.newSlotItemMap.asArray));
+		});
+		instancia.onSwapEnd((event) => {
+			if (event.hasChanged) {
+				enviarOrden(
+					seccion,
+					event.slotItemMap.asArray.map((par) => par.item)
+				);
+			}
+		});
+		return instancia;
+	}
+
+	let colaReorden: Promise<void> = Promise.resolve();
+
+	/**
+	 * El POST del orden nuevo de UNA sección, ENCADENADO: dos arrastres
+	 * seguidos no pueden cruzar sus envíos — el servidor aplica el array
+	 * completo de cada uno, así que manda el último ENVIADO, no el último
+	 * recibido. La lista puede ser parcial (un producto creado por otro
+	 * miembro mientras tanto no viaja): el servidor conserva su orden
+	 * relativo detrás.
+	 */
+	function enviarOrden(seccion: 'enCasa' | 'agotados', ids: string[]) {
+		colaReorden = colaReorden.then(async () => {
+			const body = new FormData();
+			for (const id of ids) {
+				body.append('ids', id);
+			}
+			try {
+				const respuesta = await fetch('?/reorder', { method: 'POST', body });
+				if (!respuesta.ok) {
+					throw new Error(`?/reorder -> ${respuesta.status}`);
+				}
+				falloReorden = null;
+				// La verdad del servidor ya es este orden: el reset del mapa
+				// que trae la invalidación es una no-operación a la vista.
+				await invalidateAll();
+			} catch {
+				// Fallo (el servidor rechazó) o error (sin respuesta): la
+				// reversión es volver al orden que traen los datos.
+				if (seccion === 'enCasa') {
+					mapaEnCasa = utils.initSlotItemMap(enCasa, 'id');
+				} else {
+					mapaAgotados = utils.initSlotItemMap(agotados, 'id');
+				}
+				falloReorden = m.pantry_error();
+			}
+		});
+		return colaReorden;
+	}
+
+	/**
+	 * El handle con teclado (#134): las flechas intercambian con el vecino
+	 * DENTRO de la sección del item (el mapa que lo contenga decide cuál es;
+	 * la otra no se toca — las particiones no se cruzan). Un paso de teclado
+	 * ya es una sesión terminada: mismo camino de mapa optimista + POST.
+	 */
+	function moverProducto(itemId: string, delta: 1 | -1) {
+		const enCasaIndice = mapaEnCasa.findIndex((par) => par.item === itemId);
+		if (enCasaIndice !== -1) {
+			intercambiar('enCasa', mapaEnCasa, enCasaIndice, enCasaIndice + delta);
+			return;
+		}
+		const agotadosIndice = mapaAgotados.findIndex((par) => par.item === itemId);
+		if (agotadosIndice !== -1) {
+			intercambiar('agotados', mapaAgotados, agotadosIndice, agotadosIndice + delta);
+		}
+	}
+
+	/** El swap del teclado: el mismo trato que el drag, con su POST. */
+	function intercambiar(
+		seccion: 'enCasa' | 'agotados',
+		efectivo: Array<{ slot: string; item: string }>,
+		de: number,
+		a: number
+	) {
+		if (de === -1 || a < 0 || a >= efectivo.length) {
+			return;
+		}
+		const mapa = efectivo.map((par) => ({ ...par }));
+		[mapa[de].item, mapa[a].item] = [mapa[a].item, mapa[de].item];
+		if (seccion === 'enCasa') {
+			mapaEnCasa = mapa;
+		} else {
+			mapaAgotados = mapa;
+		}
+		falloReorden = null;
+		enviarOrden(
+			seccion,
+			mapa.map((par) => par.item)
+		);
+	}
+
+	/** Las flechas del handle, como evento (lo comparte el snippet de fila). */
+	function teclaHandle(event: KeyboardEvent, itemId: string) {
+		if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			moverProducto(itemId, -1);
+		} else if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			moverProducto(itemId, 1);
 		}
 	} /**
 	 * Resultado de un ajuste: en fallo revierte y avisa; en éxito refresca.
@@ -224,6 +416,14 @@
 		</div>
 	{/if}
 
+	<!-- Fallo del reorden (#134): el optimista ya se revirtió al orden
+	     guardado; el aviso lo explica, como el del ajuste de arriba. -->
+	{#if falloReorden}
+		<div class="alert alert-warning mt-4 text-sm" role="alert">
+			{falloReorden}
+		</div>
+	{/if}
+
 	{#if exito}
 		<div class="alert alert-success mt-4 text-sm" role="status">
 			{exito}
@@ -242,93 +442,128 @@
 			</a>
 		</div>
 	{:else}
-		<!-- Una fila de producto: stepper −/+ (checklist #73) y botón de
-		     re-añadir (checklist #74). El snippet lo comparten las dos
-		     secciones («En casa» y «Agotados»); un agotado no pinta el −: de
-		     cero no se puede consumir más, solo reponer o re-añadir. -->
-		{#snippet filaProducto(item: PantryRow)}
+		<!-- Una fila de producto: handle de arrastre (#134), stepper −/+
+		     (checklist #73) y botón de re-añadir (checklist #74). El
+		     snippet lo comparten las dos secciones («En casa» y
+		     «Agotados»), cada una con SU contenedor Swapy: el `<li>` es el
+		     slot (id de la posición en el mapa) y el contenido viaja en el
+		     `data-swapy-item`. Un agotado no pinta el −: de cero no se
+		     puede consumir más, solo reponer o re-añadir. -->
+		{#snippet filaProducto(item: PantryRow, slotId: string)}
 			{@const cantidad = cantidadVisible(item)}
 			<li
-				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${cantidad === 0 ? 'opacity-60' : ''}`}
+				class={`bg-base-200 rounded-box px-3 py-2 sm:px-4 ${cantidad === 0 ? 'opacity-60' : ''}`}
+				data-swapy-slot={slotId}
 			>
-				<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
-				<form
-					method="POST"
-					action="?/adjust"
-					use:kitEnhance={alAjustar(item.id, item.unit)}
-					class="flex shrink-0 items-center gap-1"
-				>
-					<input type="hidden" name="item" value={item.id} />
-					{#if cantidad > 0}
+				<div class="flex w-full items-center gap-2" data-swapy-item={item.id}>
+					<!-- Handle de arrastre (#134): único punto que inicia el
+					     drag, para no pisar el stepper ni los botones. Las
+					     flechas mueven sin ratón; `touch-none` deja el gesto al
+					     pointer de Swapy en lugar del scroll. -->
+					<button
+						type="button"
+						data-swapy-handle
+						class="btn btn-ghost btn-sm text-base-content/40 -ml-2 cursor-grab touch-none active:cursor-grabbing"
+						aria-label={m.ui_reorder_handle({ name: item.name })}
+						title={m.ui_reorder_handle({ name: item.name })}
+						onkeydown={(event) => teclaHandle(event, item.id)}
+					>
+						<GripVertical aria-hidden="true" />
+					</button>
+					<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
+					<form
+						method="POST"
+						action="?/adjust"
+						use:kitEnhance={alAjustar(item.id, item.unit)}
+						class="flex shrink-0 items-center gap-1"
+					>
+						<input type="hidden" name="item" value={item.id} />
+						{#if cantidad > 0}
+							<button
+								type="submit"
+								name="delta"
+								value="-1"
+								class="btn btn-ghost btn-sm"
+								aria-label={etiquetaPaso(item, m.pantry_consume)}
+								title={etiquetaPaso(item, m.pantry_consume)}
+								onclick={() => anotarAjuste(item.id, -UNIT_STEP[item.unit])}
+							>
+								<Minus aria-hidden="true" />
+							</button>
+						{/if}
+						<span class="badge badge-ghost tabular-nums">
+							{formatQuantity(cantidad, getLocale())}
+							{UNIT_LABEL[item.unit]}
+						</span>
 						<button
 							type="submit"
 							name="delta"
-							value="-1"
+							value="1"
 							class="btn btn-ghost btn-sm"
-							aria-label={etiquetaPaso(item, m.pantry_consume)}
-							title={etiquetaPaso(item, m.pantry_consume)}
-							onclick={() => anotarAjuste(item.id, -UNIT_STEP[item.unit])}
+							aria-label={etiquetaPaso(item, m.pantry_restock)}
+							title={etiquetaPaso(item, m.pantry_restock)}
+							onclick={() => anotarAjuste(item.id, UNIT_STEP[item.unit])}
 						>
-							<Minus aria-hidden="true" />
+							<Plus aria-hidden="true" />
 						</button>
-					{/if}
-					<span class="badge badge-ghost tabular-nums">
-						{formatQuantity(cantidad, getLocale())}
-						{UNIT_LABEL[item.unit]}
-					</span>
+					</form>
+					<!-- Re-añadir a la compra (checklist #74): abre el modal con el
+					     selector de lista y el ajuste de despensa. En un agotado es EL
+					     botón: la memoria de «esto se compra» lista para volver. -->
 					<button
-						type="submit"
-						name="delta"
-						value="1"
+						type="button"
 						class="btn btn-ghost btn-sm"
-						aria-label={etiquetaPaso(item, m.pantry_restock)}
-						title={etiquetaPaso(item, m.pantry_restock)}
-						onclick={() => anotarAjuste(item.id, UNIT_STEP[item.unit])}
+						title={m.pantry_readd()}
+						aria-label={m.pantry_readd()}
+						onclick={() => abrirReAnadir(item)}
 					>
-						<Plus aria-hidden="true" />
+						<ShoppingCart aria-hidden="true" />
 					</button>
-				</form>
-				<!-- Re-añadir a la compra (checklist #74): abre el modal con el
-				     selector de lista y el ajuste de despensa. En un agotado es EL
-				     botón: la memoria de «esto se compra» lista para volver. -->
-				<button
-					type="button"
-					class="btn btn-ghost btn-sm"
-					title={m.pantry_readd()}
-					aria-label={m.pantry_readd()}
-					onclick={() => abrirReAnadir(item)}
-				>
-					<ShoppingCart aria-hidden="true" />
-				</button>
+				</div>
 			</li>
 		{/snippet}
 
 		<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
-		     debajo (si no, sobra), como pendientes/comprados en la lista. -->
+		     debajo (si no, sobra), como pendientes/comprados en la lista.
+		     Contenedor Swapy propio (#134): los swaps de aquí no se cruzan
+		     con los de «Agotados». -->
 		{#if enCasa.length > 0}
 			{#if agotados.length > 0}
 				<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
 					{m.pantry_section_home()}
 				</h2>
 			{/if}
-			<ul class="mt-4 flex list-none flex-col gap-2">
-				{#each enCasa as item (item.id)}
-					{@render filaProducto(item)}
+			<ul
+				class="mt-4 flex list-none flex-col gap-2"
+				data-swapy-container="en-casa"
+				bind:this={contenedorEnCasa}
+			>
+				{#each slottedEnCasa as par (par.slotId)}
+					{#if par.item}
+						{@render filaProducto(par.item, par.slotId)}
+					{/if}
 				{/each}
 			</ul>
 		{/if}
 
 		<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
-		     servidor NO los borra) para poder re-añadirlos a la compra. -->
+		     servidor NO los borra) para poder re-añadirlos a la compra.
+		     Contenedor Swapy propio (#134). -->
 		{#if agotados.length > 0}
 			<h2
 				class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
 			>
 				{m.pantry_section_out()}
 			</h2>
-			<ul class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
-				{#each agotados as item (item.id)}
-					{@render filaProducto(item)}
+			<ul
+				class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}
+				data-swapy-container="agotados"
+				bind:this={contenedorAgotados}
+			>
+				{#each slottedAgotados as par (par.slotId)}
+					{#if par.item}
+						{@render filaProducto(par.item, par.slotId)}
+					{/if}
 				{/each}
 			</ul>
 		{/if}

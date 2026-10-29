@@ -5,10 +5,11 @@ import type { ReaddData } from '$lib/schemas/pantry.js';
 import type { Unit } from '$lib/schemas/item.js';
 
 // Consulta y ciclo de vida de la despensa de la familia (issues #44, #72,
-// #73 y #74). Como en `lists.ts`/`items.ts`, la familia viaja SIEMPRE en los
-// argumentos — es la activa que `requireActiveFamily` dejó verificada — y
-// entra en el `where`: un producto de otra familia es como si no existiera.
-// La otra escritura (el alta al finalizar compra) vive en `purchases.ts`.
+// #73 y #74, y el orden manual de la #134). Como en `lists.ts`/`items.ts`, la
+// familia viaja SIEMPRE en los argumentos — es la activa que
+// `requireActiveFamily` dejó verificada — y entra en el `where`: un producto
+// de otra familia es como si no existiera. La otra escritura (el alta al
+// finalizar compra) vive en `purchases.ts`.
 
 /** Un producto de la despensa tal y como la vista lo muestra. */
 export interface PantryItemView {
@@ -36,18 +37,75 @@ function toPantryItem(row: {
 }
 
 /**
- * Los productos de la despensa de la familia, alfabéticos por nombre visible:
- * es el orden en el que se mira «¿queda X?». El nombre es el que puso la
- * PRIMERA compra del producto (`purchases.ts` lo conserva aunque las siguientes
- * lleguen escritas de otra manera); solo su cantidad crece.
+ * Los productos de la despensa de la familia, en su orden guardado (#134):
+ * la columna `order` manda — era alfabética hasta que el reorden con
+ * Swapy (#134) pidió un orden propio — y los empates (dos altas concurrentes
+ * que calculan el mismo max + 1) se resuelven por antigüedad e id, de forma
+ * determinista como en `listItems`. El nombre visible es el que puso la
+ * PRIMERA compra del producto (`purchases.ts` lo conserva aunque las
+ * siguientes lleguen escritas de otra manera); solo su cantidad crece.
  */
 export async function listPantryItems(familyId: string): Promise<PantryItemView[]> {
 	const rows = await prisma.pantryItem.findMany({
 		where: { organizationId: familyId },
-		orderBy: { name: 'asc' },
+		orderBy: [{ order: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
 		select: { id: true, name: true, quantity: true, unit: true }
 	});
 	return rows.map(toPantryItem);
+}
+
+/**
+ * Aplica el orden nuevo de UNA sección de la despensa (en casa o agotados,
+ * la partición la hace la vista) renumerando la familia entera 1..n: los ids
+ * del payload, en el orden que traen, delante; el resto conserva su orden
+ * relativo detrás. `false` si algún id es ajeno (otra familia), rancio o
+ * está repetido: nada se toca, y el cliente revierte su optimismo.
+ *
+ * En UNA transacción y con las filas CON LOCK, tomadas en el orden canónico
+ * global (el mismo del bucle de upserts de `finalizePurchase`): ninguna
+ * pareja de transacciones bloquea las filas de despensa en orden inverso —
+ * ni dos reordenes a la vez, ni un reorden contra una compra que finaliza.
+ */
+export async function reorderPantryItems(familyId: string, orderedIds: string[]): Promise<boolean> {
+	return prisma.$transaction(async (tx) => {
+		const filas = await tx.$queryRaw<Array<{ id: string; order: number; createdAt: Date }>>`
+			SELECT "id", "order", "createdAt"
+			FROM "pantryItem"
+			WHERE "organizationId" = ${familyId}
+			ORDER BY "normalizedName" ASC, "unit" ASC
+			FOR UPDATE
+		`;
+
+		const presentes = new Set(filas.map((fila) => fila.id));
+		if (
+			new Set(orderedIds).size !== orderedIds.length ||
+			!orderedIds.every((id) => presentes.has(id))
+		) {
+			return false;
+		}
+
+		// El resto (la otra sección) conserva SU orden relativo actual: el
+		// mismo criterio con el que lo lista `listPantryItems`.
+		const enviados = new Set(orderedIds);
+		const resto = filas
+			.filter((fila) => !enviados.has(fila.id))
+			.sort(
+				(a, b) =>
+					a.order - b.order ||
+					+a.createdAt - +b.createdAt ||
+					(a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+			)
+			.map((fila) => fila.id);
+
+		const nuevo = [...orderedIds, ...resto];
+		for (const [indice, id] of nuevo.entries()) {
+			await tx.pantryItem.updateMany({
+				where: { id, organizationId: familyId },
+				data: { order: indice + 1 }
+			});
+		}
+		return true;
+	});
 }
 
 /**

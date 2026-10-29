@@ -1,11 +1,11 @@
 import prisma from '$lib/server/prisma.js';
 import type { ItemData, Unit } from '$lib/schemas/item.js';
 
-// CRUD de items de una lista (issues #67 y #68) y marca de comprado (#69).
-// Como en `lists.ts`, la familia viaja SIEMPRE en los argumentos — es la
-// activa que `requireActiveFamily` dejó verificada — y entra en todos los
-// `where` a través de su lista: un item de otra familia (o de otra lista) es
-// como si no existiera.
+// CRUD de items de una lista (issues #67 y #68), marca de comprado (#69) y
+// reorden de los pendientes (#134). Como en `lists.ts`, la familia viaja
+// SIEMPRE en los argumentos — es la activa que `requireActiveFamily` dejó
+// verificada — y entra en todos los `where` a través de su lista: un item de
+// otra familia (o de otra lista) es como si no existiera.
 
 /** Un item tal y como la vista de la lista lo muestra. */
 export interface ItemView {
@@ -149,4 +149,69 @@ export async function setItemPurchased(
 		data: { purchased }
 	});
 	return result.count > 0;
+}
+
+/**
+ * Aplica el orden nuevo de los PENDIENTES de la lista (#134, drag-to-swap
+ * con Swapy): los ids del payload, en el orden que traen, se renumeran 1..n
+ * y los comprados conservan su orden relativo detrás — la vista agrupa por
+ * `purchased` y dentro de cada grupo manda el `order`, así que ninguno se
+ * mueve de su grupo. `false` si la lista no existe en la familia o algún id
+ * es ajeno (otra lista u otra familia), rancio o repetido: nada se toca, y
+ * el cliente revierte su optimismo.
+ *
+ * En UNA transacción y con la lista CON LOCK (issue #108, patrón
+ * `createItem`): serializa el reorden con altas y re-añadidos concurrentes,
+ * que calculan el max + 1 detrás del mismo lock. Los items se bloquean en el
+ * mismo orden en que `finalizePurchase` lee los comprados: ninguna pareja de
+ * transacciones bloquea filas en orden inverso.
+ */
+export async function reorderItems(
+	familyId: string,
+	listId: string,
+	orderedIds: string[]
+): Promise<boolean> {
+	return prisma.$transaction(async (tx) => {
+		const list = await tx.$queryRaw<Array<{ id: string }>>`
+			SELECT "id"
+			FROM "list"
+			WHERE "id" = ${listId} AND "organizationId" = ${familyId}
+			FOR UPDATE
+		`;
+		if (list.length === 0) {
+			return false;
+		}
+		const listaId = list[0].id;
+
+		const filas = await tx.$queryRaw<Array<{ id: string }>>`
+			SELECT "id"
+			FROM "item"
+			WHERE "listId" = ${listaId}
+			ORDER BY "order" ASC, "createdAt" ASC, "id" ASC
+			FOR UPDATE
+		`;
+
+		const presentes = new Set(filas.map((fila) => fila.id));
+		if (
+			new Set(orderedIds).size !== orderedIds.length ||
+			!orderedIds.every((id) => presentes.has(id))
+		) {
+			return false;
+		}
+
+		// Ya traen el orden relativo actual (el `ORDER BY` de arriba), así que
+		// detrás del payload conservan su sitio, igual que en `reorderPantryItems`.
+		const enviados = new Set(orderedIds);
+		const nuevo = [
+			...orderedIds,
+			...filas.map((fila) => fila.id).filter((id) => !enviados.has(id))
+		];
+		for (const [indice, id] of nuevo.entries()) {
+			await tx.item.updateMany({
+				where: { id, listId: listaId },
+				data: { order: indice + 1 }
+			});
+		}
+		return true;
+	});
 }

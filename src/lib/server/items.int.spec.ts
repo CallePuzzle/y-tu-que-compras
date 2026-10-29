@@ -10,7 +10,14 @@ import { describe, expect, it } from 'vitest';
 // (de otra familia o de otra lista) no se pueden tocar ni por error.
 import type { ItemData } from '$lib/schemas/item.js';
 import prisma from './prisma.js';
-import { createItem, deleteItem, listItems, setItemPurchased, updateItem } from './items.js';
+import {
+	createItem,
+	deleteItem,
+	listItems,
+	reorderItems,
+	setItemPurchased,
+	updateItem
+} from './items.js';
 import { createList } from './lists.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
@@ -236,6 +243,93 @@ describe('Marcar item como comprado (#69)', () => {
 		const items = await listItems(familyId, list.id);
 		expect(items.map((item) => item.id)).toEqual([a.id, c.id, b.id]);
 		expect(items.map((item) => item.purchased)).toEqual([false, false, true]);
+	});
+});
+
+/** El orden guardado de los items de una lista, por id. */
+async function ordenDe(listId: string): Promise<string[]> {
+	const filas = await prisma.item.findMany({
+		where: { listId },
+		orderBy: { order: 'asc' },
+		select: { id: true }
+	});
+	return filas.map((fila) => fila.id);
+}
+
+describe('Reordenar los pendientes (#134)', () => {
+	it('renumera 1..n el orden nuevo del swap y persiste', async () => {
+		const familyId = await familyRow('Familia Reordenadora');
+		const list = await createList(familyId, LISTA);
+		const a = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Pan', unit: 'unit' });
+		const b = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Leche' });
+		const c = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Huevos', unit: 'dozen' });
+
+		// El swap de la vista: C, A, B.
+		await expect(reorderItems(familyId, list.id, [c.id, a.id, b.id])).resolves.toBe(true);
+
+		await expect(ordenDe(list.id)).resolves.toEqual([c.id, a.id, b.id]);
+		// La renumeración es densa 1..n, y `listItems` la sirve tal cual.
+		const filas = await prisma.item.findMany({ where: { listId: list.id } });
+		expect(filas.map((fila) => fila.order).sort((x, y) => x - y)).toEqual([1, 2, 3]);
+		const items = await listItems(familyId, list.id);
+		expect(items.map((item) => item.id)).toEqual([c.id, a.id, b.id]);
+	});
+
+	it('los comprados no viajan en el payload y conservan su orden relativo detrás', async () => {
+		const familyId = await familyRow('Familia Con Comprados');
+		const list = await createList(familyId, LISTA);
+		const a = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Pan', unit: 'unit' });
+		const b = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Leche' });
+		const c = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Huevos', unit: 'dozen' });
+		const d = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Sal', unit: 'gram' });
+		// B y D, comprados (la vista los parte; su orden relativo entre sí se
+		// conserva: el historial lo congela por ese orden).
+		await setItemPurchased(familyId, list.id, b.id, true);
+		await setItemPurchased(familyId, list.id, d.id, true);
+
+		// El swap de pendientes: C, A.
+		await expect(reorderItems(familyId, list.id, [c.id, a.id])).resolves.toBe(true);
+
+		await expect(ordenDe(list.id)).resolves.toEqual([c.id, a.id, b.id, d.id]);
+		// Y la vista sigue agrupando: pendientes (reordenados) y comprados.
+		const items = await listItems(familyId, list.id);
+		expect(items.map((item) => item.id)).toEqual([c.id, a.id, b.id, d.id]);
+	});
+
+	it('ids de otra lista, de otra familia, rancios o repetidos: false y nada cambia', async () => {
+		const mia = await familyRow('Familia Propia');
+		const ajena = await familyRow('Familia Ajena');
+		const propia = await createList(mia, LISTA);
+		const parafarmacia = await createList(mia, { ...LISTA, name: 'Parafarmacia' });
+		const externa = await createList(ajena, LISTA);
+		const a = await createItemOrFail(mia, propia.id, ITEM);
+		const b = await createItemOrFail(mia, propia.id, { ...ITEM, name: 'Pan', unit: 'unit' });
+		const deOtraLista = await createItemOrFail(mia, parafarmacia.id, ITEM);
+		const ajeno = await createItemOrFail(ajena, externa.id, ITEM);
+
+		// El filtro de lista acota dentro de la misma familia…
+		await expect(reorderItems(mia, propia.id, [a.id, deOtraLista.id])).resolves.toBe(false);
+		// …y el de familia, entre familias. También un id rancio y un
+		// payload con repetidos.
+		await expect(reorderItems(mia, propia.id, [a.id, ajeno.id])).resolves.toBe(false);
+		await expect(reorderItems(mia, propia.id, [a.id, randomUUID()])).resolves.toBe(false);
+		await expect(reorderItems(mia, propia.id, [a.id, a.id])).resolves.toBe(false);
+
+		// Nada se tocó.
+		await expect(ordenDe(propia.id)).resolves.toEqual([a.id, b.id]);
+	});
+
+	it('una lista ajena a la familia es «no existe»: false', async () => {
+		const mia = await familyRow('Familia Sola');
+		const ajena = await familyRow('Familia Ajena');
+		const propia = await createList(mia, LISTA);
+		const externa = await createList(ajena, LISTA);
+		const propio = await createItemOrFail(mia, propia.id, ITEM);
+
+		// Lista ajena (id rancio o de otra familia): «no existe» en ambos
+		// casos, sin revelar si vive en otra parte.
+		await expect(reorderItems(mia, externa.id, [propio.id])).resolves.toBe(false);
+		await expect(ordenDe(propia.id)).resolves.toEqual([propio.id]);
 	});
 });
 

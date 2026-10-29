@@ -225,9 +225,16 @@ export async function createPantryItem(options: {
 	normalizedName?: string;
 	quantity?: number;
 	unit?: Unit;
+	/** Posición en la despensa (#134): el servidor la calcula al crear; aquí explícita. */
+	order?: number;
 }): Promise<PantryItem> {
 	const now = new Date();
 	const name = options.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`;
+	// Sin orden explícito, al final: lo que hace el upsert de `purchases.ts`.
+	const { _max } = await prisma.pantryItem.aggregate({
+		where: { organizationId: options.familyId },
+		_max: { order: true }
+	});
 	return prisma.pantryItem.create({
 		data: {
 			organizationId: options.familyId,
@@ -235,6 +242,7 @@ export async function createPantryItem(options: {
 			normalizedName: options.normalizedName ?? name.trim().toLowerCase(),
 			quantity: options.quantity ?? 1,
 			unit: options.unit ?? 'unit',
+			order: options.order ?? (_max.order ?? -1) + 1,
 			createdAt: now,
 			updatedAt: now
 		}

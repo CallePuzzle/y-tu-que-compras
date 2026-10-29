@@ -445,6 +445,10 @@ model PantryItem {
   normalizedName String
   quantity       Decimal      @db.Decimal(10, 3)
   unit           Unit
+  // Orden manual dentro de la familia (#134): la columna no lleva default
+  // («nadie inserta sin decir dónde», como `Item.order`); el reorden renumera
+  // denso 1..n y las altas entran por el final (max + 1 en `purchases.ts`).
+  order          Int
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

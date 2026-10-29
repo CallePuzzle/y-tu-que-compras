@@ -87,6 +87,7 @@
 	"families_invite_expiry_hint": "La invitación caduca en {hours} horas.",
 	"ui_close": "Cerrar",
 	"ui_cancel": "Cancelar",
+	"ui_reorder_handle": "Reordenar {name}: arrastra, o sube y baja con las flechas",
 	"routes_lists": "Listas",
 	"routes_pantry": "Despensa",
 	"routes_history": "Historial",

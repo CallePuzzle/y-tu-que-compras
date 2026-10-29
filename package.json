@@ -81,6 +81,7 @@
 		"pino": "^10.4.0",
 		"prisma": "^7.10.0",
 		"sveltekit-superforms": "^2.31.0",
+		"swapy": "^1.0.5",
 		"zod": "^4.6.7"
 	},
 	"trustedDependencies": [

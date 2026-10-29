@@ -191,10 +191,34 @@ export async function finalizePurchase(
 				(a, b) => ordenCanonico(a.normalizedName, b.normalizedName) || ordenCanonico(a.unit, b.unit)
 			);
 
+			// El orden de los NUEVOS (#134): entran por el final de la
+			// despensa, como los items en las listas (`createItem`): max + 1
+			// para el primero y un número distinto por cada producto NUEVO de
+			// ESTA compra — los que ya estaban no consumen número. Si una
+			// compra concurrente inserta mientras tanto, el empate lo resuelve
+			// el orden secundario del listado y el reorden renumera denso.
+			const filasDespensa = await tx.pantryItem.findMany({
+				where: { organizationId: familyId },
+				select: { order: true, normalizedName: true, unit: true }
+			});
+			const existentes = new Set(
+				filasDespensa.map((fila) => `${fila.normalizedName}\n${fila.unit}`)
+			);
+			let ordenNuevo = filasDespensa.reduce((max, fila) => Math.max(max, fila.order), -1) + 1;
+			const ordenDeAterrizaje = new Map<string, number>();
+			for (const aterrizaje of enOrden) {
+				const clave = `${aterrizaje.normalizedName}\n${aterrizaje.unit}`;
+				if (!existentes.has(clave)) {
+					ordenDeAterrizaje.set(clave, ordenNuevo);
+					ordenNuevo += 1;
+				}
+			}
+
 			// El upsert es el INSERT ON CONFLICT nativo de Postgres, así que dos
 			// compras concurrentes que traen el mismo producto también suman
 			// sin partirse.
 			for (const aterrizaje of enOrden) {
+				const clave = `${aterrizaje.normalizedName}\n${aterrizaje.unit}`;
 				await tx.pantryItem.upsert({
 					where: {
 						organizationId_normalizedName_unit: {
@@ -205,12 +229,16 @@ export async function finalizePurchase(
 					},
 					// La primera vez manda el nombre tal y como se escribió en la
 					// lista: es el que la despensa mostrará de ahí en adelante.
+					// (El `?? 0` es para TypeScript: si el aterrizaje es nuevo,
+					// su número está en el mapa; si no lo es, la base ya tenía
+					// fila y el create no llega a ejecutarse.)
 					create: {
 						organizationId: familyId,
 						name: aterrizaje.name,
 						normalizedName: aterrizaje.normalizedName,
 						quantity: aterrizaje.quantity,
-						unit: aterrizaje.unit
+						unit: aterrizaje.unit,
+						order: ordenDeAterrizaje.get(clave) ?? 0
 					},
 					update: { quantity: { increment: aterrizaje.quantity } }
 				});

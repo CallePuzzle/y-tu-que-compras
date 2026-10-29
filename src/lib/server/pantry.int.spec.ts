@@ -10,7 +10,12 @@ import { describe, expect, it } from 'vitest';
 // la despensa muestra SOLO los productos de la familia activa, con la cantidad
 // Decimal aplanada a número para la vista (#72).
 import prisma from './prisma.js';
-import { adjustPantryItem, listPantryItems, readdPantryItem } from './pantry.js';
+import {
+	adjustPantryItem,
+	listPantryItems,
+	readdPantryItem,
+	reorderPantryItems
+} from './pantry.js';
 import { createItem } from './items.js';
 import { createList } from './lists.js';
 
@@ -29,12 +34,20 @@ async function familyRow(prefix: string): Promise<string> {
 	return id;
 }
 
-/** Siembra un producto de despensa con los datos dados (lo que deja `finalizePurchase`). */ function pantryRow(
+/** Siembra un producto de despensa con los datos dados (lo que deja `finalizePurchase`). */
+async function pantryRow(
 	familyId: string,
 	name: string,
 	quantity: number,
-	unit: Parameters<typeof prisma.pantryItem.create>[0]['data']['unit']
+	unit: Parameters<typeof prisma.pantryItem.create>[0]['data']['unit'],
+	/** Posición en la despensa: el servidor la calcula al crear; aquí explícita. */
+	order?: number
 ) {
+	// Sin orden explícito, al final: lo que hace el upsert de `purchases.ts`.
+	const { _max } = await prisma.pantryItem.aggregate({
+		where: { organizationId: familyId },
+		_max: { order: true }
+	});
 	return prisma.pantryItem.create({
 		data: {
 			organizationId: familyId,
@@ -45,7 +58,8 @@ async function familyRow(prefix: string): Promise<string> {
 				.replace(/\p{Diacritic}/gu, '')
 				.toLowerCase(),
 			quantity,
-			unit
+			unit,
+			order: order ?? (_max.order ?? -1) + 1
 		}
 	});
 }
@@ -76,19 +90,86 @@ describe('Consulta de despensa por familia (#72)', () => {
 		expect(items.map((item) => item.name)).toEqual(['Leche entera']);
 	});
 
-	it('orden alfabético por nombre visible', async () => {
+	it('lista por la columna order, no alfabético: el reorden manda (#134)', async () => {
 		const familyId = await familyRow('Familia Ordenada');
-		await pantryRow(familyId, 'Tomate', 1, 'kilogram');
-		await pantryRow(familyId, 'Arroz', 1, 'package');
-		await pantryRow(familyId, 'Leche', 1, 'liter');
+		// Sembrados en orden alfabético INVERSO, con `order` creciente: la
+		// columna manda (la migración la rellenó alfabética, pero el reorden
+		// ya la ha tocado).
+		await pantryRow(familyId, 'Tomate', 1, 'kilogram', 1);
+		await pantryRow(familyId, 'Arroz', 1, 'package', 2);
+		await pantryRow(familyId, 'Leche', 1, 'liter', 3);
 
 		const items = await listPantryItems(familyId);
-		expect(items.map((item) => item.name)).toEqual(['Arroz', 'Leche', 'Tomate']);
+		expect(items.map((item) => item.name)).toEqual(['Tomate', 'Arroz', 'Leche']);
 	});
 
 	it('una familia sin despensa devuelve una lista vacía', async () => {
 		const familyId = await familyRow('Familia Vacía');
 		await expect(listPantryItems(familyId)).resolves.toEqual([]);
+	});
+});
+
+/** El orden guardado de la despensa de una familia, por id. */
+async function ordenDe(familyId: string): Promise<string[]> {
+	const filas = await prisma.pantryItem.findMany({
+		where: { organizationId: familyId },
+		orderBy: { order: 'asc' },
+		select: { id: true }
+	});
+	return filas.map((fila) => fila.id);
+}
+
+describe('Reordenar una sección de la despensa (#134)', () => {
+	it('renumera 1..n los enviados y la otra sección conserva su orden relativo', async () => {
+		const familyId = await familyRow('Familia Reordenadora');
+		// «En casa» a la vista: A, B, C. «Agotados»: D, E (consumidos a cero).
+		const a = await pantryRow(familyId, 'Aceite', 1, 'liter', 1);
+		const b = await pantryRow(familyId, 'Sal', 1, 'gram', 2);
+		const c = await pantryRow(familyId, 'Pan', 1, 'unit', 3);
+		const d = await pantryRow(familyId, 'Leche', 0, 'liter', 4);
+		const e = await pantryRow(familyId, 'Cerveza', 0, 'unit', 5);
+
+		// El swap de la vista: C, A, B. Los agotados NO viajan: su sección no
+		// se toca y conservan su orden relativo detrás.
+		await expect(reorderPantryItems(familyId, [c.id, a.id, b.id])).resolves.toBe(true);
+
+		await expect(ordenDe(familyId)).resolves.toEqual([c.id, a.id, b.id, d.id, e.id]);
+		// La renumeración es densa 1..n.
+		const filas = await prisma.pantryItem.findMany({
+			where: { organizationId: familyId },
+			orderBy: { order: 'asc' }
+		});
+		expect(filas.map((fila) => fila.order)).toEqual([1, 2, 3, 4, 5]);
+	});
+
+	it('reordenar la sección de agotados funciona igual', async () => {
+		const familyId = await familyRow('Familia Agotadora');
+		const a = await pantryRow(familyId, 'Aceite', 1, 'liter', 1);
+		const b = await pantryRow(familyId, 'Leche', 0, 'liter', 2);
+		const c = await pantryRow(familyId, 'Cerveza', 0, 'unit', 3);
+
+		await expect(reorderPantryItems(familyId, [c.id, b.id])).resolves.toBe(true);
+		// El payload (la sección reordenada) delante; el resto, detrás.
+		await expect(ordenDe(familyId)).resolves.toEqual([c.id, b.id, a.id]);
+	});
+
+	it('ids de otra familia, rancios o repetidos: false y nada cambia', async () => {
+		const mia = await familyRow('Familia Propia');
+		const ajena = await familyRow('Familia Ajena');
+		const propio = await pantryRow(mia, 'Aceite', 1, 'liter', 1);
+		const otro = await pantryRow(mia, 'Sal', 1, 'gram', 2);
+		const caviar = await pantryRow(ajena, 'Caviar', 1, 'unit', 1);
+
+		// El id de la despensa OTRA familia es inalcanzable.
+		await expect(reorderPantryItems(mia, [propio.id, caviar.id])).resolves.toBe(false);
+		// Un id que no existe y un payload con repetidos también.
+		await expect(reorderPantryItems(mia, [propio.id, 'no-existe'])).resolves.toBe(false);
+		await expect(reorderPantryItems(mia, [propio.id, propio.id])).resolves.toBe(false);
+
+		// Nada se tocó: ni orden ni renumeración.
+		await expect(ordenDe(mia)).resolves.toEqual([propio.id, otro.id]);
+		const filas = await prisma.pantryItem.findMany({ where: { organizationId: mia } });
+		expect(filas.map((fila) => fila.order).sort((x, y) => x - y)).toEqual([1, 2]);
 	});
 });
 
