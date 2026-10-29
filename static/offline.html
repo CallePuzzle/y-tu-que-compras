@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Sin conexión — Offline</title>
+		<style>
+			/* Colores del tema por defecto (light) de daisyUI, el mismo de la app:
+			   base-100, base-content, primary y primary-content. */
+			:root {
+				--color-base-100: oklch(100% 0 0);
+				--color-base-content: oklch(21% 0.006 285.885);
+				--color-primary: oklch(45% 0.24 277.023);
+				--color-primary-content: oklch(93% 0.034 272.788);
+			}
+			body {
+				margin: 0;
+				display: flex;
+				min-height: 100vh;
+				align-items: center;
+				justify-content: center;
+				background: var(--color-base-100);
+				color: var(--color-base-content);
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				text-align: center;
+				padding: 1.5rem;
+				box-sizing: border-box;
+			}
+			main {
+				max-width: 28rem;
+			}
+			h1 {
+				font-size: 1.5rem;
+				margin-bottom: 0.5rem;
+			}
+			button {
+				margin-top: 1.5rem;
+				padding: 0.6rem 1.5rem;
+				border-radius: 0.5rem;
+				border: none;
+				background: var(--color-primary);
+				color: var(--color-primary-content);
+				font-weight: 600;
+				cursor: pointer;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1 data-lang="es">Sin conexión</h1>
+			<p data-lang="es">No se ha podido cargar esta página porque no hay conexión a internet.</p>
+			<button data-lang="es" onclick="location.reload()">Reintentar</button>
+			<h1 data-lang="en" hidden>Offline</h1>
+			<p data-lang="en" hidden>This page could not be loaded because there is no internet connection.</p>
+			<button data-lang="en" hidden onclick="location.reload()">Retry</button>
+		</main>
+		<script>
+			// Página estática servida por el service worker sin red: no hay i18n de
+			// Paraglide ni layout, así que el idioma se elige aquí, por el navegador.
+			const lang = navigator.language?.toLowerCase().startsWith('en') ? 'en' : 'es';
+			for (const element of document.querySelectorAll('[data-lang]')) {
+				element.hidden = element.dataset.lang !== lang;
+			}
+			document.documentElement.lang = lang;
+		</script>
+	</body>
+</html>

@@ -49,6 +49,13 @@ function isAssetPathname(pathname: string): boolean {
 	return (
 		pathname.startsWith('/_app/') ||
 		pathname === '/service-worker.js' ||
+		// PWA (issue #135): el manifest y la página offline son ficheros estáticos
+		// que el service worker precachea en `install` (y Chrome pide el manifest
+		// al instalar), sin sesión. VAN AQUÍ y no como extensiones en el patrón:
+		// añadir `.json` expondría los `__data.json` sin sesión, y `.html` de
+		// paso haría pública cualquier ruta futura que acabe en .html.
+		pathname === '/manifest.webmanifest' ||
+		pathname === '/offline.html' ||
 		ASSET_PATHNAME_PATTERN.test(pathname)
 	);
 }
