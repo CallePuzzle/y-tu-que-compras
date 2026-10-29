@@ -34,11 +34,16 @@
 	// invitación por token también (issue #61): el token del enlace es la
 	// credencial y quien llega sin cuenta debe poder LEER su estado («no es
 	// válida», «caducada», «aceptada»…), igual que lo permite el guard de
-	// hooks (`isPublicPathname`). En el resto de rutas, si no hay usuario se
+	// hooks (`isPublicPathname`). La portada también (issue #133): es la
+	// landing pública, que explica la app a quien llega sin sesión (con
+	// sesión se ve la misma). En el resto de rutas, si no hay usuario se
 	// muestra el aviso (defensiva: el guard de hooks ya redirige a /login;
 	// esto cubre p. ej. una sesión que muere entre navegaciones).
 	const showContent = $derived(
-		Boolean(data.user) || page.route.id === '/login' || page.route.id === '/invitations/[token]'
+		Boolean(data.user) ||
+			page.route.id === '/login' ||
+			page.route.id === '/invitations/[token]' ||
+			page.route.id === '/'
 	);
 
 	// Tras `signOut()` la cookie ya no vale, pero SvelteKit NO reejecuta el load
