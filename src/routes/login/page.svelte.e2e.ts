@@ -34,13 +34,16 @@ test('login completo por OTP: pide el codigo, lo canjea y vuelve a la pagina ped
 
 test('la sesion sobrevive a una recarga', async ({ page }) => {
 	const user = await createUser({ email: 'login-e2e@e2e.test' });
-	await loginViaUi(page, user.email);
+	// Ruta privada sin requisito de familia: `/` es la landing pública (#133)
+	// y `/lists` mandaría a /families sin familia elegida (#63).
+	await loginViaUi(page, user.email, '/families');
 
 	// Recarga: la cookie de sesión (firmada) vuelve a validar en el servidor
-	// y no hay formulario de login delante.
+	// y no hay formulario de login delante (la vista de familias, no el login;
+	// el `input[name="email"]` de la modal de invitar va oculto en el DOM).
 	await page.reload();
-	await expect(page.locator('input[name="email"]')).toHaveCount(0);
-	await expect(page).toHaveURL(/\/$/);
+	await expect(page).toHaveURL(/\/families$/);
+	await expect(page.getByRole('heading', { name: 'Tus familias' })).toBeVisible();
 });
 
 test('un codigo invalido no abre sesion y lo dice en el paso 2', async ({ page }) => {

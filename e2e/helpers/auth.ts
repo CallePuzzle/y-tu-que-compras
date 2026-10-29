@@ -76,9 +76,17 @@ export async function readOtp(email: string): Promise<string> {
  * Flujo de login real por UI: pide el código con el email y lo canjea leyendo
  * el OTP de la BD. `startPath` es la página que se quería visitar: el guard
  * manda a `/login?redirectTo=…` y tras el canje la app vuelve a ella (con
- * `/invitations/...` además lleva el email prefijado).
+ * `/invitations/...` además lleva el email prefijado). Debe ser una ruta
+ * privada y sin requisito de familia activa (`/families` vale, `/lists` no:
+ * sin familia elegida la vista manda a `/families`, issue #63). La portada
+ * `/` también queda descartada: es la landing pública y no lleva al login
+ * (#133).
  */
-export async function loginViaUi(page: Page, email: string, startPath = '/'): Promise<void> {
+export async function loginViaUi(
+	page: Page,
+	email: string,
+	startPath = '/families'
+): Promise<void> {
 	await page.goto(startPath);
 	await waitForHydration(page);
 

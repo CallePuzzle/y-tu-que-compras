@@ -39,11 +39,19 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/healthz/otra')).toBe(false);
 	});
 
+	it('la portada es la landing pública (issue #133)', () => {
+		// Quien llega por primera vez (p. ej. desde una invitación) debe poder
+		// ver qué es la app sin sesión; con sesión se muestra la misma landing.
+		expect(isPublicPathname('/')).toBe(true);
+		// El `__data.json` de la portada, que pide el router en cliente.
+		expect(isPublicPathname('/__data.json')).toBe(true);
+	});
+
 	it('el resto de rutas exigen sesión', () => {
-		expect(isPublicPathname('/')).toBe(false);
 		expect(isPublicPathname('/loginfoo')).toBe(false);
 		expect(isPublicPathname('/families')).toBe(false);
 		expect(isPublicPathname('/api/otra-cosa')).toBe(false);
+		expect(isPublicPathname('/__data.jsonx')).toBe(false);
 	});
 });
 
