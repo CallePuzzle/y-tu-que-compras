@@ -1,0 +1,20 @@
+{
+	"name": "¿Y tú qué compras?",
+	"short_name": "¿Y tú qué compras?",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#fff",
+	"description": "Tu lista de la compra, del super y del mercado",
+	"icons": [
+		{
+			"sizes": "192x192",
+			"src": "icon-192.png",
+			"type": "image/png"
+		},
+		{
+			"sizes": "512x512",
+			"src": "icon-512.png",
+			"type": "image/png"
+		}
+	]
+}

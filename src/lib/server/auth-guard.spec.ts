@@ -91,4 +91,34 @@ describe('handleAuthGuard', () => {
 
 		expect(resolve).toHaveBeenCalledTimes(1);
 	});
+
+	it('el manifest y la página offline de la PWA se sirven sin sesión (issue #135)', async () => {
+		// Los precachea el service worker en `install` y Chrome los pide al
+		// instalar: si el guard los mandara a /login, la caché guardaría el
+		// redirect y no habría página offline.
+		for (const pathname of ['/manifest.webmanifest', '/offline.html']) {
+			const event = eventOf(pathname);
+			const resolve = vi.fn(async () => new Response('ok'));
+
+			await handleAuthGuard({ event, resolve });
+
+			expect(resolve).toHaveBeenCalledTimes(1);
+		}
+
+		// En cambio, el `__data.json` de una ruta NO es un asset (por eso el
+		// patrón de extensiones no incluye `.json`): sin sesión sigue
+		// redirigiendo al login.
+		const event = eventOf('/families/__data.json');
+		const resolve = vi.fn(async () => new Response('ok'));
+
+		let thrown: { status?: number; location?: string } | undefined;
+		try {
+			await handleAuthGuard({ event, resolve });
+		} catch (error) {
+			thrown = error as { status?: number; location?: string };
+		}
+
+		expect(resolve).not.toHaveBeenCalled();
+		expect(thrown?.location).toBe('/login?redirectTo=%2Ffamilies%2F__data.json');
+	});
 });

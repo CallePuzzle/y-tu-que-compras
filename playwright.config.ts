@@ -25,7 +25,11 @@ export default defineConfig({
 	globalSetup: './e2e/global-setup.ts',
 	use: {
 		baseURL,
-		trace: 'retain-on-failure'
+		trace: 'retain-on-failure',
+		// La app registra un service worker (SvelteKit lo registra también en
+		// `vite dev`, que es el webServer de los e2e): sin bloquearlo
+		// interferiría con las peticiones de los tests (issue #135).
+		serviceWorkers: 'block'
 	},
 	// Tres proyectos: escritorio (todos los specs junto a su ruta), móvil, que
 	// corre SOLO el spec transversal de la navegación en pantalla táctil
