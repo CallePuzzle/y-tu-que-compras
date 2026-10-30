@@ -1,5 +1,8 @@
 <script lang="ts">
 	import '../app.css';
+	// Estilos del diálogo del tour de onboarding (#142): una vez, app-wide
+	// (cada página monta su cliente, pero las clases son las mismas).
+	import '@sjmc11/tourguidejs/src/scss/tour.scss';
 	import { page } from '$app/state';
 	import {
 		ButtonSignOut,
@@ -19,6 +22,8 @@
 	import FamilySwitcher from '$lib/components/FamilySwitcher.svelte';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 	import logo from '$lib/assets/logo.webp';
+	import { startOnboardingTour } from '$lib/utils/tour';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import type { LayoutProps } from './$types';
 
 	// `children` se renombra: dentro del snippet `children` del `Drawer` el nombre
@@ -144,7 +149,19 @@
 			</main>
 
 			<Footer>
+				<!-- El reinicio del tour (#142) vive aquí y sólo con sesión: es un
+				     tour de usuario logado, sin sesión no hay nada que ver. -->
 				<p class="p-4 text-sm opacity-70">{m.app_footer()}</p>
+				{#if data.user}
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						onclick={() => startOnboardingTour()}
+						aria-label={m.tour_restart_label()}
+					>
+						<RotateCcw aria-hidden="true" />
+					</button>
+				{/if}
 			</Footer>
 
 			<!-- El dock sólo pinta las rutas con `showInMobile`; `currentPath` se compara

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import History from '@lucide/svelte/icons/history';
 	import Languages from '@lucide/svelte/icons/languages';
@@ -9,6 +10,7 @@
 	import Users from '@lucide/svelte/icons/users';
 	import { m } from '$lib/paraglide/messages.js';
 	import logo from '$lib/assets/logo.webp';
+	import { continueOnboardingTour } from '$lib/utils/tour';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -17,6 +19,13 @@
 	// sesión manda a crear cuenta/acceder; con ella, a las listas (la portada
 	// NO redirige: con sesión se ve la misma landing, issue #133).
 	const ctaHref = $derived(data.user ? resolve('/lists') : resolve('/login'));
+
+	// Tour de onboarding (#142): con sesión, la primera visita a la portada lo
+	// arranca y las navegaciones del propio tour retoman aquí el paso guardado.
+	// Sin usuario no hace nada (no hay tour de invitado).
+	$effect(() => {
+		void continueOnboardingTour(page.url.pathname, data.user ?? null);
+	});
 
 	// Pasos y funcionalidades en render: las etiquetas `m.*` se resuelven al
 	// pintar, con la locale de la petición (igual que en `src/lib/routes.ts`).
@@ -79,7 +88,8 @@
 			<img src={logo} alt="" class="mx-auto mb-4 size-24 object-contain" />
 			<h1 class="text-5xl font-bold">{m.app_brand()}</h1>
 			<p class="py-6">{m.app_tagline()}</p>
-			<a href={ctaHref} class="btn btn-primary">
+			<!-- `id` de ancla del tour (#142): el paso 1 de bienvenida se ancla aquí. -->
+			<a href={ctaHref} id="tour-home-cta" class="btn btn-primary">
 				<ShoppingBasket aria-hidden="true" />
 				{data.user ? m.landing_cta_lists() : m.landing_cta_login()}
 			</a>

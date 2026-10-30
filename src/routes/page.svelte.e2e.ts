@@ -34,6 +34,12 @@ test('con sesion, la portada es la misma landing y el CTA lleva a las listas (#1
 	const user = await createUser();
 	await seedSession(page, user);
 
+	// `seedSession` siembra el tour como visto para no bloquear al resto de
+	// specs: aquí lo re-armamos, porque ESTE es el test de su arranque (#142).
+	// Los init scripts corren en orden de registro: tras el suyo que fija la
+	// clave, este la quita y la primera visita a `/` arranca el tour.
+	await page.addInitScript(() => localStorage.removeItem('onboarding-tour-v1'));
+
 	await page.goto('/');
 	await expect(page.getByRole('heading', { level: 1, name: '¿Y tú qué compras?' })).toBeVisible();
 
@@ -41,6 +47,23 @@ test('con sesion, la portada es la misma landing y el CTA lleva a las listas (#1
 	const cta = page.getByRole('main').getByRole('link', { name: 'Ir a las listas' }).first();
 	await expect(cta).toBeVisible();
 	await expect(cta).toHaveAttribute('href', '/lists');
+
+	// El tour arranca con sesión y su paso 1 ancla el CTA del hero (#142).
+	const tour = page.locator('.tg-dialog');
+	await expect(tour).toBeVisible();
+	await expect(page.locator('#tour-home-cta')).toBeVisible();
+
+	// Escape lo cierra y lo marca como visto: no volverá a arrancar solo.
+	// La librería hace visible el diálogo ANTES de colgar sus listeners de
+	// teclado, así que un Escape demasiado pronto no cuaja: se reintenta
+	// hasta que el cierre llegue a un diálogo ya escuchando.
+	await expect(async () => {
+		await page.keyboard.press('Escape');
+		await expect(tour).toBeHidden({ timeout: 1000 });
+	}).toPass({ timeout: 15_000 });
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('onboarding-tour-v1')))
+		.toContain('"finished":true');
 });
 
 test('la CSP no bloquea nada y llegan las cabeceras de seguridad', async ({ page }) => {
