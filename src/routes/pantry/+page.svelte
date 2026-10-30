@@ -130,11 +130,7 @@
 		listIdError: m.schema_readd_list_error(),
 		listIdLabel: m.schema_readd_list_label(),
 		quantityError: m.schema_items_quantity_error(),
-		quantityLabel: m.pantry_readd_quantity_label(),
-		pantryModeError: m.schema_readd_mode_error(),
-		pantryModeLabel: m.pantry_readd_pantry_label(),
-		newQuantityError: m.schema_readd_new_quantity_error(),
-		newQuantityLabel: m.schema_readd_new_quantity_label()
+		quantityLabel: m.pantry_readd_quantity_label()
 	});
 
 	// Aviso de éxito del re-añadido, fuera del modal (como editar en la lista).
@@ -148,7 +144,7 @@
 	const readdForm = superForm(data.readdForm, {
 		validators: zod4Client(readdSchemaCompiled),
 		// Pesimista: el modal cierra cuando el load trae la lista con el item
-		// y la despensa ya ajustadas, igual que el modal de edición.
+		// ya dentro, igual que el modal de edición.
 		invalidateAll: 'pessimistic',
 		onResult({ result }) {
 			if (result.type === 'success') {
@@ -180,9 +176,7 @@
 			// «quiero lo mismo que me queda». Un agotado (a 0) no puede pedir
 			// cero: se propone un paso de su unidad — 1 en las cuentas enteras
 			// y 100 en g/ml; en kg/L manda el 1, que es como se compra.
-			quantity: item.quantity > 0 ? item.quantity : Math.max(1, UNIT_STEP[item.unit]),
-			pantryMode: 'keep',
-			newQuantity: undefined
+			quantity: item.quantity > 0 ? item.quantity : Math.max(1, UNIT_STEP[item.unit])
 		});
 		readdModal?.showModal();
 	}
@@ -299,8 +293,8 @@
 					</button>
 				</form>
 				<!-- Re-añadir a la compra (checklist #74): abre el modal con el
-				     selector de lista y el ajuste de despensa. En un agotado es EL
-				     botón: la memoria de «esto se compra» lista para volver. -->
+				     selector de lista y la cantidad. En un agotado es EL botón:
+				     la memoria de «esto se compra» lista para volver. -->
 				<button
 					type="button"
 					class="btn btn-ghost btn-sm"
@@ -414,70 +408,6 @@
 				{#if textoError($readdErrors.quantity)}
 					<p class="fieldset-label text-error" role="alert">
 						{textoError($readdErrors.quantity)}
-					</p>
-				{/if}
-			</div>
-
-			<div class="flex flex-col gap-1">
-				<span class="fieldset-label">{m.pantry_readd_pantry_label()}</span>
-				<div class="flex flex-col gap-2">
-					<label class="flex cursor-pointer items-center gap-2 text-sm">
-						<input
-							type="radio"
-							class="radio radio-primary radio-sm"
-							name="pantryMode"
-							value="keep"
-							bind:group={$readdFormData.pantryMode}
-						/>
-						{m.pantry_readd_keep()}
-					</label>
-					<label class="flex cursor-pointer items-center gap-2 text-sm">
-						<input
-							type="radio"
-							class="radio radio-primary radio-sm"
-							name="pantryMode"
-							value="set"
-							bind:group={$readdFormData.pantryMode}
-						/>
-						{m.pantry_readd_set()}
-					</label>
-					{#if $readdFormData.pantryMode === 'set'}
-						<!-- Solo visible con «fijar nueva cantidad»: cuánto QUEDA. -->
-						<div class="flex flex-col gap-1 pl-6">
-							<label class="fieldset-label" for="readd-new-quantity"
-								>{m.schema_readd_new_quantity_label()}</label
-							>
-							<input
-								bind:value={$readdFormData.newQuantity}
-								aria-invalid={textoError($readdErrors.newQuantity) ? 'true' : undefined}
-								id="readd-new-quantity"
-								name="newQuantity"
-								type="number"
-								class="input w-full"
-								step="any"
-								inputmode="decimal"
-							/>
-							{#if textoError($readdErrors.newQuantity)}
-								<p class="fieldset-label text-error" role="alert">
-									{textoError($readdErrors.newQuantity)}
-								</p>
-							{/if}
-						</div>
-					{/if}
-					<label class="flex cursor-pointer items-center gap-2 text-sm">
-						<input
-							type="radio"
-							class="radio radio-primary radio-sm"
-							name="pantryMode"
-							value="remove"
-							bind:group={$readdFormData.pantryMode}
-						/>
-						{m.pantry_readd_remove()}
-					</label>
-				</div>
-				{#if textoError($readdErrors.pantryMode)}
-					<p class="fieldset-label text-error" role="alert">
-						{textoError($readdErrors.pantryMode)}
 					</p>
 				{/if}
 			</div>
