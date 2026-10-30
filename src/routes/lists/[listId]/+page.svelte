@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -7,6 +8,7 @@
 	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
+	import { continueOnboardingTour } from '$lib/utils/tour';
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import EditItemModal from './EditItemModal.svelte';
@@ -110,6 +112,16 @@
 	// Refresco al volver a la pestaña (ver `useRefetchOnVisible`): el alta
 	// rápida no necesita guardia, el load ya no la rehace (`applyAction`).
 	useRefetchOnVisible();
+
+	// Tour de onboarding (#142): los dos pasos de esta página (alta rápida y
+	// finalizar) son de detalle, así que la propia lista es la de ejemplo del
+	// ctx y el paso de finalizar se ancla sólo con algo comprado.
+	$effect(() => {
+		void continueOnboardingTour(page.url.pathname, data.user ?? null, {
+			exampleListId: data.list.id,
+			hasPurchasedItems: data.items.some((item) => item.purchased)
+		});
+	});
 </script>
 
 <svelte:head>
@@ -201,8 +213,14 @@
 			</ol>
 
 			<!-- CTA de finalizar (checklist #71): solo con algo comprado — sin
-			     comprados no hay compra que cerrar y el action lo rechazaría. -->
-			<button type="button" class="btn btn-primary mt-6 w-full" onclick={abrirFinalizacion}>
+			     comprados no hay compra que cerrar y el action lo rechazaría.
+			     `id` de ancla del tour (#142): paso «Finalizar compra». -->
+			<button
+				type="button"
+				id="tour-finalize"
+				class="btn btn-primary mt-6 w-full"
+				onclick={abrirFinalizacion}
+			>
 				<ShoppingBasket aria-hidden="true" />
 				{m.purchases_finalize()}
 			</button>

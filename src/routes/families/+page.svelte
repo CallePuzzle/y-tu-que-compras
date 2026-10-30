@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
@@ -6,6 +7,7 @@
 	import UserPlus from '@lucide/svelte/icons/user-plus';
 	import Users from '@lucide/svelte/icons/users';
 	import { m } from '$lib/paraglide/messages.js';
+	import { continueOnboardingTour } from '$lib/utils/tour';
 	import { createFamilySchema, inviteFamilySchema } from '$lib/schemas/family.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
@@ -119,6 +121,13 @@
 		familiaInvitada = familia;
 		inviteModal?.showModal();
 	}
+
+	// Tour de onboarding (#142): último paso, no necesita lista de ejemplo
+	// (es la página final del recorrido); si el tour retrocede hacia los
+	// pasos de detalle, la página destino aportará su propio ctx.
+	$effect(() => {
+		void continueOnboardingTour(page.url.pathname, data.user ?? null);
+	});
 </script>
 
 <svelte:head>
@@ -136,7 +145,13 @@
 			strings={{ close: m.ui_close() }}
 		>
 			{#snippet trigger({ showModal })}
-				<button type="button" class="btn btn-primary" onclick={() => abrirModal(showModal)}>
+				<!-- `id` de ancla del tour (#142): paso «Crear familia». -->
+				<button
+					type="button"
+					id="tour-families-create"
+					class="btn btn-primary"
+					onclick={() => abrirModal(showModal)}
+				>
 					<Plus aria-hidden="true" />
 					{m.families_create()}
 				</button>

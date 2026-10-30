@@ -43,6 +43,18 @@ export async function seedSession(page: Page, user: User): Promise<void> {
 			url: loadTestEnv().BETTER_AUTH_URL
 		}
 	]);
+
+	// El tour de onboarding (#142) arranca SOLO en la primera visita a `/` con
+	// sesión; su backdrop se comería los clicks de cualquier spec que pasee por
+	// la app (p. ej. el dock en mobile.e2e.ts). Se siembra como VISTO para
+	// todas: el único spec que prueba el tour lo re-arma quitando la clave
+	// (ver src/routes/page.svelte.e2e.ts).
+	await page.addInitScript(() => {
+		window.localStorage.setItem(
+			'onboarding-tour-v1',
+			JSON.stringify({ activeStep: 0, finished: true })
+		);
+	});
 }
 
 // Espera a que el JS de SvelteKit haya cargado e hidratado la página: sin

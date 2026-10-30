@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance as kitEnhance } from '$app/forms';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
 	import { SvelteMap } from 'svelte/reactivity';
@@ -13,6 +14,7 @@
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
 	import { unitLabels } from '$lib/units.js';
 	import { textoError } from '$lib/forms.js';
+	import { buildTourContext, continueOnboardingTour } from '$lib/utils/tour';
 	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
 	import { readdSchema } from '$lib/schemas/pantry.js';
@@ -201,6 +203,13 @@
 			unit: UNIT_LABEL[item.unit]
 		});
 	}
+
+	// Tour de onboarding (#142): el paso de despensa ancla a la lista o al
+	// estado vacío (el que se pinte); con las listas del load se construye el
+	// ctx por si el tour retrocede hacia los pasos de detalle.
+	$effect(() => {
+		void continueOnboardingTour(page.url.pathname, data.user ?? null, buildTourContext(data.lists));
+	});
 </script>
 
 <svelte:head>
@@ -232,8 +241,9 @@
 
 	{#if data.items.length === 0}
 		<!-- Estado vacío con CTA (checklist #72): la despensa se llena al
-		     finalizar compras, así que el CTA manda a las listas. -->
-		<div class="mt-8 flex flex-col items-center gap-3 text-center">
+		     finalizar compras, así que el CTA manda a las listas. `id` de
+		     ancla del tour (#142): paso de despensa sin productos. -->
+		<div id="tour-pantry-empty" class="mt-8 flex flex-col items-center gap-3 text-center">
 			<Refrigerator aria-hidden="true" class="size-10 opacity-40" />
 			<p class="opacity-70">{m.pantry_empty()}</p>
 			<a href={resolve('/lists')} class="btn btn-primary">
@@ -303,35 +313,40 @@
 			</li>
 		{/snippet}
 
-		<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
-		     debajo (si no, sobra), como pendientes/comprados en la lista. -->
-		{#if enCasa.length > 0}
-			{#if agotados.length > 0}
-				<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
-					{m.pantry_section_home()}
-				</h2>
+		<!-- Envoltorio con el `id` de ancla del tour (#142): cubre las dos
+		     secciones («En casa» y «Agotados»), una sola de las cuales puede
+		     existir según lo que haya en despensa. -->
+		<div id="tour-pantry-list">
+			<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
+			     debajo (si no, sobra), como pendientes/comprados en la lista. -->
+			{#if enCasa.length > 0}
+				{#if agotados.length > 0}
+					<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
+						{m.pantry_section_home()}
+					</h2>
+				{/if}
+				<ul class="mt-4 flex list-none flex-col gap-2">
+					{#each enCasa as item (item.id)}
+						{@render filaProducto(item)}
+					{/each}
+				</ul>
 			{/if}
-			<ul class="mt-4 flex list-none flex-col gap-2">
-				{#each enCasa as item (item.id)}
-					{@render filaProducto(item)}
-				{/each}
-			</ul>
-		{/if}
 
-		<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
-		     servidor NO los borra) para poder re-añadirlos a la compra. -->
-		{#if agotados.length > 0}
-			<h2
-				class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
-			>
-				{m.pantry_section_out()}
-			</h2>
-			<ul class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
-				{#each agotados as item (item.id)}
-					{@render filaProducto(item)}
-				{/each}
-			</ul>
-		{/if}
+			<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
+			     servidor NO los borra) para poder re-añadirlos a la compra. -->
+			{#if agotados.length > 0}
+				<h2
+					class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
+				>
+					{m.pantry_section_out()}
+				</h2>
+				<ul class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
+					{#each agotados as item (item.id)}
+						{@render filaProducto(item)}
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	{/if}
 </section>
 

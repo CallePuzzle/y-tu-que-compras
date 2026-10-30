@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
@@ -11,6 +12,7 @@
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
 	import { textoError } from '$lib/forms.js';
 	import { onRadioGroupKeydown } from '$lib/radio-group.js';
+	import { buildTourContext, continueOnboardingTour } from '$lib/utils/tour';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import {
 		COLOR_CHIP,
@@ -138,6 +140,13 @@
 	// Refresco al volver a la pestaña: los contadores los mueven las altas,
 	// compras y borrados de cualquier miembro (ver `useRefetchOnVisible`).
 	useRefetchOnVisible();
+
+	// Tour de onboarding (#142): retoma aquí el paso guardado. Con las listas
+	// del load se construye el contexto (lista de ejemplo para los pasos de
+	// detalle y si tiene comprados para el paso de finalizar).
+	$effect(() => {
+		void continueOnboardingTour(page.url.pathname, data.user ?? null, buildTourContext(data.lists));
+	});
 </script>
 
 <svelte:head>
@@ -147,7 +156,13 @@
 <section class="mx-auto max-w-md">
 	<div class="flex items-center justify-between gap-2">
 		<h1 class="text-2xl font-bold">{m.lists_title()}</h1>
-		<button type="button" class="btn btn-primary btn-sm" onclick={() => abrirCreacion()}>
+		<!-- `id` de ancla del tour (#142): paso «Crear lista». -->
+		<button
+			type="button"
+			id="tour-lists-create"
+			class="btn btn-primary btn-sm"
+			onclick={() => abrirCreacion()}
+		>
 			<Plus aria-hidden="true" />
 			{m.lists_create()}
 		</button>
