@@ -18,6 +18,7 @@
 	import { authClient } from '$lib/auth-client.js';
 	import FamilySwitcher from '$lib/components/FamilySwitcher.svelte';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
+	import logo from '$lib/assets/logo.webp';
 	import type { LayoutProps } from './$types';
 
 	// `children` se renombra: dentro del snippet `children` del `Drawer` el nombre
@@ -69,7 +70,12 @@
 				}}
 			>
 				{#snippet title()}
-					<span class="text-lg font-bold">{m.app_brand()}</span>
+					<!-- El logo es decorativo (`alt=""`): la marca ya es texto y el
+					     conjunto va dentro del `Link` a la portada que pone `Header`. -->
+					<span class="flex items-center gap-2">
+						<img src={logo} alt="" class="size-8 rounded-full" />
+						<span class="text-lg font-bold">{m.app_brand()}</span>
+					</span>
 				{/snippet}
 
 				{#snippet navEnd()}
