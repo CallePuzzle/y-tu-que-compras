@@ -72,8 +72,11 @@
 <section class="hero bg-base-200 rounded-box min-h-[50vh]">
 	<div class="hero-content text-center">
 		<div class="max-w-lg">
-			<!-- El logo es decorativo (`alt=""`): la marca ya está en el `h1`. -->
-			<img src={logo} alt="" class="mx-auto mb-4 size-24" />
+			<!-- El logo es decorativo (`alt=""`): la marca ya está en el `h1`.
+			     `object-contain`: el asset NO es cuadrado (195×189) y la caja
+			     (`size-24`) sí; sin él el navegador lo aplasta (Lighthouse
+			     `image-aspect-ratio`). -->
+			<img src={logo} alt="" class="mx-auto mb-4 size-24 object-contain" />
 			<h1 class="text-5xl font-bold">{m.app_brand()}</h1>
 			<p class="py-6">{m.app_tagline()}</p>
 			<a href={ctaHref} class="btn btn-primary">

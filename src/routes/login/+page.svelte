@@ -54,6 +54,7 @@
 
 <svelte:head>
 	<title>{m.form_login_sign_in()} · {m.app_brand()}</title>
+	<meta name="description" content={m.login_meta_description()} />
 </svelte:head>
 
 <section class="flex min-h-[60vh] flex-col items-center justify-center gap-4">

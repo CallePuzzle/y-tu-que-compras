@@ -4,6 +4,7 @@
 	"app_tagline": "Gestiona tus compras del super y del mercado",
 	"app_footer": "¿Y tú qué compras? Tu lista de la compra, del super y del mercado.",
 	"app_unexpected_error": "Ha ocurrido un error inesperado (id: {id})",
+	"login_meta_description": "Inicia sesión en ¿Y tú qué compras? con un código de un solo uso que te llega al correo, y comparte tus listas de la compra con tu familia.",
 	"landing_cta_login": "Acceder",
 	"landing_cta_lists": "Ir a las listas",
 	"landing_how_title": "Cómo funciona",

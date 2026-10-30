@@ -73,7 +73,9 @@
 					<!-- El logo es decorativo (`alt=""`): la marca ya es texto y el
 					     conjunto va dentro del `Link` a la portada que pone `Header`. -->
 					<span class="flex items-center gap-2">
-						<img src={logo} alt="" class="size-8 rounded-full" />
+						<!-- `object-contain`: el asset no es cuadrado y `size-8` sí
+					     (ver +page.svelte). -->
+						<img src={logo} alt="" class="size-8 rounded-full object-contain" />
 						<span class="text-lg font-bold">{m.app_brand()}</span>
 					</span>
 				{/snippet}

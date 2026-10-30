@@ -4,6 +4,7 @@
 	"app_tagline": "Manage your supermarket and market shopping",
 	"app_footer": "What are you buying? Your shopping list, for the supermarket and the market.",
 	"app_unexpected_error": "An unexpected error occurred (id: {id})",
+	"login_meta_description": "Sign in to What are you buying? with a one-time code sent to your email, and share your shopping lists with your family.",
 	"landing_cta_login": "Sign in",
 	"landing_cta_lists": "Go to lists",
 	"landing_how_title": "How it works",
