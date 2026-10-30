@@ -266,6 +266,14 @@
 			<input type="hidden" name="listId" value={listaEditada.id} />
 		{/if}
 
+		<!-- Color e icono no tienen input propio (los selectores son botones
+		     role="radio" que mutan el store): sin estos hidden, el FormData del
+		     DOM saldría sin ellos y superforms rellenaría los enums con su
+		     PRIMERA opción en el servidor — la lista se crearía/editaría
+		     siempre con primary + list-checks, ignorando lo elegido. -->
+		<input type="hidden" name="color" value={$formData.color} />
+		<input type="hidden" name="icon" value={$formData.icon} />
+
 		<FormFields
 			{form}
 			{formData}

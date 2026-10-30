@@ -69,6 +69,22 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 	const fila = page.locator('li', { hasText: 'Frutería' });
 	await expect(fila).toBeVisible();
 	await expect(fila.getByText('Vacía')).toBeVisible();
+
+	// La selección PERSISTE (regresión: el formulario no llevaba color/icono
+	// en el FormData y superforms rellenaba los enums con su primera opción —
+	// la lista se creaba siempre primary + list-checks). Rosa es `secondary`
+	// en la paleta; el chip de la fila debe pintarlo y el editor cargarlo.
+	await expect(fila.locator('span').first()).toHaveClass(/bg-secondary/);
+	await fila.getByRole('button', { name: 'Editar lista' }).click();
+	const dialogoCreacion = page.locator('dialog[open]');
+	await expect(dialogoCreacion.getByRole('radio', { name: 'Rosa' })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await expect(dialogoCreacion.getByRole('radio', { name: 'Carrito' })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
 });
 
 test('editar lista reutiliza el mismo formulario con los datos cargados', async ({ page }) => {
@@ -89,11 +105,18 @@ test('editar lista reutiliza el mismo formulario con los datos cargados', async 
 	await expect(dialog.locator('input[name="name"]')).toHaveValue('Frutería');
 
 	await dialog.locator('input[name="name"]').fill('Supermercado');
+	// Cambiar también el color: el guardado debe reflejarlo (mismo FormData
+	// sin color/icono que en la creación, ver el test de crear).
+	await dialog.getByRole('radio', { name: 'Amarillo' }).click();
 	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
 
 	await expect(page.getByRole('status')).toContainText('Lista actualizada.');
 	await expect(page.locator('li', { hasText: 'Supermercado' })).toBeVisible();
 	await expect(page.locator('li', { hasText: lista.name })).toHaveCount(0);
+	// Amarillo es `warning`: el chip de la fila debe cambiar a él.
+	await expect(page.locator('li', { hasText: 'Supermercado' }).locator('span').first()).toHaveClass(
+		/bg-warning/
+	);
 });
 
 test('borrar lista con confirmacion', async ({ page }) => {
