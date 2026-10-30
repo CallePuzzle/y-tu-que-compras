@@ -9,6 +9,8 @@
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
@@ -156,6 +158,18 @@
 	/** El producto que se quiere re-añadir: fija título, id y cantidad por defecto. */
 	let itemReAnadir: PantryRow | undefined = $state();
 	let readdModal: { showModal(): void; close(): void } | undefined = $state();
+
+	// ---- Quitar de la despensa (#148): solo se ofrece en el agotado; el
+	// ConfirmModal compartido confirma y su acción `?/remove` borra la fila. ----
+	let itemBorrado: PantryRow | undefined = $state();
+	let borrarModal: ConfirmModal | undefined = $state();
+
+	/** Fija el producto a quitar y abre la confirmación. */
+	function abrirBorrado(item: PantryRow) {
+		exito = null;
+		itemBorrado = item;
+		borrarModal?.showModal();
+	}
 
 	// svelte-ignore state_referenced_locally
 	const readdForm = superForm(data.readdForm, {
@@ -319,6 +333,20 @@
 				>
 					<ShoppingCart aria-hidden="true" />
 				</button>
+				<!-- Quitar de la despensa (#148): solo el agotado lo ofrece — un
+				     producto con existencias se consume o se re-añade; quitarlo
+				     del todo es la decisión explícita del ConfirmModal. -->
+				{#if cantidad === 0}
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						title={m.pantry_delete()}
+						aria-label={m.pantry_delete()}
+						onclick={() => abrirBorrado(item)}
+					>
+						<Trash2 aria-hidden="true" />
+					</button>
+				{/if}
 			</li>
 		{/snippet}
 
@@ -447,3 +475,18 @@
 		</form>
 	{/if}
 </Modal>
+
+<!-- Quitar de la despensa (#148): una modal compartida; el botón de la fila
+     del agotado fija a qué producto se refiere antes de abrirla. El fallo de
+     la acción vive dentro del modal (lo gestiona el ConfirmModal) y el éxito
+     avisa a la página como el resto de acciones. -->
+<ConfirmModal
+	bind:this={borrarModal}
+	title={m.pantry_delete_title({ name: itemBorrado?.name ?? '' })}
+	description={m.pantry_delete_description()}
+	confirmLabel={m.pantry_delete_confirm()}
+	action="?/remove"
+	fields={{ item: itemBorrado?.id ?? '' }}
+	errorFallback={m.pantry_error()}
+	onSuccess={() => (exito = m.pantry_deleted())}
+/>

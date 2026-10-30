@@ -120,6 +120,20 @@ export async function adjustPantryItem(
 	});
 }
 
+/**
+ * Quita UN producto de la despensa del todo, sea cual sea su cantidad: es la
+ * misma decisión explícita que el modo «quitar» del re-añadido (#74), pero
+ * sin pasar por la lista — el agotado que no volverá a comprar se va con un
+ * click y su confirmación. La pertenencia va en el `where` (id ajeno o rancio
+ * es «no existe») y `false` si no había nada que borrar.
+ */
+export async function removePantryItem(familyId: string, id: string): Promise<boolean> {
+	const borrado = await prisma.pantryItem.deleteMany({
+		where: { id, organizationId: familyId }
+	});
+	return borrado.count > 0;
+}
+
 /** Cómo acabó un re-añadido a la compra. */
 export type ReaddOutcome =
 	/** El producto entró (o sumó) en la lista; la despensa queda como está. */

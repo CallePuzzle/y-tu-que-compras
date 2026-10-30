@@ -506,3 +506,39 @@ test('al agotarse la fila no baila: se queda en Agotados mientras aterriza el re
 		})
 		.toBe(0);
 });
+
+test('el agotado se puede quitar de la despensa con confirmación (#148)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 0, unit: 'unit' });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const pan = page.locator('li', { hasText: 'Pan' });
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	// Solo el agotado ofrece quitarlo; el que tiene existencias no.
+	await expect(pan.getByRole('button', { name: 'Quitar de la despensa' })).toBeVisible();
+	await expect(leche.getByRole('button', { name: 'Quitar de la despensa' })).toHaveCount(0);
+
+	// Primero la confirmación: escapar deja la despensa como estaba.
+	await pan.getByRole('button', { name: 'Quitar de la despensa' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByText('¿Quitar «Pan» de la despensa?')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(pan).toBeVisible();
+
+	// Confirmar quita el producto: fuera de la vista y de la base.
+	await pan.getByRole('button', { name: 'Quitar de la despensa' }).click();
+	await dialog.getByRole('button', { name: 'Quitar', exact: true }).click();
+	await expect(page.getByRole('status')).toContainText('Producto quitado de la despensa.');
+	await expect(pan).toHaveCount(0);
+	await expect(prisma.pantryItem.findFirst({ where: { name: 'Pan' } })).resolves.toBeNull();
+
+	// La leche sigue en su sitio y la sección Agotados ya no hace falta.
+	await expect(leche).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toHaveCount(0);
+});
