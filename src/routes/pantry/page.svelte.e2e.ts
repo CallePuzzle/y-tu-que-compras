@@ -302,6 +302,8 @@ test('re-añade a la lista que elijas y la despensa queda igual por defecto (#74
 	await expect(dialog.getByRole('heading', { name: 'Re-añadir «Leche entera»' })).toBeVisible();
 	// La cantidad por defecto para la lista es la que hay en despensa.
 	await expect(dialog.locator('#readd-quantity')).toHaveValue('2');
+	// Sin preguntas sobre la despensa (#149): el producto se queda como está.
+	await expect(dialog.getByText('¿Qué hago con la despensa?')).toHaveCount(0);
 	// El destino puede ser cualquiera: se elige la SEGUNDA lista.
 	await dialog.locator('#readd-list').selectOption({ label: 'Mercado' });
 	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
@@ -318,32 +320,6 @@ test('re-añade a la lista que elijas y la despensa queda igual por defecto (#74
 	).toBeVisible();
 	await page.goto(`/lists/${listaA.id}`);
 	await expect(page.locator('section li', { hasText: 'Leche entera' })).toHaveCount(0);
-});
-
-test('re-añadir quitando el producto de la despensa lo saca de ella (#74)', async ({ page }) => {
-	const user = await createUser();
-	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
-	await seedSession(page, user);
-
-	await page.goto('/pantry');
-	await waitForHydration(page);
-	const leche = page.locator('li', { hasText: 'Leche entera' });
-	await leche.getByRole('button', { name: 'Re-añadir a la compra' }).click();
-
-	const dialog = page.locator('dialog[open]');
-	await dialog.getByRole('radio', { name: 'Quitar de la despensa' }).check();
-	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
-
-	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
-	// La despensa queda vacía…
-	await expect(page.getByText(/La despensa está vacía/)).toBeVisible();
-	// …y el producto está en la lista con su cantidad.
-	await page.goto(`/lists/${lista.id}`);
-	await expect(
-		page.locator('section li', { hasText: 'Leche entera' }).getByText('2 L')
-	).toBeVisible();
 });
 
 test('re-añadir suma sobre el pendiente equivalente de la lista (#74)', async ({ page }) => {

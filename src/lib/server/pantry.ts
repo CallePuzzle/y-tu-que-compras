@@ -122,7 +122,7 @@ export async function adjustPantryItem(
 
 /** Cómo acabó un re-añadido a la compra. */
 export type ReaddOutcome =
-	/** El producto entró (o sumó) en la lista y la despensa quedó ajustada. */
+	/** El producto entró (o sumó) en la lista; la despensa queda como está. */
 	| 'added'
 	/** El producto de despensa ya no está en esa familia (id ajeno o rancio). */
 	| 'pantry-gone'
@@ -130,11 +130,11 @@ export type ReaddOutcome =
 	| 'list-gone';
 
 /**
- * Re-añade un producto de la despensa a una lista DE LA FAMILIA (issues #46 y
- * #74): la lista destino la elige el usuario (puede ser distinta a la de la
- * última compra) y la despensa se ajusta según `pantryMode` — dejar igual,
- * fijar una cantidad nueva o quitar el producto. Todo en UNA transacción: o
- * entra en la lista y se ajusta la despensa, o no queda rastro de nada.
+ * Re-añade un producto de la despensa a una lista DE LA FAMILIA (issues #46,
+ * #74 y #149): la lista destino la elige el usuario (puede ser distinta a la
+ * de la última compra) y la despensa NO se toca — el producto queda como
+ * está, que la compra es cosa de la lista (#149). Todo en UNA transacción: o
+ * entra en la lista o no queda rastro de nada.
  *
  * Si en la lista ya hay un item PENDIENTE equivalente (mismo nombre
  * normalizado y misma unidad), la cantidad se SUMA sobre él — los comprados
@@ -211,20 +211,6 @@ export async function readdPantryItem(
 					unit: producto.unit,
 					order: (_max.order ?? -1) + 1
 				}
-			});
-		}
-
-		// El ajuste de despensa elegido en el modal, sobre la pertenencia en
-		// el `where`: si otro miembro lo consumió a cero mientras tanto, no
-		// hay nada que fijar ni quitar — el producto ya entró en la lista.
-		if (data.pantryMode === 'set') {
-			await tx.pantryItem.updateMany({
-				where: { id: producto.id, organizationId: familyId },
-				data: { quantity: data.newQuantity }
-			});
-		} else if (data.pantryMode === 'remove') {
-			await tx.pantryItem.deleteMany({
-				where: { id: producto.id, organizationId: familyId }
 			});
 		}
 

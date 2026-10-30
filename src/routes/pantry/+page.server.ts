@@ -24,11 +24,7 @@ function readdFormSchema() {
 		listIdError: m.schema_readd_list_error(),
 		listIdLabel: m.schema_readd_list_label(),
 		quantityError: m.schema_items_quantity_error(),
-		quantityLabel: m.pantry_readd_quantity_label(),
-		pantryModeError: m.schema_readd_mode_error(),
-		pantryModeLabel: m.pantry_readd_pantry_label(),
-		newQuantityError: m.schema_readd_new_quantity_error(),
-		newQuantityLabel: m.schema_readd_new_quantity_label()
+		quantityLabel: m.pantry_readd_quantity_label()
 	});
 }
 
@@ -37,7 +33,7 @@ function readdFormSchema() {
 const READD_FORM_ID = 'readd-item';
 
 /** Valores iniciales del formulario: los reales los fija `abrirReAnadir` con el producto pulsado. */
-const EMPTY_READD = { listId: '', quantity: 1, pantryMode: 'keep' } as const;
+const EMPTY_READD = { listId: '', quantity: 1 } as const;
 
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
@@ -96,11 +92,11 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	// Re-añadir a la compra (checklist #74): el modal manda lista destino,
-	// cantidad para la lista y qué hacer con la despensa. El FormData se lee
-	// UNA vez y alimenta al superforms y al id oculto (el body del request no
-	// se puede consumir dos veces). La transacción de `readdPantryItem` suma
-	// sobre el pendiente equivalente o crea el item, y ajusta la despensa.
+	// Re-añadir a la compra (checklist #74): el modal manda lista destino y
+	// cantidad para la lista; la despensa queda como está (#149). El FormData
+	// se lee UNA vez y alimenta al superforms y al id oculto (el body del
+	// request no se puede consumir dos veces). La transacción de
+	// `readdPantryItem` suma sobre el pendiente equivalente o crea el item.
 	readd: async (event) => {
 		const family = requireActiveFamily(event);
 		const data = await event.request.formData();
