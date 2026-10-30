@@ -5,7 +5,12 @@ import { m } from '$lib/paraglide/messages.js';
 import { readdSchema } from '$lib/schemas/pantry.js';
 import { requireActiveFamily } from '$lib/server/family-context.js';
 import { listLists } from '$lib/server/lists.js';
-import { adjustPantryItem, listPantryItems, readdPantryItem } from '$lib/server/pantry.js';
+import {
+	adjustPantryItem,
+	listPantryItems,
+	removePantryItem,
+	readdPantryItem
+} from '$lib/server/pantry.js';
 import logger from '$lib/server/logger';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -86,6 +91,31 @@ export const actions: Actions = {
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al ajustar la despensa');
+			return fail(500, { error: m.pantry_error() });
+		}
+
+		return { success: true };
+	},
+
+	// Quitar un producto de la despensa del todo (issue #148): la opción del
+	// agotado que no va a volver a comprar. Sin schema de superforms — solo el
+	// id oculto que manda el ConfirmModal, como el borrado de items de una
+	// lista. El ConfirmModal ya pide confirmación: aquí solo queda el fallo.
+	remove: async (event) => {
+		const family = requireActiveFamily(event);
+		const data = await event.request.formData();
+		const id = data.get('item');
+		if (typeof id !== 'string' || !id) {
+			return fail(400, { error: m.pantry_error() });
+		}
+
+		try {
+			const borrado = await removePantryItem(family.id, id);
+			if (!borrado) {
+				return fail(404, { error: m.pantry_gone() });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al quitar el producto de la despensa');
 			return fail(500, { error: m.pantry_error() });
 		}
 

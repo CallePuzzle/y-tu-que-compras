@@ -9,6 +9,8 @@
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import { formatQuantity } from '$lib/format.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
@@ -37,9 +39,9 @@
 	// El ajuste que aún no ha confirmado el servidor viaja en `ajustes`
 	// (id -> delta acumulado): la UI pinta la cantidad ENCIMA de la que trae
 	// el load y retira el optimista cuando llega la verdad del servidor — o
-	// en cuanto falla la petición, que es la reversión prometida. Como en el
-	// toggle, el delta se anota en el click del botón (ANTES del envío) y el
-	// submit function solo decide qué hacer con el resultado.
+	// en cuanto falla la petición, que es la reversión prometida. A diferencia
+	// del toggle, el delta NO se anota en el click sino en el submit function
+	// (#148): solo ahí es seguro que el envío ha empezado de verdad.
 	//
 	// SvelteMap y no `$state(new Map())`: en Svelte 5 el deep-proxy de
 	// `$state` solo cubre objetos y arrays PLANOS — un Map pasa sin proxyar y
@@ -70,6 +72,16 @@
 	 * delta NO es un ±1 genérico: es el PASO de la unidad (±0,25 en kg/L,
 	 * ±100 en g/ml), el mismo que aplica el servidor — si no, el badge
 	 * pintaría valores que el servidor nunca guardará (#113).
+	 *
+	 * Se llama desde el submit function, NO desde el `onclick` (#148): esta
+	 * función solo ha de correr cuando el evento submit HA DISPARADO y la
+	 * petición está echada a andar. En el click, pintar el optimista podía
+	 * mover la fila de sección (En casa ↔ Agotados) y desmontar el `<form>`
+	 * ANTES de que el navegador disparase el submit: el ajuste quedaba pintado
+	 * sin petición, la UI decía 0/agotado y la BD conservaba cantidad — al
+	 * recargar, el producto «dejaba de estar agotado». Sin click-optimista,
+	 * todo optimista implica un POST en vuelo: si el badge llega a 0, la base
+	 * acaba en 0 (con el clamp del servidor, como mucho antes).
 	 */
 	function anotarAjuste(id: string, delta: number) {
 		ajustes.set(id, redondearCantidad((ajustes.get(id) ?? 0) + delta));
@@ -90,24 +102,30 @@
 			ajustes.set(id, quedan);
 		}
 	} /**
-	 * Resultado de un ajuste: en fallo revierte y avisa; en éxito refresca.
-	 * El optimista se retira ANTES de pedir el load: si se quitara después
-	 * del `await update()`, la mutación cae en la misma continuación asíncrona
-	 * que el refresco y el navegador no llega a repintarla (visto en e2e) —
-	 * el badge se quedaba con el delta para siempre. El coste es un parpadeo
-	 * de la cantidad vieja durante la revalidación, inferior a un badge
-	 * congelado en un valor que el servidor ya desmintió.
+	 * Ciclo de un ajuste: anota el optimista cuando el submit ARRANCA (ver
+	 * `anotarAjuste`) y el submit function devuelto decide qué hacer con el
+	 * resultado: en éxito refresca y retira SU delta DESPUÉS, cuando la
+	 * verdad ya está en pantalla; en fallo revierte y avisa. El orden importa
+	 * (#148): retirar el delta ANTES del load dejaba un instante con datos
+	 * viejos y ajuste ya quitado — el badge volvía a la cantidad vieja y la
+	 * fila saltaba de «Agotados» a «En casa» y de vuelta al llegar el
+	 * refresco. Retirado después, el badge no se mueve en todo el camino:
+	 * mientras vuela el refresco sigue el optimista (dato viejo + delta, que
+	 * `cantidadVisible` clampea a 0) y al aterrizar la verdad el delta sobra
+	 * exactamente. Con clics rápidos hay varias peticiones en vuelo sobre la
+	 * misma fila y cada una retira SOLO su delta (#113).
 	 */
 	function alAjustar(id: string, unit: Unit): SubmitFunction {
-		return () =>
-			async ({ result, update, formData }) => {
-				// El delta de ESTA petición viaja en el formulario (el value del
-				// botón pulsado, ±1) y aquí se convierte al paso de la unidad:
-				// la misma cuenta que hace el click y que aplica el servidor.
-				const delta = Number(formData.get('delta')) * UNIT_STEP[unit];
+		return ({ formData }) => {
+			// El delta de ESTA petición viaja en el formulario (el value del
+			// botón pulsado, ±1) y aquí se convierte al paso de la unidad:
+			// la misma cuenta que aplica el servidor.
+			const delta = Number(formData.get('delta')) * UNIT_STEP[unit];
+			anotarAjuste(id, delta);
+			return async ({ result, update }) => {
 				if (result.type === 'success') {
-					retirarAjuste(id, delta);
 					await update();
+					retirarAjuste(id, delta);
 				} else {
 					// Fallo (el servidor rechazó) o error (sin respuesta): la
 					// reversión es retirar SOLO el optimista de esta petición, y
@@ -121,6 +139,7 @@
 					retirarAjuste(id, delta);
 				}
 			};
+		};
 	}
 
 	// ---- Re-añadir a la compra (checklist #74): modal con SU formulario de
@@ -139,6 +158,18 @@
 	/** El producto que se quiere re-añadir: fija título, id y cantidad por defecto. */
 	let itemReAnadir: PantryRow | undefined = $state();
 	let readdModal: { showModal(): void; close(): void } | undefined = $state();
+
+	// ---- Quitar de la despensa (#148): solo se ofrece en el agotado; el
+	// ConfirmModal compartido confirma y su acción `?/remove` borra la fila. ----
+	let itemBorrado: PantryRow | undefined = $state();
+	let borrarModal: ConfirmModal | undefined = $state();
+
+	/** Fija el producto a quitar y abre la confirmación. */
+	function abrirBorrado(item: PantryRow) {
+		exito = null;
+		itemBorrado = item;
+		borrarModal?.showModal();
+	}
 
 	// svelte-ignore state_referenced_locally
 	const readdForm = superForm(data.readdForm, {
@@ -271,7 +302,6 @@
 							class="btn btn-ghost btn-sm"
 							aria-label={etiquetaPaso(item, m.pantry_consume)}
 							title={etiquetaPaso(item, m.pantry_consume)}
-							onclick={() => anotarAjuste(item.id, -UNIT_STEP[item.unit])}
 						>
 							<Minus aria-hidden="true" />
 						</button>
@@ -287,7 +317,6 @@
 						class="btn btn-ghost btn-sm"
 						aria-label={etiquetaPaso(item, m.pantry_restock)}
 						title={etiquetaPaso(item, m.pantry_restock)}
-						onclick={() => anotarAjuste(item.id, UNIT_STEP[item.unit])}
 					>
 						<Plus aria-hidden="true" />
 					</button>
@@ -304,6 +333,20 @@
 				>
 					<ShoppingCart aria-hidden="true" />
 				</button>
+				<!-- Quitar de la despensa (#148): solo el agotado lo ofrece — un
+				     producto con existencias se consume o se re-añade; quitarlo
+				     del todo es la decisión explícita del ConfirmModal. -->
+				{#if cantidad === 0}
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						title={m.pantry_delete()}
+						aria-label={m.pantry_delete()}
+						onclick={() => abrirBorrado(item)}
+					>
+						<Trash2 aria-hidden="true" />
+					</button>
+				{/if}
 			</li>
 		{/snippet}
 
@@ -432,3 +475,18 @@
 		</form>
 	{/if}
 </Modal>
+
+<!-- Quitar de la despensa (#148): una modal compartida; el botón de la fila
+     del agotado fija a qué producto se refiere antes de abrirla. El fallo de
+     la acción vive dentro del modal (lo gestiona el ConfirmModal) y el éxito
+     avisa a la página como el resto de acciones. -->
+<ConfirmModal
+	bind:this={borrarModal}
+	title={m.pantry_delete_title({ name: itemBorrado?.name ?? '' })}
+	description={m.pantry_delete_description()}
+	confirmLabel={m.pantry_delete_confirm()}
+	action="?/remove"
+	fields={{ item: itemBorrado?.id ?? '' }}
+	errorFallback={m.pantry_error()}
+	onSuccess={() => (exito = m.pantry_deleted())}
+/>

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 // la despensa muestra SOLO los productos de la familia activa, con la cantidad
 // Decimal aplanada a número para la vista (#72).
 import prisma from './prisma.js';
-import { adjustPantryItem, listPantryItems, readdPantryItem } from './pantry.js';
+import { adjustPantryItem, listPantryItems, removePantryItem, readdPantryItem } from './pantry.js';
 import { createItem } from './items.js';
 import { createList } from './lists.js';
 
@@ -166,6 +166,43 @@ describe('Consumir y devolver un paso (#73)', () => {
 	it('un id que no existe devuelve false', async () => {
 		const familyId = await familyRow('Familia Fantasma');
 		await expect(adjustPantryItem(familyId, 'no-existe', -1)).resolves.toBe(false);
+	});
+});
+
+describe('Quitar un producto de la despensa (#148)', () => {
+	it('borra la fila del todo, también la de un agotado a cero', async () => {
+		const familyId = await familyRow('Familia Quita Agotados');
+		const pan = await pantryRow(familyId, 'Pan', 0, 'unit');
+		await pantryRow(familyId, 'Leche entera', 2, 'liter');
+
+		await expect(removePantryItem(familyId, pan.id)).resolves.toBe(true);
+		// La fila desaparece: agotado no vuelve a la lista de la compra solo.
+		await expect(prisma.pantryItem.findUnique({ where: { id: pan.id } })).resolves.toBeNull();
+		// Y el resto de la despensa queda intacto.
+		await expect(listPantryItems(familyId)).resolves.toHaveLength(1);
+	});
+
+	it('quita también un producto con existencias (la confirmación va en la UI)', async () => {
+		const familyId = await familyRow('Familia Quita Con Stock');
+		const leche = await pantryRow(familyId, 'Leche entera', 1.5, 'liter');
+
+		await expect(removePantryItem(familyId, leche.id)).resolves.toBe(true);
+		await expect(listPantryItems(familyId)).resolves.toEqual([]);
+	});
+
+	it('un producto de otra familia no se puede quitar (id ajeno es «no existe»)', async () => {
+		const mia = await familyRow('Familia Quita Propia');
+		const ajena = await familyRow('Familia Quita Ajena');
+		const caviar = await pantryRow(ajena, 'Caviar', 1, 'unit');
+
+		await expect(removePantryItem(mia, caviar.id)).resolves.toBe(false);
+		// La despensa ajena queda intacta.
+		await expect(cantidadDe(caviar.id)).resolves.toBe(1);
+	});
+
+	it('un id que no existe devuelve false', async () => {
+		const familyId = await familyRow('Familia Quita Fantasma');
+		await expect(removePantryItem(familyId, 'no-existe')).resolves.toBe(false);
 	});
 });
 

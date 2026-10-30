@@ -399,3 +399,146 @@ test('un agotado se re-añade a la compra y se queda en la despensa a cero (#74)
 	await page.goto(`/lists/${lista.id}`);
 	await expect(page.locator('section li', { hasText: 'Pan' }).getByText('1 ud')).toBeVisible();
 });
+
+// El valor que pinta el badge MIENTRAS el POST viaja es el optimista, y el
+// servidor no lo corrige hasta que responde: para poder observarlo, las dos
+// pruebas siguientes retrasan la respuesta de `?/adjust` interceptándola y
+// ASSERTIONES con timeout acotado — uno generoso esperaría la corrección del
+// servidor y daría por bueno cualquier valor.
+test('consumir a cero de un tirón se guarda: al recargar sigue agotado (#148)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 1, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	// Congelo las respuestas del ajuste: los cuatro clics se apilan sin que
+	// ninguna respuesta reordene la página por el camino. Con el bug, el
+	// optimista del 4.º click (pintado en el `onclick`) movía la fila a
+	// «Agotados» y desmontaba el `<form>` antes de que el navegador disparase
+	// el submit: el ajuste quedaba pintado SIN petición y la base conservaba
+	// 0,25 — al recargar, el producto «dejaba de estar agotado».
+	await page.route(/\/pantry\?\/adjust/, async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 2_500));
+		await route.continue();
+	});
+
+	// Cuatro consumos seguidos: 1 → 0,75 → 0,5 → 0,25 → 0.
+	for (let i = 0; i < 4; i++) {
+		await leche.getByRole('button', { name: 'Consumir 0,25 L' }).click();
+	}
+
+	// El optimista llega a 0 y el producto baja a «Agotados»…
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+	await expect(leche.getByText('0 L')).toBeVisible();
+
+	// …y desde el arreglo, todo optimista implica un POST en vuelo: la base
+	// acaba en 0 (con el clamp del servidor), no en un resto tipo 0,25.
+	await page.unroute(/\/pantry\?\/adjust/);
+	await page.waitForLoadState('networkidle');
+	await expect
+		.poll(async () => {
+			const fila = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
+			return Number(fila?.quantity);
+		})
+		.toBe(0);
+
+	// La prueba que pide la issue: recargar no miente — sigue agotado a cero.
+	await page.reload();
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+	await expect(page.locator('li', { hasText: 'Leche entera' }).getByText('0 L')).toBeVisible();
+});
+
+// El ajuste se confirma con dos pasos: la respuesta del POST y el refresco
+// del load que la sigue. Este test retrasa SOLO el refresco para observar la
+// ventana entre los dos: retirar el optimista antes de que aterrice la
+// verdad pintaba un instante la cantidad vieja y la fila «volvía a En casa»
+// para reaparecer en Agotados (#148).
+test('al agotarse la fila no baila: se queda en Agotados mientras aterriza el refresco (#148)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 0.25,
+		unit: 'liter'
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	// El refresco de datos que dispara la confirmación tardará 2 s: la
+	// ventana «respuesta aplicada, verdad aún en vuelo» se vuelve observable.
+	await page.route(
+		(url) => url.pathname.endsWith('__data.json'),
+		async (route) => {
+			await new Promise((resolve) => setTimeout(resolve, 2_000));
+			await route.continue();
+		}
+	);
+
+	// Un consumo lleva el producto a 0: el optimista lo baja a Agotados.
+	await leche.getByRole('button', { name: 'Consumir 0,25 L' }).click();
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+
+	// DURANTE la ventana (timeout menor que el retraso): la respuesta ya se
+	// aplicó y la fila NO puede volver a En casa pintando la cantidad vieja.
+	await expect(leche.getByText('0,25 L')).toHaveCount(0, { timeout: 1_000 });
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible({ timeout: 1_000 });
+
+	// Aterrizado el refresco, el estado final es el mismo agotado a cero.
+	await page.waitForLoadState('networkidle');
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+	await expect(leche.getByText('0 L')).toBeVisible();
+	await expect
+		.poll(async () => {
+			const fila = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
+			return Number(fila?.quantity);
+		})
+		.toBe(0);
+});
+
+test('el agotado se puede quitar de la despensa con confirmación (#148)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 0, unit: 'unit' });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const pan = page.locator('li', { hasText: 'Pan' });
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+
+	// Solo el agotado ofrece quitarlo; el que tiene existencias no.
+	await expect(pan.getByRole('button', { name: 'Quitar de la despensa' })).toBeVisible();
+	await expect(leche.getByRole('button', { name: 'Quitar de la despensa' })).toHaveCount(0);
+
+	// Primero la confirmación: escapar deja la despensa como estaba.
+	await pan.getByRole('button', { name: 'Quitar de la despensa' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByText('¿Quitar «Pan» de la despensa?')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(pan).toBeVisible();
+
+	// Confirmar quita el producto: fuera de la vista y de la base.
+	await pan.getByRole('button', { name: 'Quitar de la despensa' }).click();
+	await dialog.getByRole('button', { name: 'Quitar', exact: true }).click();
+	await expect(page.getByRole('status')).toContainText('Producto quitado de la despensa.');
+	await expect(pan).toHaveCount(0);
+	await expect(prisma.pantryItem.findFirst({ where: { name: 'Pan' } })).resolves.toBeNull();
+
+	// La leche sigue en su sitio y la sección Agotados ya no hace falta.
+	await expect(leche).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toHaveCount(0);
+});
