@@ -8,6 +8,7 @@
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Users from '@lucide/svelte/icons/users';
 	import { m } from '$lib/paraglide/messages.js';
+	import logo from '$lib/assets/logo.webp';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -66,11 +67,16 @@
 </svelte:head>
 
 <!-- Landing pública (issue #133): explica qué es la app a quien llega sin
-     sesión (p. ej. desde una invitación). Sin imágenes ni mockups (no hay
-     assets de screenshots): tipografía y iconos lucide, como el resto. -->
+     sesión (p. ej. desde una invitación). Sin mockups: tipografía, iconos
+     lucide y el logo de marca (issue #140), como el resto. -->
 <section class="hero bg-base-200 rounded-box min-h-[50vh]">
 	<div class="hero-content text-center">
 		<div class="max-w-lg">
+			<!-- El logo es decorativo (`alt=""`): la marca ya está en el `h1`.
+			     `object-contain`: el asset NO es cuadrado (195×189) y la caja
+			     (`size-24`) sí; sin él el navegador lo aplasta (Lighthouse
+			     `image-aspect-ratio`). -->
+			<img src={logo} alt="" class="mx-auto mb-4 size-24 object-contain" />
 			<h1 class="text-5xl font-bold">{m.app_brand()}</h1>
 			<p class="py-6">{m.app_tagline()}</p>
 			<a href={ctaHref} class="btn btn-primary">

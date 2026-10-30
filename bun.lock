@@ -7,7 +7,7 @@
       "dependencies": {
         "@callepuzzle/auth": "^1.0.2",
         "@callepuzzle/core": "^1.0.0",
-        "@callepuzzle/svelte-ui": "^1.1.0",
+        "@callepuzzle/svelte-ui": "^1.1.2",
         "@lucide/svelte": "^1.57.0",
         "@opentelemetry/api": "^1.9.1",
         "@prisma/adapter-pg": "^7.10.0",
@@ -126,7 +126,7 @@
 
     "@callepuzzle/core": ["@callepuzzle/core@1.0.0", "https://npm.pkg.github.com/download/@callepuzzle/core/1.0.0/96a13a20b1449e54d66b3817d7130b0386bc3779", { "peerDependencies": { "svelte": "^5.36.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-A0ppWUiDqf9YdcOxxAh93s/rLyXeulHJ3uiYGLjoZ1diRwyROMBRm8kYzPM7EVzD3j0qP8aLAyJcwijW6nU3cA=="],
 
-    "@callepuzzle/svelte-ui": ["@callepuzzle/svelte-ui@1.1.0", "https://npm.pkg.github.com/download/@callepuzzle/svelte-ui/1.1.0/1bf32b5a20553bdee3f4cf22df2535d984fe3c0c", { "dependencies": { "@callepuzzle/core": "^1.0.0", "clsx": "^2.1.1", "esm-env": "^1.2.2", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@lucide/svelte": "^0.488.0 || ^1.0.0", "@sveltejs/kit": "^2.27.0", "bits-ui": "^2.19.0", "daisyui": "^5.0.50", "formsnap": "^2.0.1", "svelte": "^5.36.12", "sveltekit-superforms": "^2.27.1", "tailwindcss": "^4.1.11", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-fSDcNE7pldPKm//BS59LyXON9n/7E1AIETqoVYPxX+BxH4rQR+t7/DoTBQuTAwLPoVLjb07nvfeu+2ptpchzkA=="],
+    "@callepuzzle/svelte-ui": ["@callepuzzle/svelte-ui@1.1.2", "https://npm.pkg.github.com/download/@callepuzzle/svelte-ui/1.1.2/110b88944685e2c34613a5831f0b322b4c73e5cc", { "dependencies": { "@callepuzzle/core": "^1.0.1", "clsx": "^2.1.1", "esm-env": "^1.2.2", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@lucide/svelte": "^0.488.0 || ^1.0.0", "@sveltejs/kit": "^2.27.0", "bits-ui": "^2.19.0", "daisyui": "^5.0.50", "formsnap": "^2.0.1", "svelte": "^5.36.12", "sveltekit-superforms": "^2.27.1", "tailwindcss": "^4.1.11", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-ET/LKl4/kg2+awclVApJa7xOiGjAtQKE3omYSnVM7Zze6/4x8eevlRpmKoiotyWFcn/Zw9gzFFOctMw3/kmCaA=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.4.3", "", {}, "sha512-ichuWTgtd4mOM1G4SpyGJa5trT03lWbMypDV0fUXUCXg5hiHqVAz/bZyV68NqmkLB7WcYmj1RMJVSp8HV/v/ZQ=="],
 
@@ -1357,6 +1357,8 @@
     "zod-v3-to-json-schema": ["zod-v3-to-json-schema@4.0.0", "", { "peerDependencies": { "zod": "^3.25 || ^4.0.14" } }, "sha512-KixLrhX/uPmRFnDgsZrzrk4x5SSJA+PmaE5adbfID9+3KPJcdxqRobaHU397EfWBqfQircrjKqvEqZ/mW5QH6w=="],
 
     "@bytecodealliance/preview3-shim/@bytecodealliance/preview2-shim": ["@bytecodealliance/preview2-shim@0.25.0", "", { "dependencies": { "@bytecodealliance/jco-node-fs": "0.3.2" } }, "sha512-6ZSDRJ8hJc/febZepzd68z3KzLcOXyCOKtRm8LB2rgAU88xV7ykq6dMb5I4a+sBh1cuV2Yb1159gDzI1q8UsoQ=="],
+
+    "@callepuzzle/svelte-ui/@callepuzzle/core": ["@callepuzzle/core@1.0.1", "https://npm.pkg.github.com/download/@callepuzzle/core/1.0.1/97a57ce29ffa32d8e19f3e253e24b926267ae785", { "peerDependencies": { "svelte": "^5.36.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-AeE3ldTiEPDGxtP/4++IiSch++sPiKP0MUZ1ZkSTnPY/2LxPgGS3snGQ9At0JngT7aMWC3lVrb7VypFBnw01GA=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 

@@ -74,9 +74,11 @@ test('el cajón lateral abre con la hamburguesa y cierra tocando fuera', async (
 	// El disparador es el `menuToggleFor` del Header (label del checkbox del
 	// Drawer): un target grande, pensado para el pulgar. El checkbox que
 	// gobierna el CSS está oculto (0x0), así que se toca su label; el estado
-	// real se lee del `checked`, sin depender del idioma del `aria-label`.
+	// real se lee del `checked`, sin depender del idioma del texto. El nombre
+	// accesible ya no va en `aria-label` (prohibido sobre <label>, lo quitó
+	// svelte-ui 1.1.2 por un `sr-only` interno): se localiza por su `for`.
 	const panel = page.locator('.drawer-side');
-	const toggle = page.locator('.navbar label[aria-label]');
+	const toggle = page.locator('.navbar label[for]');
 	await expect(panel).toBeHidden();
 	await toggle.click();
 	await expect(page.locator('input.drawer-toggle')).toBeChecked();

@@ -5,3 +5,106 @@
 
 /* Ficheros propios de la app. */
 @source './';
+
+/*
+ * Tema de la app: oscuro «petrol» con la paleta extraída del logo (issue #140).
+ * Todos los colores salen de la ilustración de la cesta: la tinta de los
+ * contornos (`#08262d`) da los fondos, el cream del marco (`#eae8da`) el texto,
+ * y los alimentos los semánticos — pan `#ffc243`, pera `#8dbe65`, manzana
+ * `#f03e34`, naranja tomate `#eb9f30`, mostaza `#d5a65d`, teal de sombras
+ * `#6e9da9`, teal claro de los círculos `#a8d2dd` y gris azulado `#5a7987`.
+ * daisyUI aplica el tema en `:root` (`default: true`), y como toda la app usa
+ * clases semánticas, el restyle se propaga solo.
+ *
+ * Nota: `base-200` es MÁS claro que `base-100` a propósito — en el diseño
+ * original las superficies elevadas (tarjetas, dock, drawer) son más claras
+ * que el fondo, al revés de la convención habitual de los temas claros.
+ */
+@plugin 'daisyui/theme' {
+	name: 'ytqc-dark';
+	default: true;
+	/* Nuestro tema también en el media query `prefers-color-scheme: dark`:
+	   sin esto, el dark built-in de daisyUI (que la librería emite con
+	   `:root:not([data-theme])`, especificidad 0,2,0) pisaba nuestras vars
+	   (emitidas como `:where(:root)`, 0,0,0) en navegadores en modo oscuro. */
+	prefersdark: true;
+	color-scheme: dark;
+
+	/* Fondos derivados de la tinta `#08262d` de los contornos del logo,
+	 * aclarada hasta ser usable como página y superficies elevadas. */
+	--color-base-100: #162629;
+	--color-base-200: #1e3134;
+	--color-base-300: #273c40;
+	--color-base-content: #eae8da;
+
+	/* Amarillo del pan: botones y acciones principales, con la tinta encima. */
+	--color-primary: #ffc243;
+	--color-primary-content: #08262d;
+
+	/* Teal de las sombras de la ilustración. */
+	--color-secondary: #6e9da9;
+	--color-secondary-content: #08262d;
+
+	/* Naranja tomate: highlights y CTA de la librería (`btn-accent`). */
+	--color-accent: #eb9f30;
+	--color-accent-content: #08262d;
+
+	/* Gris azulado del logo, oscurecido para pasar AA con el texto cream
+	   (#5a7987 daba 3.77:1; #43616e da 5.37:1). */
+	--color-neutral: #43616e;
+	--color-neutral-content: #eae8da;
+
+	/* Teal claro de los círculos decorativos. */
+	--color-info: #a8d2dd;
+	--color-info-content: #08262d;
+
+	/* Verde de la pera. */
+	--color-success: #8dbe65;
+	--color-success-content: #08262d;
+
+	/* Mostaza tostada del mango de la cesta. */
+	--color-warning: #d5a65d;
+	--color-warning-content: #08262d;
+
+	/* Rojo de la manzana, con tinta más profunda que la del resto: sobre la
+	   manzana exacta, `#08262d` daba 4.11:1 (por debajo del 4.5 de AA) y
+	   `#041a20` da 4.64:1. */
+	--color-error: #f03e34;
+	--color-error-content: #041a20;
+
+	/* El diseño original es de esquinas muy redondeadas (tarjetas y dock). */
+	--radius-selector: 0.5rem;
+	--radius-field: 0.5rem;
+	--radius-box: 1rem;
+
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 1;
+	--noise: 0;
+}
+
+/*
+ * Correcciones WCAG AA sobre utilidades concretas de Tailwind/daisyUI.
+ * Van SIN `@layer`: el CSS sin capa gana a cualquier capa autor, así que
+ * pisan las reglas de daisyUI sin jugar con la especificidad.
+ */
+
+/* La manzana funciona como RELLENO (btn-error, alert-error) pero no como
+   TEXTO sobre fondos oscuros: #f03e34 da 4.05:1 sobre base-100 y 3.53:1
+   sobre base-200, por debajo del 4.5 de AA. `text-error` son mensajes de
+   validación pequeños (role="alert"), así que toma un tono salmón de la
+   misma familia que sí cumple (6.22:1 y 5.41:1). El relleno de error sigue
+   siendo la manzana exacta vía `--color-error`. */
+.text-error {
+	color: #fd7d73;
+}
+
+/* El placeholder de daisyUI va al 50% de `base-content` (4.25:1, justo por
+   debajo de AA). Al 60% da 5.45:1; el cambio es imperceptible. Los
+   placeholders deshabilitados (al 20%) quedan como están: exentos. */
+.input::placeholder,
+.select::placeholder,
+.textarea::placeholder {
+	opacity: 60%;
+}
