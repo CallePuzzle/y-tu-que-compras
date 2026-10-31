@@ -71,6 +71,23 @@ antes). Un test suelto:
 - **En dev/test no sale ningún email real**: `sendEmail` lo imprime en el log y lo deja capturado en
   `capturedEmailsForTests` (ver `src/lib/server/emails.ts`) para asertarlo.
 
+### Estrategia de tests: local vs CI
+
+CI es el árbitro final (el ruleset de `main` exige sus checks), pero eso no significa dejarle todo:
+esperar a CI y depurar por sus logs cuesta más (tokens y tiempo) que ejecutar el test en local.
+Reparto:
+
+- **Siempre en local antes de pushear** (baratos y rápidos): `bun run lint` y `bun run check`, y los
+  specs afectados por el cambio (`bun run test:unit -- --run <spec>`; e2e suelto:
+  `bunx playwright test <fichero>`).
+- **Suite completa en local solo a veces**: cambios grandes, refactors o tocar código de servidor/BD
+  (`bun run test:unit -- --run` entera; `test:integration`/`test:e2e` si aplica, con la BD de test
+  levantada). En cambios pequeños no hace falta: CI la cubre.
+- **CI cubre el resto**: es el gate completo (unit + integration + build + e2e). No depurar empujando
+  fixes a CI en bucle: si un test falla en CI, reproducirlo en local, arreglarlo y volver a pushear.
+- **El agente no se queda esperando CI**: termina el trabajo, abre el PR y desliga; el resultado del
+  CI lo consulta quien maneja la sesión cuando le interese.
+
 ## Gotchas
 
 - **Las rutas (URLs) van en inglés**, igual que el código: `/families`, `/login`… aunque el dominio
