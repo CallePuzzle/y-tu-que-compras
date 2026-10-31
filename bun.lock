@@ -7,7 +7,7 @@
       "dependencies": {
         "@callepuzzle/auth": "^1.0.2",
         "@callepuzzle/core": "^1.0.0",
-        "@callepuzzle/svelte-ui": "^1.1.2",
+        "@callepuzzle/svelte-ui": "^1.2.0",
         "@lucide/svelte": "^1.57.0",
         "@opentelemetry/api": "^1.9.1",
         "@prisma/adapter-pg": "^7.10.0",
@@ -128,7 +128,7 @@
 
     "@callepuzzle/core": ["@callepuzzle/core@1.0.0", "https://npm.pkg.github.com/download/@callepuzzle/core/1.0.0/96a13a20b1449e54d66b3817d7130b0386bc3779", { "peerDependencies": { "svelte": "^5.36.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-A0ppWUiDqf9YdcOxxAh93s/rLyXeulHJ3uiYGLjoZ1diRwyROMBRm8kYzPM7EVzD3j0qP8aLAyJcwijW6nU3cA=="],
 
-    "@callepuzzle/svelte-ui": ["@callepuzzle/svelte-ui@1.1.2", "https://npm.pkg.github.com/download/@callepuzzle/svelte-ui/1.1.2/110b88944685e2c34613a5831f0b322b4c73e5cc", { "dependencies": { "@callepuzzle/core": "^1.0.1", "clsx": "^2.1.1", "esm-env": "^1.2.2", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@lucide/svelte": "^0.488.0 || ^1.0.0", "@sveltejs/kit": "^2.27.0", "bits-ui": "^2.19.0", "daisyui": "^5.0.50", "formsnap": "^2.0.1", "svelte": "^5.36.12", "sveltekit-superforms": "^2.27.1", "tailwindcss": "^4.1.11", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-ET/LKl4/kg2+awclVApJa7xOiGjAtQKE3omYSnVM7Zze6/4x8eevlRpmKoiotyWFcn/Zw9gzFFOctMw3/kmCaA=="],
+    "@callepuzzle/svelte-ui": ["@callepuzzle/svelte-ui@1.2.0", "https://npm.pkg.github.com/download/@callepuzzle/svelte-ui/1.2.0/f592490da12384651318501021f10366f7ac5964", { "dependencies": { "@callepuzzle/core": "^1.0.1", "clsx": "^2.1.1", "esm-env": "^1.2.2", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@lucide/svelte": "^0.488.0 || ^1.0.0", "@sveltejs/kit": "^2.27.0", "bits-ui": "^2.19.0", "daisyui": "^5.0.50", "formsnap": "^2.0.1", "svelte": "^5.36.12", "sveltekit-superforms": "^2.27.1", "tailwindcss": "^4.1.11", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-EQU2c7TdApSllA3oC1XWcO8rBLNK0BUr6rcL12NRvcRqXhq+qQHFPhwa77ir66HD+lFRnVYd3U1N+RoJ7IYYKw=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.4.3", "", {}, "sha512-ichuWTgtd4mOM1G4SpyGJa5trT03lWbMypDV0fUXUCXg5hiHqVAz/bZyV68NqmkLB7WcYmj1RMJVSp8HV/v/ZQ=="],
 

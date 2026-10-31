@@ -23,6 +23,7 @@
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 	import logo from '$lib/assets/logo.webp';
 	import { startOnboardingTour } from '$lib/utils/tour';
+	import { tourUi } from '$lib/utils/tour-ui.svelte.js';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import type { LayoutProps } from './$types';
 
@@ -59,9 +60,27 @@
 	async function onSignOut() {
 		await invalidateAll();
 	}
+
+	// El estado del cajón va al `Drawer` vía `bind:open` (svelte-ui 1.2.0): el
+	// checkbox nativo lo refleja al abrir/cerrar por su label y el cierre por
+	// estado deja el checkbox y su `aria-label` en sync, sin tocar el DOM.
+	// Desde 1.2.0 el `Drawer` además se cierra solo al navegar
+	// (`closeOnNavigate`), pero el tour también puede verse SIN navegación
+	// (primera visita a `/`, retoma tras una revalidación): el layout cierra
+	// el cajón en cuanto el diálogo del tour pasa a visible (#144) — en móvil
+	// el panel abierto tapa el tour. No se reabre al acabar: reabrirlo es
+	// decisión del usuario.
+	let drawerOpen = $state(false);
+
+	$effect(() => {
+		if (tourUi.dialogVisible) drawerOpen = false;
+	});
 </script>
 
-<Drawer strings={{ openSidebar: m.ui_open_sidebar(), closeSidebar: m.ui_close_sidebar() }}>
+<Drawer
+	bind:open={drawerOpen}
+	strings={{ openSidebar: m.ui_open_sidebar(), closeSidebar: m.ui_close_sidebar() }}
+>
 	{#snippet children({ drawerId })}
 		<div class="flex min-h-screen flex-col">
 			<Header
