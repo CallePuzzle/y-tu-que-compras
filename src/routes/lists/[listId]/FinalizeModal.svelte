@@ -83,7 +83,9 @@
 	<div class="mt-2 flex flex-col gap-1">
 		{#each comprados as item (item.id)}
 			<div class="flex items-center justify-between gap-3 text-sm">
-				<span class="min-w-0 truncate font-medium">{item.name}</span>
+				<!-- Sin `truncate` (issue #152): el nombre salta a varias líneas,
+			     igual que en la fila de la lista. -->
+				<span class="min-w-0 font-medium break-words">{item.name}</span>
 				<span class="badge badge-ghost shrink-0 tabular-nums">
 					{formatQuantity(item.quantity, getLocale())}
 					{UNIT_LABEL[item.unit]}

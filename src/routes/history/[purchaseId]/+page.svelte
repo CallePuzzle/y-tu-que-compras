@@ -42,7 +42,8 @@
 	<ul class="mt-2 flex list-none flex-col gap-2">
 		{#each data.purchase.items as item (item.id)}
 			<li class="bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4">
-				<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
+				<!-- Sin `truncate` (issue #152): el nombre largo salta a varias líneas. -->
+				<p class="min-w-0 flex-1 font-medium break-words">{item.name}</p>
 				<span class="badge badge-ghost tabular-nums"
 					>{formatQuantity(item.quantity, getLocale())} {UNIT_LABEL[item.unit]}</span
 				>
