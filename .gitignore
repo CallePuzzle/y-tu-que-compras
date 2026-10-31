@@ -35,3 +35,4 @@ project.inlang/cache/
 
 # Playwright MCP (snapshots y screenshots)
 .playwright-mcp/
+.orca
