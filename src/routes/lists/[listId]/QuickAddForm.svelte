@@ -26,11 +26,21 @@
 	// pestaña) rehace el formulario con el `form` vacío del load y machaca lo
 	// que haya a medias. Así solo se actualiza con el resultado de SU acción:
 	// lo escrito solo se borra al enviarlo.
+
+	// El color del aviso (#146): `$message` trae indistinto el texto de éxito
+	// y el de error (`message()` del action, con o sin status), así que el
+	// tipo de resultado decide el estilo — verde para confirmar el alta y
+	// rojo solo para errores.
+	let altaOk = $state(false);
+
 	// svelte-ignore state_referenced_locally
 	const addForm = superForm(form, {
 		validators: zod4Client(itemFormSchema()),
 		invalidateAll: 'pessimistic',
-		applyAction: 'never'
+		applyAction: 'never',
+		onResult({ result }) {
+			altaOk = result.type === 'success';
+		}
 	});
 	const { form: formData, enhance, delayed, message, errors } = addForm;
 
@@ -119,7 +129,13 @@
 	</div>
 
 	{#if $message}
-		<div class="alert alert-error text-sm" role="alert">
+		<!-- #146: el éxito del alta va en verde (`alert-success`) y los
+		     errores (lista borrada, fallo de servidor) en rojo, con los
+		     roles aria que les toca como en el resto de la app. -->
+		<div
+			class={`alert text-sm ${altaOk ? 'alert-success' : 'alert-error'}`}
+			role={altaOk ? 'status' : 'alert'}
+		>
 			{$message}
 		</div>
 	{/if}
