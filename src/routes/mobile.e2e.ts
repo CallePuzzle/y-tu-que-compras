@@ -91,6 +91,76 @@ test('el cajón lateral abre con la hamburguesa y cierra tocando fuera', async (
 	await page.locator('.drawer-overlay').click({ position: { x: 380, y: 400 } });
 	await expect(page.locator('input.drawer-toggle')).not.toBeChecked();
 	await expect(panel).toBeHidden();
+
+	// Issue #145 (svelte-ui 1.2.0): el cajón no sobrevive a la navegación. El
+	// layout no se remonta al navegar y el checkbox llegaba MARCADO a la página
+	// destino: el panel salía abierto tras cualquier enlace del propio cajón.
+	// La navegación cierra y el estado del checkbox lo confirma.
+	await toggle.click();
+	await expect(page.locator('input.drawer-toggle')).toBeChecked();
+	await panel.getByRole('link', { name: 'Home' }).click();
+	await expect(page).toHaveURL(/\/$/);
+	await expect(page.locator('input.drawer-toggle')).not.toBeChecked();
+	await expect(panel).toBeHidden();
+});
+
+test('el tour esconde el cajón lateral mientras su diálogo está en pantalla (#144)', async ({
+	page
+}) => {
+	const user = await createUser();
+	await createFamily({ owner: user });
+	await seedSession(page, user);
+
+	// `seedSession` siembra el tour como visto para no bloquear al resto de
+	// specs; aquí ES el test de su arranque, así que lo re-armamos quitando la
+	// clave (mismo truco que page.svelte.e2e.ts).
+	await page.addInitScript(() => localStorage.removeItem('onboarding-tour-v1'));
+
+	// Carrera determinista: se RETIENE la entrega del chunk del cliente del
+	// tour (el import dinámico de `@sjmc11/tourguidejs`; vite dev lo sirve con
+	// su nombre en la URL de `.vite/deps`) hasta que el cajón está ABIERTO en
+	// la portada. Así el diálogo llega con el panel ya delante —el caso que el
+	// `bind:open` del layout debe resolver (#144)— sin depender de qué gana
+	// la carrera hidratación vs. import dinámico. La respuesta se descarga YA
+	// (fetch) y se entrega luego (fulfill): mientras se retiene, el import del
+	// tour queda en pausa sin mantener la red ocupada.
+	let chunkSolicitado = false;
+	// El executor corre síncrono: al salir de `new Promise` el resolver está
+	// asignado (el `!` se lo dice al compilador, que no sigue closures).
+	let liberarChunk!: () => void;
+	const chunkRetenido = new Promise<void>((resolve) => {
+		liberarChunk = resolve;
+	});
+	await page.route('**/*tourguide*', async (route) => {
+		const respuesta = await route.fetch();
+		chunkSolicitado = true;
+		await chunkRetenido;
+		await route.fulfill({ response: respuesta });
+	});
+
+	await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+	// Hidratación confirmada POR la petición retenida: el efecto de la portada
+	// ya pidió el chunk del tour —sin hydration no hay `$effect`— y el chunk
+	// sigue retenido, así que el diálogo no ha podido aparecer.
+	await expect.poll(() => chunkSolicitado, { timeout: 10_000 }).toBe(true);
+
+	// El cajón abre sin prisa: nada lo tapa porque el chunk sigue retenido
+	// (el toggle es el label del checkbox del Drawer; ver el test de la
+	// hamburguesa).
+	const toggle = page.locator('.navbar label[for]');
+	await toggle.click();
+	await expect(page.locator('input.drawer-toggle')).toBeChecked();
+
+	// Liberado el chunk, el diálogo aparece CON el panel abierto: el layout
+	// lo cierra por estado (`bind:open`) en cuanto el tour se ve, y el
+	// checkbox —con su CSS— esconde el panel. Sin el cierre por estado, el
+	// panel se quedaría encima del tour.
+	liberarChunk();
+	const tour = page.locator('.tg-dialog');
+	await expect(tour).toBeVisible();
+	await expect(page.locator('input.drawer-toggle')).not.toBeChecked();
+	await expect(page.locator('.drawer-side')).toBeHidden();
 });
 
 test('los modales caben en la pantalla: crear lista desde el móvil', async ({ page }) => {

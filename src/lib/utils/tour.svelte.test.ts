@@ -20,6 +20,50 @@ vi.mock('$lib/paraglide/runtime.js', async (importOriginal) => ({
 	setLocale
 }));
 
+// La librería del tour se sustituye por un stub mínimo: los tests de abajo
+// sí ARRANCAN el tour (a diferencia del resto del fichero, que sólo toca
+// guardias y constructores) para comprobar el estado compartido del diálogo
+// (`tourUi.dialogVisible`, #144), sin montar el diálogo real. Se guarda cada
+// cliente creado para poder disparar sus callbacks como los haría la librería.
+const clientesFalsos = vi.hoisted(() => {
+	const creados: Array<{
+		activeStep: number;
+		isVisible: boolean;
+		dialog: null;
+		backdrop: null;
+		setOptions: ReturnType<typeof vi.fn>;
+		start: ReturnType<typeof vi.fn>;
+		onBeforeStepChange: ReturnType<typeof vi.fn>;
+		onBeforeExit: ReturnType<typeof vi.fn>;
+		onFinish: ReturnType<typeof vi.fn>;
+	}> = [];
+	function crear() {
+		const cliente = {
+			activeStep: 0,
+			isVisible: false,
+			dialog: null,
+			backdrop: null,
+			setOptions: vi.fn(async () => {}),
+			start: vi.fn(async () => {
+				cliente.isVisible = true;
+			}),
+			onBeforeStepChange: vi.fn(),
+			onBeforeExit: vi.fn(),
+			onFinish: vi.fn()
+		};
+		creados.push(cliente);
+		return cliente;
+	}
+	return { crear, creados };
+});
+vi.mock('@sjmc11/tourguidejs', () => ({
+	TourGuideClient: class {
+		constructor() {
+			return clientesFalsos.crear();
+		}
+	}
+}));
+
 import {
 	buildTourContext,
 	buildTourSteps,
@@ -30,16 +74,28 @@ import {
 	TOUR_STORAGE_KEY,
 	type MinimalListRow
 } from './tour.js';
+import { tourUi } from './tour-ui.svelte.js';
 import { m } from '$lib/paraglide/messages.js';
 
 beforeEach(() => {
 	localStorage.removeItem(TOUR_STORAGE_KEY);
 });
 
-afterEach(() => {
+afterEach(async () => {
 	// Los pasos de despensa buscan anclas en el documento: cada test deja el
 	// body como estaba.
 	document.body.replaceChildren();
+
+	// El cliente activo es estado de MÓDULO en `tour.ts` (sobrevive a los
+	// tests): se cierra vía el `onBeforeExit` que registró el propio módulo,
+	// igual que lo dispararía la librería, y así la guardia
+	// `activeClient?.isVisible` de `continueOnboardingTour` no contamina al
+	// test siguiente. El flag compartido vuelve a su valor de reposo.
+	const ultimo = clientesFalsos.creados.at(-1);
+	const alSalir = ultimo?.onBeforeExit.mock.calls.at(-1)?.[0] as (() => Promise<void>) | undefined;
+	if (alSalir) await alSalir();
+	clientesFalsos.creados.length = 0;
+	tourUi.dialogVisible = false;
 });
 
 /** Usuario mínimo con el shape de `App.Locals['user']` (sólo para guardias). */
@@ -185,5 +241,35 @@ describe('continueOnboardingTour (guardias previas al cliente)', () => {
 
 		expect(getTourState()).toEqual({ activeStep: 5, finished: true });
 		expect(document.querySelectorAll('.tg-dialog, .tg-backdrop')).toHaveLength(0);
+		expect(tourUi.dialogVisible).toBe(false);
+	});
+});
+
+describe('continueOnboardingTour (arranca el tour: estado del diálogo, #144)', () => {
+	it('con el diálogo en pantalla, el estado compartido lo marca visible', async () => {
+		// Estado pendiente en la portada: el tour retoma y monta el diálogo
+		// (aquí, el stub). El layout lee este flag para cerrar el cajón.
+		setTourState({ activeStep: 0, finished: false });
+
+		await continueOnboardingTour('/', usuario);
+
+		expect(clientesFalsos.creados).toHaveLength(1);
+		expect(clientesFalsos.creados[0].start).toHaveBeenCalledTimes(1);
+		expect(tourUi.dialogVisible).toBe(true);
+	});
+
+	it('al salir del tour, el estado deja de marcarlo visible', async () => {
+		setTourState({ activeStep: 0, finished: false });
+		await continueOnboardingTour('/', usuario);
+
+		// El cierre (Escape, botón o programático) dispara `onBeforeExit`: se
+		// invoca como lo haría la librería con el cliente activo.
+		const cliente = clientesFalsos.creados[0];
+		const alSalir = cliente.onBeforeExit.mock.calls[0][0] as () => Promise<void>;
+		await alSalir();
+
+		expect(tourUi.dialogVisible).toBe(false);
+		// `finishTour` fija el último paso: el tour queda visto para siempre.
+		expect(getTourState()).toEqual({ activeStep: 5, finished: true });
 	});
 });

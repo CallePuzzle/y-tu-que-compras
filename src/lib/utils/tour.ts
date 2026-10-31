@@ -3,6 +3,7 @@ import { resolve } from '$app/paths';
 import type { RouteId } from '$app/types';
 import { m } from '$lib/paraglide/messages.js';
 import type { TourGuideClient, TourGuideOptions, TourGuideStep } from '$lib/types/tourguide';
+import { tourUi } from './tour-ui.svelte.js';
 
 async function createTourGuideClient(options: TourGuideOptions): Promise<TourGuideClient> {
 	const module = (await import('@sjmc11/tourguidejs')) as unknown as {
@@ -227,6 +228,9 @@ async function navigateToStep(
 	client.dialog?.remove();
 	client.backdrop?.remove();
 	activeClient = null;
+	// El diálogo de la página actual desaparece: el layout puede volver a
+	// mostrar el cajón si el usuario lo pide (#144).
+	tourUi.dialogVisible = false;
 	navigatingBetweenPages = false;
 
 	switch (route) {
@@ -267,6 +271,7 @@ async function handleBeforeStepChange(
 		finishTour(steps.length);
 		unblockClient(client);
 		await client.exit();
+		tourUi.dialogVisible = false;
 		throw new Error('Tour navigation aborted');
 	}
 
@@ -324,14 +329,19 @@ async function runTour(steps: AppTourStep[], currentPath: string, ctx: TourConte
 		if (navigatingBetweenPages) return;
 		finishTour(steps.length);
 		activeClient = null;
+		tourUi.dialogVisible = false;
 	});
 
 	client.onFinish(() => {
 		finishTour(steps.length);
 		activeClient = null;
+		tourUi.dialogVisible = false;
 	});
 
 	await client.start();
+	// El diálogo ya está en pantalla: el estado compartido avisa al layout,
+	// que cierra el cajón lateral por `bind:open` si estaba abierto (#144).
+	tourUi.dialogVisible = true;
 }
 
 // Cliente del tour actualmente visible. Lo consulta la guardia de
