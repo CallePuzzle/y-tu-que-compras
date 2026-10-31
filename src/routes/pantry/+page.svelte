@@ -286,7 +286,8 @@
 			<li
 				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${cantidad === 0 ? 'opacity-60' : ''}`}
 			>
-				<p class="min-w-0 flex-1 truncate font-medium">{item.name}</p>
+				<!-- Sin `truncate` (issue #152): el nombre largo salta a varias líneas. -->
+				<p class="min-w-0 flex-1 font-medium break-words">{item.name}</p>
 				<form
 					method="POST"
 					action="?/adjust"

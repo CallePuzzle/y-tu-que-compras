@@ -83,7 +83,10 @@
 			}}
 		/>
 	</form>
-	<p class={`min-w-0 flex-1 truncate font-medium ${comprado ? 'line-through' : ''}`}>
+	<!-- Sin `truncate` (issue #152): el nombre largo salta a varias líneas y
+	     la fila crece con él; `break-words` parte también palabras sin
+	     espacios para que no desborde la caja. -->
+	<p class={`min-w-0 flex-1 font-medium break-words ${comprado ? 'line-through' : ''}`}>
 		{item.name}
 	</p>
 	<span class="badge badge-ghost shrink-0 tabular-nums">
