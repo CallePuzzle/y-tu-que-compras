@@ -40,6 +40,11 @@ test('el detalle muestra la lista y su alta rápida; items en orden', async ({ p
 	await expect(leche).toBeVisible();
 	await expect(leche.getByText('1 ud')).toBeVisible();
 
+	// El aviso del alta es de ÉXITO (issue #146): verde y role «status», no
+	// el rojo de error que confundía la confirmación con un fallo.
+	await expect(page.getByRole('status')).toContainText('Item añadido a la lista.');
+	await expect(page.locator('.alert-success')).toContainText('Item añadido a la lista.');
+
 	// El formulario queda vacío para encadenar otra alta (invalidateAll
 	// pesimista): se añade un segundo item sin recargar nada.
 	await expect(page.locator('#add-name')).toHaveValue('');
