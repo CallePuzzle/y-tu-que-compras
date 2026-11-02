@@ -36,10 +36,11 @@ export default defineConfig(
 	},
 	{
 		rules: {
-			// Un solo alias para `src/lib`: el nativo de SvelteKit.
+			// Un solo alias para `src/lib`: los subpath imports nativos de Node
+			// (`package.json` → `imports`), que SvelteKit 3 genera en vez de `$lib`.
 			'no-restricted-imports': [
 				'error',
-				{ patterns: [{ group: ['#lib', '#lib/*'], message: 'Usa `$lib/...`.' }] }
+				{ patterns: [{ group: ['$lib', '$lib/*'], message: 'Usa `#lib/...`.' }] }
 			]
 		}
 	}

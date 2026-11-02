@@ -2,8 +2,8 @@
 	import { resolve } from '$app/paths';
 	import History from '@lucide/svelte/icons/history';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
-	import { m } from '$lib/paraglide/messages.js';
-	import { TOUR_HOME_CTA_ID } from '$lib/utils/tour.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { TOUR_HOME_CTA_ID } from '#lib/utils/tour.js';
 
 	interface Props {
 		/** Usuario con sesión: la portada sólo monta el home con él (#160). */

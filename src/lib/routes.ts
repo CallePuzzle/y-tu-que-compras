@@ -6,7 +6,7 @@ import LogIn from '@lucide/svelte/icons/log-in';
 import Refrigerator from '@lucide/svelte/icons/refrigerator';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 import Users from '@lucide/svelte/icons/users';
-import { m } from '$lib/paraglide/messages.js';
+import { m } from '#lib/paraglide/messages.js';
 
 // Factoría, no `const`: las etiquetas `m.*` se resuelven en render, nunca en
 // scope de módulo. La clave del mapa ES la ruta; `showInMenu` pinta en el menú

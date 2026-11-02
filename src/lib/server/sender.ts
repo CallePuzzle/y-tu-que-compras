@@ -1,10 +1,10 @@
 import nodemailer from 'nodemailer';
 
 import type { Transporter } from 'nodemailer';
-import { dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
+import { dev } from '$app/env';
+import { SMTP_HOST, SMPT_AUTH_USER, SMPT_AUTH_PASS, SMPT_SENDER } from '$app/env/private';
 
-import logger from '$lib/server/logger';
+import logger from '#lib/server/logger.js';
 
 export interface EmailContent {
 	to: string;
@@ -30,9 +30,9 @@ export function clearCapturedEmailsForTests(): void {
 let transporter: Transporter | undefined;
 
 function smtpTransporter(): Transporter | undefined {
-	const host = env.SMTP_HOST;
-	const user = env.SMPT_AUTH_USER;
-	const pass = env.SMPT_AUTH_PASS;
+	const host = SMTP_HOST;
+	const user = SMPT_AUTH_USER;
+	const pass = SMPT_AUTH_PASS;
 	if (!host || !user || !pass) {
 		return undefined;
 	}
@@ -55,11 +55,11 @@ export async function sendEmail(content: EmailContent): Promise<void> {
 		return;
 	}
 
-	// `$env/dynamic/private` y no `$env/static/private`: durante `vite build`
+	// `$app/env/private` y no `$env/static/private`: durante `vite build`
 	// las variables no existen y el import estatico romperia la compilacion
 	// (misma razon que en prisma.ts y auth.ts).
 	const transporter = smtpTransporter();
-	const from = env.SMPT_SENDER;
+	const from = SMPT_SENDER;
 	if (!transporter || !from) {
 		throw new Error('Falta la configuracion de envio de email. Ver .env.example.');
 	}

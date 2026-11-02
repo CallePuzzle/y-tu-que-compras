@@ -1,8 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-import { formatDateTime } from '$lib/format.js';
-import { m } from '$lib/paraglide/messages.js';
-import { getLocale } from '$lib/paraglide/runtime.js';
+import { formatDateTime } from '#lib/format.js';
+import { m } from '#lib/paraglide/messages.js';
+import { getLocale } from '#lib/paraglide/runtime.js';
 import {
 	FamilyGoneError,
 	FamilyInvitationGoneError,
@@ -14,8 +14,8 @@ import {
 	leaveFamily,
 	promoteFamilyMember,
 	removeFamilyMember
-} from '$lib/server/families.js';
-import logger from '$lib/server/logger';
+} from '#lib/server/families.js';
+import logger from '#lib/server/logger.js';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {

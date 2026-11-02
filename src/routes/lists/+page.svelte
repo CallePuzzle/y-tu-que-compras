@@ -8,12 +8,12 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { m } from '$lib/paraglide/messages.js';
-	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
-	import { textoError } from '$lib/forms.js';
-	import { onRadioGroupKeydown } from '$lib/radio-group.js';
-	import { buildTourContext, continueOnboardingTour } from '$lib/utils/tour';
-	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import { m } from '#lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
+	import { textoError } from '#lib/forms.js';
+	import { onRadioGroupKeydown } from '#lib/radio-group.js';
+	import { buildTourContext, continueOnboardingTour } from '#lib/utils/tour.js';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
 	import {
 		COLOR_CHIP,
 		ICONS,
@@ -21,8 +21,8 @@
 		iconLabels,
 		type ListColor,
 		type ListIcon
-	} from '$lib/list-visuals.js';
-	import { LIST_COLORS, listSchema, type ListData } from '$lib/schemas/list.js';
+	} from '#lib/list-visuals.js';
+	import { LIST_COLORS, listSchema, type ListData } from '#lib/schemas/list.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';

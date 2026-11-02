@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 
-// `families.ts` importa `auth` ($lib/server/auth.js), que instancia better-auth
+// `families.ts` importa `auth` (#lib/server/auth.js), que instancia better-auth
 // (y con él el PrismaClient) al importar el módulo. Este spec no prueba el
 // plugin, así que `auth` se sustituye por un stub: sin BD ni better-auth
 // (en CI no hay `.env` y el init del adaptador Prisma reventaría).
-vi.mock('$lib/server/auth.js', () => ({ auth: {} }));
+vi.mock('#lib/server/auth.js', () => ({ auth: {} }));
 
 // `listFamilyOptions` consulta Prisma directamente: el cliente se sustituye
 // por mocks con la forma que se consulta (`member.findMany`,
@@ -14,7 +14,7 @@ const prisma = vi.hoisted(() => ({
 	member: { findMany: vi.fn() },
 	organization: { findMany: vi.fn() }
 }));
-vi.mock('$lib/server/prisma.js', () => ({ default: prisma }));
+vi.mock('#lib/server/prisma.js', () => ({ default: prisma }));
 
 import { familySlug, listFamilyOptions } from './families.js';
 

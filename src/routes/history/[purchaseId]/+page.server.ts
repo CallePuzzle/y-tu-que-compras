@@ -1,8 +1,8 @@
 import { redirect } from '@sveltejs/kit';
-import { formatDateTime, formatPrice } from '$lib/format.js';
-import { getLocale } from '$lib/paraglide/runtime.js';
-import { requireActiveFamily } from '$lib/server/family-context.js';
-import { getPurchase } from '$lib/server/purchases.js';
+import { formatDateTime, formatPrice } from '#lib/format.js';
+import { getLocale } from '#lib/paraglide/runtime.js';
+import { requireActiveFamily } from '#lib/server/family-context.js';
+import { getPurchase } from '#lib/server/purchases.js';
 import type { PageServerLoad } from './$types';
 
 // El detalle de una compra del historial (issues #47 y #76): el snapshot tal

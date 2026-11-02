@@ -1,5 +1,5 @@
-import prisma from '$lib/server/prisma.js';
-import type { ListData } from '$lib/schemas/list.js';
+import prisma from '#lib/server/prisma.js';
+import type { ListData } from '#lib/schemas/list.js';
 
 // CRUD de listas de la compra (issues #65 y #66). La familia viaja SIEMPRE en
 // los argumentos: es la activa que `requireActiveFamily` dejó verificada en el

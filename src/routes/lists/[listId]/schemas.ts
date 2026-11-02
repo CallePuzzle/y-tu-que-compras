@@ -1,6 +1,6 @@
-import { m } from '$lib/paraglide/messages.js';
-import { itemSchema } from '$lib/schemas/item.js';
-import { purchaseSchema } from '$lib/schemas/purchase.js';
+import { m } from '#lib/paraglide/messages.js';
+import { itemSchema } from '#lib/schemas/item.js';
+import { purchaseSchema } from '#lib/schemas/purchase.js';
 
 // Los schemas de la vista de lista, compartidos por el servidor (validación de
 // las acciones) y los componentes (validación en cliente). Funciones y no

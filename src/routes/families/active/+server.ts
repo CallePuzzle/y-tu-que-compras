@@ -1,7 +1,7 @@
 import { error, type RequestHandler } from '@sveltejs/kit';
 
-import { m } from '$lib/paraglide/messages.js';
-import { switchActiveFamily } from '$lib/server/family-context.js';
+import { m } from '#lib/paraglide/messages.js';
+import { switchActiveFamily } from '#lib/server/family-context.js';
 
 /**
  * Cambio de familia activa del selector (issue #64). El POST llega del

@@ -1,6 +1,6 @@
-import prisma from '$lib/server/prisma.js';
-import { Prisma } from '$lib/generated/prisma/client';
-import type { Unit } from '$lib/schemas/item.js';
+import prisma from '#lib/server/prisma.js';
+import { Prisma } from '#lib/generated/prisma/client.js';
+import type { Unit } from '#lib/schemas/item.js';
 
 // Finalizar compra (issues #43 y #70) e historial (#75, #76): cerrar una lista
 // de la familia moviendo sus items comprados a la despensa, y consultar lo

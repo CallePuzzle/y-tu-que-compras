@@ -1,8 +1,8 @@
-import { UNIT_STEP } from '$lib/pantry-steps.js';
-import prisma from '$lib/server/prisma.js';
-import { normalizeItemName } from '$lib/server/purchases.js';
-import type { ReaddData } from '$lib/schemas/pantry.js';
-import type { Unit } from '$lib/schemas/item.js';
+import { UNIT_STEP } from '#lib/pantry-steps.js';
+import prisma from '#lib/server/prisma.js';
+import { normalizeItemName } from '#lib/server/purchases.js';
+import type { ReaddData } from '#lib/schemas/pantry.js';
+import type { Unit } from '#lib/schemas/item.js';
 
 // Consulta y ciclo de vida de la despensa de la familia (issues #44, #72,
 // #73 y #74). Como en `lists.ts`/`items.ts`, la familia viaja SIEMPRE en los

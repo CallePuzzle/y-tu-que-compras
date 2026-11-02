@@ -1,18 +1,18 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
-import { m } from '$lib/paraglide/messages.js';
-import { requireActiveFamily } from '$lib/server/family-context.js';
+import { m } from '#lib/paraglide/messages.js';
+import { requireActiveFamily } from '#lib/server/family-context.js';
 import {
 	createItem,
 	deleteItem,
 	listItems,
 	setItemPurchased,
 	updateItem
-} from '$lib/server/items.js';
-import { getList } from '$lib/server/lists.js';
-import { finalizePurchase } from '$lib/server/purchases.js';
-import logger from '$lib/server/logger';
+} from '#lib/server/items.js';
+import { getList } from '#lib/server/lists.js';
+import { finalizePurchase } from '#lib/server/purchases.js';
+import logger from '#lib/server/logger.js';
 import { itemFormSchema, purchaseFormSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
 

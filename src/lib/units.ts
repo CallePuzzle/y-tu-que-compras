@@ -1,5 +1,5 @@
-import { m } from '$lib/paraglide/messages.js';
-import type { Unit } from '$lib/schemas/item.js';
+import { m } from '#lib/paraglide/messages.js';
+import type { Unit } from '#lib/schemas/item.js';
 
 /**
  * Etiquetas de las unidades: los valores del enum NUNCA se muestran tal cual

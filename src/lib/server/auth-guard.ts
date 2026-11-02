@@ -1,5 +1,6 @@
-import { building } from '$app/environment';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit/hooks';
+import { building } from '$app/env';
 
 /**
  * Guard de sesión en el `Handle` de SvelteKit: cualquier petición sin sesión se

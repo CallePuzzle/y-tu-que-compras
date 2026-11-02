@@ -1,8 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
-import { m } from '$lib/paraglide/messages.js';
-import { createFamilySchema, inviteFamilySchema } from '$lib/schemas/family.js';
+import { m } from '#lib/paraglide/messages.js';
+import { createFamilySchema, inviteFamilySchema } from '#lib/schemas/family.js';
 import {
 	FAMILIES_MAX,
 	FAMILY_MEMBERS_MAX,
@@ -14,9 +14,9 @@ import {
 	familySlug,
 	inviteFamily,
 	listFamilies
-} from '$lib/server/families.js';
-import { FAMILY_INVITATION_EXPIRY_HOURS } from '$lib/server/tenancy.js';
-import logger from '$lib/server/logger';
+} from '#lib/server/families.js';
+import { FAMILY_INVITATION_EXPIRY_HOURS } from '#lib/server/tenancy.js';
+import logger from '#lib/server/logger.js';
 import type { Actions, PageServerLoad } from './$types';
 
 // Los schemas se construyen EN REQUEST, nunca en scope de módulo (regla i18n de

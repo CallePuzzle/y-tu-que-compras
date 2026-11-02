@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 // Test de INTEGRACIÓN (proyecto vitest `integration`): `listPantryItems`
-// (`$lib/server/pantry.ts`) contra un Postgres real con las migraciones
+// (`#lib/server/pantry.ts`) contra un Postgres real con las migraciones
 // aplicadas. Como en `lists.int.spec.ts`, las familias de prueba se crean
 // directamente con Prisma (las filas de despensa solo cuelgan de la
 // organización por FK, el plugin de tenancy no entra en el camino) y lo que se

@@ -173,9 +173,9 @@ reales. Detalle: en `Welcome.svelte` las props tienen default pero el tipo las m
 
 ### Q4 Alias de importación mezclados
 
-Conviven `$lib/...` (`+layout.svelte`, `prisma.ts`) y `#lib/...` (resto). Además `package.json`
+Conviven `#lib/...` (`+layout.svelte`, `prisma.ts`) y `#lib/...` (resto). Además `package.json`
 mapea `"#lib": "./src/lib/index.js"` cuando el fichero es `index.ts`. Elegir uno (recomendado
-`$lib`, el nativo de SvelteKit) y, si se mantiene `#lib`, añadir una regla de ESLint
+`#lib`, el nativo de SvelteKit) y, si se mantiene `#lib`, añadir una regla de ESLint
 (`no-restricted-imports`) para no mezclarlos.
 
 ### Q5 Proxy perezoso de Prisma

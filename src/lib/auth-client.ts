@@ -1,7 +1,7 @@
 import { createCallepuzzleAuthClient } from '@callepuzzle/auth/client';
 import { emailOTPClient } from 'better-auth/client/plugins';
 import { tenancyClient } from '@zytera/better-auth-tenancy/client';
-import { getLocale } from '$lib/paraglide/runtime.js';
+import { getLocale } from '#lib/paraglide/runtime.js';
 
 // `locale` como getter: `tenancyClient` lo evalúa en cada petición para poner
 // la cabecera `Accept-Language` en las rutas `/tenancy/*`, así que el plugin

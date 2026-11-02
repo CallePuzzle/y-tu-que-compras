@@ -1,13 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-// El cambio termina en `invalidateAll` ($app/navigation): fuera del runtime de
-// SvelteKit no hace nada, así que se simula. Se conservan el resto de exports
-// del módulo real (`afterNavigate`, …): el barrel de `@callepuzzle/svelte-ui`
-// arrastra importadores que los necesitan.
-const invalidateAll = vi.hoisted(() => vi.fn());
-vi.mock('$app/navigation', async (importOriginal) => ({
-	...(await importOriginal<Record<string, unknown>>()),
-	invalidateAll
+// El cambio termina en `refreshAll` ($app/navigation): fuera del runtime de
+// SvelteKit no hace nada, así que se simula. Factory autosuficiente y sin
+// `importOriginal`: el mocker de vitest no llega a resolver el original de
+// kit 3 (`$app/navigation` es un `export * from '#app/navigation'`, y el
+// grafo mockeado lo deja vacío). El superset de exports cubre a TODOS los
+// importadores del grafo: superforms pide `invalidateAll`/`beforeNavigate`/
+// `goto` y el barrel de `@callepuzzle/svelte-ui` arrastra `Drawer`
+// (`afterNavigate`) y `ButtonSignOut` (`goto`).
+const refreshAll = vi.hoisted(() => vi.fn());
+vi.mock('$app/navigation', () => ({
+	afterNavigate: vi.fn(),
+	beforeNavigate: vi.fn(),
+	disableScrollHandling: vi.fn(),
+	goto: vi.fn(),
+	invalidate: vi.fn(),
+	invalidateAll: vi.fn(),
+	onNavigate: vi.fn(),
+	preloadCode: vi.fn(),
+	preloadData: vi.fn(),
+	pushState: vi.fn(),
+	refreshAll,
+	replaceState: vi.fn(),
+	snapshot: vi.fn()
 }));
 
 import { render } from 'vitest-browser-svelte';
@@ -22,7 +37,7 @@ const families = [
 const activa = { id: 'f1', name: 'Familia García' };
 
 beforeEach(() => {
-	invalidateAll.mockClear();
+	refreshAll.mockClear();
 });
 
 afterEach(() => {
@@ -74,7 +89,7 @@ describe('FamilySwitcher', () => {
 		await getByRole('button', { name: 'Cambiar de familia' }).click();
 		await getByRole('menuitemradio', { name: 'Los Pérez' }).click();
 
-		await expect.poll(() => invalidateAll.mock.calls.length).toBe(1);
+		await expect.poll(() => refreshAll.mock.calls.length).toBe(1);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		// Elegir cierra el menú (#116).
 		await expect.poll(() => getByRole('menu').elements().length).toBe(0);
@@ -100,9 +115,9 @@ describe('FamilySwitcher', () => {
 		await getByRole('menuitemradio', { name: 'Los Pérez' }).click();
 
 		// El aviso de error sólo se pinta cuando el fetch ya resolvió: si está,
-		// el flujo terminó y `invalidateAll` no puede llegar tarde.
+		// el flujo terminó y `refreshAll` no puede llegar tarde.
 		await expect.poll(() => getByText('No se pudo cambiar de familia').elements().length).toBe(1);
-		expect((invalidateAll as Mock).mock.calls.length).toBe(0);
+		expect((refreshAll as Mock).mock.calls.length).toBe(0);
 		// Con error el menú sigue abierto: el aviso vive dentro.
 		expect(getByRole('menu').elements()).toHaveLength(1);
 	});

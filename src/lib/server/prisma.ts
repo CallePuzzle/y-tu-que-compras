@@ -1,12 +1,12 @@
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '$lib/generated/prisma/client';
-import { building, dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
+import { PrismaClient } from '#lib/generated/prisma/client.js';
+import { building, dev } from '$app/env';
+import { DATABASE_URL } from '$app/env/private';
 
 function createPrismaClient(): PrismaClient {
-	// `$env/dynamic/private` y no `process.env`: en desarrollo es SvelteKit/Vite
+	// `$app/env/private` y no `process.env`: en desarrollo es SvelteKit/Vite
 	// quien carga el `.env`, y en producción se lee el entorno real.
-	const url = env.DATABASE_URL;
+	const url = DATABASE_URL;
 	if (!url) {
 		// El paso `analyse` del build de SvelteKit importa y evalúa los nodos de
 		// servidor (`+page.server.ts`), y por las importaciones llega hasta el

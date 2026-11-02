@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Modal } from '@callepuzzle/svelte-ui';
-	import { textoError } from '$lib/forms.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { UNITS, type ItemData } from '$lib/schemas/item.js';
-	import { unitLabels } from '$lib/units.js';
+	import { textoError } from '#lib/forms.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { UNITS, type ItemData } from '#lib/schemas/item.js';
+	import { unitLabels } from '#lib/units.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { itemFormSchema } from './schemas.js';

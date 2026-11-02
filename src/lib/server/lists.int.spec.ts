@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 // Test de INTEGRACIÓN (proyecto vitest `integration`): las funciones de
-// `$lib/server/lists.ts` contra un Postgres real con las migraciones
+// `#lib/server/lists.ts` contra un Postgres real con las migraciones
 // aplicadas. A diferencia de `families.int.spec.ts` no hacen falta sesiones ni
 // el router de better-auth: las listas solo cuelgan de la organización por FK,
 // así que las familias de prueba se crean directamente con Prisma (el plugin
 // de tenancy no entra en el camino) y lo que se ejercita es el CRUD con el
 // filtro de familia activa — el criterio de la issue #66: cada familia ve solo
 // lo suyo, y los ids ajenos no se pueden tocar ni por error.
-import type { ListData } from '$lib/schemas/list.js';
+import type { ListData } from '#lib/schemas/list.js';
 import prisma from './prisma.js';
 import { createList, deleteList, listLists, updateList } from './lists.js';
 

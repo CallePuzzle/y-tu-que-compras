@@ -37,8 +37,8 @@ import Ticket from '@lucide/svelte/icons/ticket';
 import WashingMachine from '@lucide/svelte/icons/washing-machine';
 import Wine from '@lucide/svelte/icons/wine';
 import Wrench from '@lucide/svelte/icons/wrench';
-import { m } from '$lib/paraglide/messages.js';
-import type { LIST_COLORS, LIST_ICONS } from '$lib/schemas/list.js';
+import { m } from '#lib/paraglide/messages.js';
+import type { LIST_COLORS, LIST_ICONS } from '#lib/schemas/list.js';
 
 /** Un color de la paleta daisyUI (catálogo `LIST_COLORS`). */
 export type ListColor = (typeof LIST_COLORS)[number];

@@ -15,7 +15,7 @@ export type CreateFamilySchemaStrings = {
  *
  * Los límites replican los del endpoint del plugin de tenancy (`name`: 1–100);
  * el `slug` que también exige el plugin no se pide al usuario: lo deriva el
- * servidor (`familySlug` en `$lib/server/families`).
+ * servidor (`familySlug` en `#lib/server/families.js`).
  *
  * `nameLabel` y `namePlaceholder` viajan en `.meta()`: `zodToFieldsJsonSchema`
  * los vuelca al `Field` y `FormFields` los pinta (la description actúa de

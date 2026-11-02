@@ -16,8 +16,18 @@ const state = vi.hoisted(() => ({
 
 const env: Record<string, string | undefined> = {};
 
-vi.mock('$env/dynamic/private', () => ({ env }));
-vi.mock('$app/environment', () => ({ dev: false }));
+// `logger.ts` lee las variables explícitas (`$app/env/private`): el mock da el
+// mismo contrato, con getter para que cada test las cambie sin resetear el
+// módulo mockeado.
+vi.mock('$app/env/private', () => ({
+	get LOG_LEVEL() {
+		return env.LOG_LEVEL;
+	},
+	get VERCEL_ENV() {
+		return env.VERCEL_ENV;
+	}
+}));
+vi.mock('$app/env', () => ({ dev: false }));
 
 // Pino real escribiendo a un stream en memoria en lugar de stdout (y sin
 // `transport`, para no arrancar worker threads en los tests): así se puede

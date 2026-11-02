@@ -1,7 +1,7 @@
-import { dev } from '$app/environment';
-import { redirect, type Handle, type RequestEvent } from '@sveltejs/kit';
-
-import prisma from '$lib/server/prisma.js';
+import { redirect, type RequestEvent } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit/hooks';
+import { dev } from '$app/env';
+import prisma from '#lib/server/prisma.js';
 
 // Contexto de familia activa (issue #63): resolver la familia del usuario en
 // cada request. El plugin de tenancy no guarda organización activa en la

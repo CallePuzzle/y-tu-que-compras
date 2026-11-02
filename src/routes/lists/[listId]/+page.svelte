@@ -1,16 +1,16 @@
 <script lang="ts">
+	import type { SubmitFunction } from '$app/forms';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
-	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '$lib/list-visuals.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
-	import { continueOnboardingTour } from '$lib/utils/tour';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import { COLOR_CHIP, ICONS, type ListColor, type ListIcon } from '#lib/list-visuals.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
+	import { continueOnboardingTour } from '#lib/utils/tour.js';
 	import { SvelteMap } from 'svelte/reactivity';
-	import type { SubmitFunction } from '@sveltejs/kit';
 	import EditItemModal from './EditItemModal.svelte';
 	import FinalizeModal from './FinalizeModal.svelte';
 	import ItemRow from './ItemRow.svelte';
@@ -129,10 +129,9 @@
 </svelte:head>
 
 <section class="mx-auto max-w-md">
-	<a href={resolve('/lists')} class="btn btn-ghost btn-sm -ml-2">
-		<ArrowLeft aria-hidden="true" />
-		{m.ui_back()}
-	</a>
+	<a href={resolve('/lists')} class="btn btn-ghost btn-sm -ml-2"
+		><ArrowLeft aria-hidden="true" /> {m.ui_back()}</a
+	>
 
 	<div class="mt-1 flex items-center gap-3">
 		<span

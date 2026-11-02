@@ -407,6 +407,12 @@ jobs:
           # access" de su configuración.
           secrets: |
             npm_token=${{ secrets.GITHUB_TOKEN }}
+          # Origen público horneado en `paths.origin` (kit 3): protección CSRF
+          # de form actions tras Cloudflare → LB → Traefik. DEBE coincidir con
+          # `serverAlias` en deploy/lib/app.libsonnet (y BETTER_AUTH_URL): si
+          # cambia el dominio, cambiarlo en los tres sitios.
+          build-args: |
+            ORIGIN=https://ytqc.callepuzzle.com
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

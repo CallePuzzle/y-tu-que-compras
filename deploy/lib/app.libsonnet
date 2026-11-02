@@ -89,11 +89,15 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
       HOST: '0.0.0.0',
       PORT: '8080',
       // URL pública fija: detrás del proxy (Cloudflare → Traefik) el pod ve
-      // http y otro Host. Con ORIGIN, SvelteKit construye las URLs y valida el
-      // CSRF de los form actions contra el origen público sin depender de
-      // cabeceras reenviadas. better-auth, por su lado, confía en el origen de
-      // BETTER_AUTH_URL (mismo valor), así que no hace falta trustedOrigins ni
-      // PROTOCOL_HEADER/HOST_HEADER.
+      // http y otro Host. Desde kit 3 SvelteKit NO lee esta variable en
+      // runtime (el origen que valida el CSRF de form actions va horneado en
+      // `paths.origin` en build: el ARG ORIGIN del Dockerfile, que el job
+      // release de CI fija al MISMO valor que `serverAlias` — cambiar el
+      // dominio significa tocarlo en ambos sitios). Sigue aquí como declaración
+      // del origen público que lee `invitations.ts` como fallback de
+      // BETTER_AUTH_URL para los enlaces de los correos; better-auth, por su
+      // lado, confía en el origen de BETTER_AUTH_URL (mismo valor), así que no
+      // hace falta trustedOrigins ni PROTOCOL_HEADER/HOST_HEADER.
       ORIGIN: 'https://' + $.values.serverAlias,
       BETTER_AUTH_URL: 'https://' + $.values.serverAlias,
     },

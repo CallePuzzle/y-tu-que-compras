@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 // LanguageSwitcher): los mensajes del componente salen en español y las
 // aserciones no dependen del idioma del runner.
 const getLocale = vi.hoisted(() => vi.fn(() => 'es'));
-vi.mock('$lib/paraglide/runtime.js', async (importOriginal) => ({
+vi.mock('#lib/paraglide/runtime.js', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	getLocale
 }));

@@ -1,4 +1,4 @@
-import type { Unit } from '$lib/schemas/item.js';
+import type { Unit } from '#lib/schemas/item.js';
 
 /**
  * El paso de consumo por unidad (issue #73): cuánto cambia la cantidad de un
