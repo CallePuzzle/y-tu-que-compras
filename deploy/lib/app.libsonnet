@@ -257,14 +257,19 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
       instances: 1,
       // DR 2026-11-02: la instancia OCI se recreó por accidente (el cluster y
       // sus PVs vivían en disco local) y volvió a nacer vacío con initdb. Se
-      // restaura por PITR desde barman al último punto razonable antes del
-      // desastre (~19:45 UTC, la instancia murió hacia las 19:55): CNPG elige
-      // el base backup más reciente anterior a targetTime (20261102T033000) y
-      // repone el WAL archivado hasta esa hora (archive_timeout 5min). Sin
-      // recoveryTarget restauraría «el último backup», que tras la recreación
-      // es el backup vacío que el ScheduledBackup(immediate) tomó del cluster
-      // recién inicializado. El bootstrap solo aplica en la creación: una vez
-      // el cluster existe, este bloque se ignora y no re-restaura nada.
+      // restauró desde barman fijando el base backup explícitamente (backupID)
+      // y reponiendo TODO el WAL disponible del archivo histórico hasta su
+      // final (sin targetTime): el PITR a una hora objetivo resultó imposible
+      // porque el WAL archiving del cluster antiguo se quedó parado alrededor
+      // de las 18:52 UTC (última transacción archivada), más de una hora antes
+      // de que la instancia muriera (19:55) — con targetTime posterior,
+      // PostgreSQL aborta la recuperación con «recovery ended before
+      // configured recovery target was reached». Datos perdidos: 18:52→19:55.
+      // Sin recoveryTarget a secas se restauraría «el último backup», que tras
+      // la recreación es el backup vacío del cluster recién inicializado; por
+      // eso el backupID ancla el 20261102T033000 (el último pre-desastre).
+      // El bootstrap solo aplica en la creación: una vez el cluster existe,
+      // este bloque se ignora y no re-restaura nada.
       bootstrap: {
         recovery: {
           source: $.values.dbClusterName,
@@ -272,7 +277,7 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
           owner: 'ytqc',
           secret: { name: $.values.dbClusterName + '-credentials' },
           recoveryTarget: {
-            targetTime: '2026-11-02 19:45:00.00000+00',
+            backupID: '20261102T033000',
           },
         },
       },
@@ -322,6 +327,14 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
         retentionPolicy: '30d',
         barmanObjectStore: {
           destinationPath: 's3://jilguedev-db-backups/' + $.values.dbBackupPath,
+          // Identidad barman propia del cluster restaurado (DR 2026-11-02):
+          // el archivado WAL de un cluster recién bootstrapado exige destino
+          // vacío (barman-cloud-check-wal-archive falla con «Expected empty
+          // archive» si reutiliza la carpeta ytqc-db, que contiene el archivo
+          // histórico del cluster anterior). Así el histórico pre-desastre
+          // queda intacto como fuente de futuras restauraciones y el WAL
+          // nuevo va a s3://.../ytqc-db/ytqc-db-restored/wals.
+          serverName: $.values.dbClusterName + '-restored',
           endpointURL: 'https://axcnsuaoa3od.compat.objectstorage.eu-madrid-1.oci.customer-oci.com',
           s3Credentials: {
             accessKeyId: { name: $.values.dbClusterName + '-backup-credentials', key: 'ACCESS_KEY_ID' },
