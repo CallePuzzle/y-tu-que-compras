@@ -49,14 +49,13 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 	await expect(dock).toBeVisible();
 	await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeHidden();
 
-	// Las cinco rutas con sesión: se llega por el dock, la cabecera pinta la
-	// vista y nada desborda el ancho del teléfono. La del home es el saludo
-	// (#161), en inglés por la locale del dispositivo.
+	// Con sesión el dock se queda con cuatro rutas (#162): se llega por él, la
+	// cabecera pinta la vista y nada desborda el ancho del teléfono. La del
+	// home es el saludo (#161), en inglés por la locale del dispositivo.
 	const rutas = [
 		{ enlace: 'Home', cabecera: 'Hi, Navegante' },
 		{ enlace: 'Lists', cabecera: 'Your lists' },
 		{ enlace: 'Pantry', cabecera: 'Your pantry' },
-		{ enlace: 'History', cabecera: 'Purchase history' },
 		{ enlace: 'Families', cabecera: 'Your families' }
 	];
 	for (const ruta of rutas) {
@@ -64,6 +63,17 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 		await expect(page.getByRole('heading', { name: ruta.cabecera })).toBeVisible();
 		await expectSinDesborde(page);
 	}
+
+	// El historial sale del dock (#162): ningún enlace en la barra inferior;
+	// se alcanza por el cajón lateral, que lo sigue mostrando (igual que el
+	// menú de escritorio, que no filtra por `showInMobile`).
+	await expect(dock.getByRole('link', { name: 'History' })).toHaveCount(0);
+	await page.locator('.navbar label[for]').click();
+	const cajon = page.locator('.drawer-side');
+	await expect(cajon).toBeVisible();
+	await cajon.getByRole('link', { name: 'History' }).click();
+	await expect(page.getByRole('heading', { name: 'Purchase history' })).toBeVisible();
+	await expectSinDesborde(page);
 });
 
 test('el cajón lateral abre con la hamburguesa y cierra tocando fuera', async ({ page }) => {

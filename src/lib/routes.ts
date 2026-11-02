@@ -52,12 +52,16 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 			showInMobile: true
 		};
 		// El historial de compras de la familia activa (#76): el archivo de lo
-		// ya comprado, con el detalle de cada ticket.
+		// ya comprado, con el detalle de cada ticket. Fuera del dock móvil
+		// (#162): la barra inferior se queda con la navegación de ida y vuelta
+		// (inicio, listas, despensa y familias) y el historial, que es archivo
+		// de consulta, queda a un toque en el cajón lateral y en el menú de
+		// escritorio (`showInMenu` se mantiene).
 		routes['/history'] = {
 			label: m.routes_history(),
 			icon: History,
 			showInMenu: true,
-			showInMobile: true
+			showInMobile: false
 		};
 		routes['/families'] = {
 			label: m.routes_families(),
