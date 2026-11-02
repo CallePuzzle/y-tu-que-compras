@@ -31,7 +31,9 @@ async function expectSinDesborde(page: Page): Promise<void> {
 }
 
 test('el dock navega las rutas principales y ninguna vista desborda el ancho', async ({ page }) => {
-	const user = await createUser();
+	// Nombre fijo: la cabecera del home es el saludo (#161) y la aserción la
+	// necesita determinista.
+	const user = await createUser({ name: 'Navegante' });
 	const family = await createFamily({ owner: user });
 	const lista = await createList({ familyId: family.id, name: 'Super' });
 	await createItem({ listId: lista.id, name: 'Leche', quantity: 2, unit: 'liter' });
@@ -48,9 +50,10 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 	await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeHidden();
 
 	// Las cinco rutas con sesión: se llega por el dock, la cabecera pinta la
-	// vista y nada desborda el ancho del teléfono.
+	// vista y nada desborda el ancho del teléfono. La del home es el saludo
+	// (#161), en inglés por la locale del dispositivo.
 	const rutas = [
-		{ enlace: 'Home', cabecera: 'What are you buying?' },
+		{ enlace: 'Home', cabecera: 'Hi, Navegante' },
 		{ enlace: 'Lists', cabecera: 'Your lists' },
 		{ enlace: 'Pantry', cabecera: 'Your pantry' },
 		{ enlace: 'History', cabecera: 'Purchase history' },
@@ -193,7 +196,9 @@ test('los modales caben en la pantalla: crear lista desde el móvil', async ({ p
 test('el idioma inicial sale de Accept-Language, el selector lo cambia y persiste', async ({
 	page
 }) => {
-	const user = await createUser();
+	// Nombre fijo: la cabecera del home es el saludo (#161) y las aserciones
+	// necesitan un texto determinista en cada idioma.
+	const user = await createUser({ name: 'Navegante' });
 	await createFamily({ owner: user });
 	await seedSession(page, user);
 
@@ -202,7 +207,7 @@ test('el idioma inicial sale de Accept-Language, el selector lo cambia y persist
 	await page.goto('/');
 	await waitForHydration(page);
 	await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-	await expect(page.getByRole('heading', { name: 'What are you buying?' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Hi, Navegante' })).toBeVisible();
 
 	// Cambio a español: setLocale escribe la cookie de Paraglide y recarga.
 	await page.getByRole('button', { name: 'Change language' }).click();
@@ -210,7 +215,7 @@ test('el idioma inicial sale de Accept-Language, el selector lo cambia y persist
 
 	// Tras la recarga, todo el chrome sale en español — incluido el dock.
 	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-	await expect(page.getByRole('heading', { name: '¿Y tú qué compras?' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Hola, Navegante' })).toBeVisible();
 	const dock = page.getByRole('navigation', { name: 'Navegación inferior' });
 	await expect(dock).toBeVisible();
 	await expectSinDesborde(page);
@@ -218,7 +223,7 @@ test('el idioma inicial sale de Accept-Language, el selector lo cambia y persist
 	// La cookie persiste: otra recarga sigue en español.
 	await page.reload();
 	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-	await expect(page.getByRole('heading', { name: '¿Y tú qué compras?' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Hola, Navegante' })).toBeVisible();
 });
 
 test('el menú de usuario abre con un toque y cierra sesión', async ({ page }) => {
