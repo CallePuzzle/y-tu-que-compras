@@ -26,8 +26,10 @@ export default defineConfig({
 			// falta `ORIGIN` en runtime; ver deploy/lib/app.libsonnet). El job
 			// `release` de CI la pasa como build-arg con el MISMO valor que
 			// `serverAlias` en deploy/pro; sin la variable (Vercel, build local,
-			// dev) kit deriva el origen de la request como siempre.
-			paths: { origin: process.env.ORIGIN },
+			// dev) kit deriva el origen de la request como siempre. El `||`
+			// normaliza la cadena vacía del ARG por defecto del Dockerfile:
+			// kit rechaza `paths.origin: ''` (config_origin_invalid).
+			paths: { origin: process.env.ORIGIN || undefined },
 
 			// Dos adapters, uno por build (SvelteKit solo admite uno y se elige al
 			// compilar): el build del Dockerfile exporta ADAPTER=node y genera
