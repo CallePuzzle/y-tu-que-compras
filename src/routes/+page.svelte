@@ -27,7 +27,7 @@
      página la que decide qué pinta según traiga `user` el load del layout.
      Sin sesión, la landing (#133); con ella, el home. -->
 {#if data.user}
-	<Home />
+	<Home user={data.user} />
 {:else}
 	<Landing />
 {/if}

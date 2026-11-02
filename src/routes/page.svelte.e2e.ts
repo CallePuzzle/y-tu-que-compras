@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { seedSession } from '../../e2e/helpers/auth';
+import { readOtp, seedSession, waitForHydration } from '../../e2e/helpers/auth';
 import { createUser, resetDb } from '../../e2e/helpers/seed';
 
 test('sin sesion, una ruta privada redirige a /login conservando la url', async ({ page }) => {
@@ -27,11 +27,9 @@ test('sin sesion, la portada muestra la landing publica (#133)', async ({ page }
 	await expect(cta).toHaveAttribute('href', '/login');
 });
 
-test('con sesion, la portada es la misma landing y el CTA lleva a las listas (#133)', async ({
-	page
-}) => {
+test('con sesion, la portada es el home con saludo y accesos (#161)', async ({ page }) => {
 	await resetDb();
-	const user = await createUser();
+	const user = await createUser({ name: 'Ana' });
 	await seedSession(page, user);
 
 	// `seedSession` siembra el tour como visto para no bloquear al resto de
@@ -41,14 +39,21 @@ test('con sesion, la portada es la misma landing y el CTA lleva a las listas (#1
 	await page.addInitScript(() => localStorage.removeItem('onboarding-tour-v1'));
 
 	await page.goto('/');
-	await expect(page.getByRole('heading', { level: 1, name: '¿Y tú qué compras?' })).toBeVisible();
 
-	// No se le redirige: la landing cambia sólo el CTA, a las listas.
-	const cta = page.getByRole('main').getByRole('link', { name: 'Ir a las listas' }).first();
-	await expect(cta).toBeVisible();
-	await expect(cta).toHaveAttribute('href', '/lists');
+	// Saludo con el nombre (#161); de la landing pública (#133), nada.
+	await expect(page.getByRole('heading', { level: 1, name: 'Hola, Ana' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Cómo funciona' })).toHaveCount(0);
 
-	// El tour arranca con sesión y su paso 1 ancla el CTA del hero (#142).
+	// Los accesos del home: a las listas (el ancla del tour) y al historial.
+	const listas = page.getByRole('main').getByRole('link', { name: 'Listas' });
+	await expect(listas).toBeVisible();
+	await expect(listas).toHaveAttribute('href', '/lists');
+	await expect(page.getByRole('main').getByRole('link', { name: 'Historial' })).toHaveAttribute(
+		'href',
+		'/history'
+	);
+
+	// El tour arranca con sesión y su paso 1 ancla el acceso a las listas (#142).
 	const tour = page.locator('.tg-dialog');
 	await expect(tour).toBeVisible();
 	await expect(page.locator('#tour-home-cta')).toBeVisible();
@@ -64,6 +69,28 @@ test('con sesion, la portada es la misma landing y el CTA lleva a las listas (#1
 	await expect
 		.poll(() => page.evaluate(() => localStorage.getItem('onboarding-tour-v1')))
 		.toContain('"finished":true');
+});
+
+test('tras el login sin redirectTo se aterriza en el home (#161)', async ({ page }) => {
+	await resetDb();
+	const user = await createUser({ email: 'home-e2e@e2e.test', name: 'Ana' });
+
+	// Login directo en /login, sin `redirectTo`: canjeado el código, la app
+	// manda a la portada (`onLoginSuccess` de /login) y ésta, con sesión,
+	// pinta el home — no la landing (#133). El flujo OTP es el real, leyendo
+	// el código de la tabla `verification` (ver e2e/helpers/auth).
+	await page.goto('/login');
+	await waitForHydration(page);
+	await page.locator('input[name="email"]').fill(user.email);
+	await page.getByRole('button', { name: 'Iniciar sesión' }).click();
+
+	const otpInput = page.locator('input[autocomplete="one-time-code"]');
+	await otpInput.waitFor();
+	await otpInput.pressSequentially(await readOtp(user.email));
+
+	await page.waitForURL((url) => url.pathname === '/');
+	await expect(page.getByRole('heading', { level: 1, name: 'Hola, Ana' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Cómo funciona' })).toHaveCount(0);
 });
 
 test('la CSP no bloquea nada y llegan las cabeceras de seguridad', async ({ page }) => {
