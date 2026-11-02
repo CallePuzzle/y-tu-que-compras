@@ -3,8 +3,8 @@ import type { RequestEvent } from '@sveltejs/kit';
 import type { InvitationStatus } from '@zytera/better-auth-tenancy';
 import { APIError } from 'better-auth/api';
 
-import { auth } from '$lib/server/auth.js';
-import prisma from '$lib/server/prisma.js';
+import { auth } from '#lib/server/auth.js';
+import prisma from '#lib/server/prisma.js';
 import {
 	FAMILY_ADMIN_ROLE,
 	FAMILY_INVITATION_EXPIRY_HOURS,
@@ -17,7 +17,7 @@ import {
 	isFamilyMembersLimitReached,
 	isInvitationNotForAccount,
 	isLastFamilyAdmin
-} from '$lib/server/tenancy.js';
+} from '#lib/server/tenancy.js';
 
 /** Familia con los campos que la UI necesita (el plugin devuelve más). */
 export interface Family {
@@ -123,7 +123,7 @@ export class FamilyInvitationGoneError extends Error {
 
 /**
  * Las familias del usuario, vía el endpoint del plugin: su hook de filtrado
- * (ver `$lib/server/tenancy.ts`) deja sólo aquellas donde el usuario es miembro,
+ * (ver `#lib/server/tenancy.ts`) deja sólo aquellas donde el usuario es miembro,
  * que es justo la «lista de familias» del criterio de aceptación.
  *
  * Las cabeceras de la petición llevan la cookie de sesión (identidad) y el
@@ -190,7 +190,7 @@ export async function listFamilyOptions(event: RequestEvent): Promise<FamilyOpti
 
 /**
  * Crea la familia vía el plugin. Además de la organización, su
- * `onEntityCreated` (en `$lib/server/tenancy.ts`) siembra los roles y da de
+ * `onEntityCreated` (en `#lib/server/tenancy.ts`) siembra los roles y da de
  * alta al creador como admin; si eso falla, el plugin deshace la creación y
  * aquí llega el error: no hay familia a medias.
  *
@@ -222,7 +222,7 @@ export async function createFamily(
 /**
  * Invita por email a la familia (issue #60): crea la invitación vía el plugin
  * con el rol básico (`member`), y su hook `invitation/create` envía el correo
- * con el token (ver `$lib/server/tenancy.ts` y `invitations.ts`).
+ * con el token (ver `#lib/server/tenancy.ts` y `invitations.ts`).
  *
  * Si falla el envío, el propio plugin deshace la invitación y el error sube
  * hasta aquí: no quedan invitaciones registradas sin correo enviado.

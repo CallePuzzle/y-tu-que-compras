@@ -2,19 +2,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // El tour navega con `goto` ($app/navigation): fuera del runtime de SvelteKit
 // no hace nada, así que se simula (los tests de este fichero no arrancan el
-// cliente real; sólo construyen pasos y estado). Se conservan el resto de
-// exports del módulo real.
+// cliente real; sólo construyen pasos y estado). Factory autosuficiente y sin
+// `importOriginal`: el mocker de vitest no llega a resolver el original de
+// kit 3 (`$app/navigation` es un `export * from '#app/navigation'`, y el
+// grafo mockeado lo deja vacío); el superset de exports cubre al resto de
+// importadores del grafo (superforms, componentes de @callepuzzle/svelte-ui).
 const goto = vi.hoisted(() => vi.fn());
-vi.mock('$app/navigation', async (importOriginal) => ({
-	...(await importOriginal<Record<string, unknown>>()),
-	goto
+vi.mock('$app/navigation', () => ({
+	afterNavigate: vi.fn(),
+	beforeNavigate: vi.fn(),
+	disableScrollHandling: vi.fn(),
+	goto,
+	invalidate: vi.fn(),
+	invalidateAll: vi.fn(),
+	onNavigate: vi.fn(),
+	preloadCode: vi.fn(),
+	preloadData: vi.fn(),
+	pushState: vi.fn(),
+	refreshAll: vi.fn(),
+	replaceState: vi.fn(),
+	snapshot: vi.fn()
 }));
 
 // El runtime de Paraglide lee la locale de la petición/cookie: fuera de la app
 // se fija a mano (igual que en LanguageSwitcher.svelte.test.ts).
 const getLocale = vi.hoisted(() => vi.fn(() => 'es'));
 const setLocale = vi.hoisted(() => vi.fn());
-vi.mock('$lib/paraglide/runtime.js', async (importOriginal) => ({
+vi.mock('#lib/paraglide/runtime.js', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	getLocale,
 	setLocale
@@ -75,7 +89,7 @@ import {
 	type MinimalListRow
 } from './tour.js';
 import { tourUi } from './tour-ui.svelte.js';
-import { m } from '$lib/paraglide/messages.js';
+import { m } from '#lib/paraglide/messages.js';
 
 beforeEach(() => {
 	localStorage.removeItem(TOUR_STORAGE_KEY);

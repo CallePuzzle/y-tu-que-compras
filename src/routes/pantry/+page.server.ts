@@ -1,17 +1,17 @@
 import { fail } from '@sveltejs/kit';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { zod4 } from 'sveltekit-superforms/adapters';
-import { m } from '$lib/paraglide/messages.js';
-import { readdSchema } from '$lib/schemas/pantry.js';
-import { requireActiveFamily } from '$lib/server/family-context.js';
-import { listLists } from '$lib/server/lists.js';
+import { m } from '#lib/paraglide/messages.js';
+import { readdSchema } from '#lib/schemas/pantry.js';
+import { requireActiveFamily } from '#lib/server/family-context.js';
+import { listLists } from '#lib/server/lists.js';
 import {
 	adjustPantryItem,
 	listPantryItems,
 	removePantryItem,
 	readdPantryItem
-} from '$lib/server/pantry.js';
-import logger from '$lib/server/logger';
+} from '#lib/server/pantry.js';
+import logger from '#lib/server/logger.js';
 import type { Actions, PageServerLoad } from './$types';
 
 // La despensa de la familia activa (issues #44, #72, #73 y #74): la consulta

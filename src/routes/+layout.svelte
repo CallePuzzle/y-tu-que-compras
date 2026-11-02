@@ -15,15 +15,15 @@
 		NavBarList,
 		UserNotLogged
 	} from '@callepuzzle/svelte-ui';
-	import { invalidateAll } from '$app/navigation';
-	import { getRoutes } from '$lib/routes';
-	import { m } from '$lib/paraglide/messages.js';
-	import { authClient } from '$lib/auth-client.js';
-	import FamilySwitcher from '$lib/components/FamilySwitcher.svelte';
-	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
-	import logo from '$lib/assets/logo.webp';
-	import { startOnboardingTour } from '$lib/utils/tour';
-	import { tourUi } from '$lib/utils/tour-ui.svelte.js';
+	import { refreshAll } from '$app/navigation';
+	import { getRoutes } from '#lib/routes.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { authClient } from '#lib/auth-client.js';
+	import FamilySwitcher from '#lib/components/FamilySwitcher.svelte';
+	import LanguageSwitcher from '#lib/components/LanguageSwitcher.svelte';
+	import logo from '#lib/assets/logo.webp';
+	import { startOnboardingTour } from '#lib/utils/tour.js';
+	import { tourUi } from '#lib/utils/tour-ui.svelte.js';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import type { LayoutProps } from './$types';
 
@@ -54,11 +54,11 @@
 	);
 
 	// Tras `signOut()` la cookie ya no vale, pero SvelteKit NO reejecuta el load
-	// del layout al navegar (no depende de url/params): sin esta invalidación la
+	// del layout al navegar (no depende de url/params): sin este refresco la
 	// cabecera seguiría pintando al usuario. El refetch pasa por el guard y, al
 	// no haber sesión, nos termina mandando a /login.
 	async function onSignOut() {
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	// El estado del cajón va al `Drawer` vía `bind:open` (svelte-ui 1.2.0): el

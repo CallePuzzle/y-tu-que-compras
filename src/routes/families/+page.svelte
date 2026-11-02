@@ -6,9 +6,9 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
 	import Users from '@lucide/svelte/icons/users';
-	import { m } from '$lib/paraglide/messages.js';
-	import { continueOnboardingTour } from '$lib/utils/tour';
-	import { createFamilySchema, inviteFamilySchema } from '$lib/schemas/family.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { continueOnboardingTour } from '#lib/utils/tour.js';
+	import { createFamilySchema, inviteFamilySchema } from '#lib/schemas/family.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
-	import { textoError } from '$lib/forms.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { UNITS } from '$lib/schemas/item.js';
-	import { unitLabels } from '$lib/units.js';
+	import { textoError } from '#lib/forms.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { UNITS } from '#lib/schemas/item.js';
+	import { unitLabels } from '#lib/units.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { itemFormSchema } from './schemas.js';

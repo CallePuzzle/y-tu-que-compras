@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 // Test de INTEGRACIÓN (proyecto vitest `integration`): las funciones de
-// `$lib/server/items.ts` contra un Postgres real con las migraciones
+// `#lib/server/items.ts` contra un Postgres real con las migraciones
 // aplicadas. Como en `lists.int.spec.ts` no hacen falta sesiones: las
 // familias y sus listas de prueba se crean directamente con Prisma y lo que
 // se ejercita es el CRUD de items con el filtro de familia activa — el
 // criterio de la issue #68: cada familia ve solo lo suyo, y los ids ajenos
 // (de otra familia o de otra lista) no se pueden tocar ni por error.
-import type { ItemData } from '$lib/schemas/item.js';
+import type { ItemData } from '#lib/schemas/item.js';
 import prisma from './prisma.js';
 import { createItem, deleteItem, listItems, setItemPurchased, updateItem } from './items.js';
 import { createList } from './lists.js';

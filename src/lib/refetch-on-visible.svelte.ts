@@ -1,4 +1,4 @@
-import { invalidateAll } from '$app/navigation';
+import { refreshAll } from '$app/navigation';
 
 /**
  * Refresco al volver a la pestaña (checklist #69): varios miembros pueden
@@ -18,7 +18,7 @@ export function useRefetchOnVisible(skip?: () => boolean): void {
 		function alVolver() {
 			if (document.visibilityState !== 'visible') return;
 			if (document.querySelector('dialog[open]') || skip?.()) return;
-			void invalidateAll();
+			void refreshAll();
 		}
 		document.addEventListener('visibilitychange', alVolver);
 		return () => document.removeEventListener('visibilitychange', alVolver);

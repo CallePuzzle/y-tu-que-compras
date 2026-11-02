@@ -33,9 +33,16 @@ RUN --mount=type=secret,id=npm_token \
     cd node_modules/@prisma/engines && bun run postinstall
 COPY . .
 RUN bun run postinstall
-# ADAPTER=node: svelte.config.js elige adapter-node y genera `build/` (la build
-# de Vercel, que no define esta variable, sigue generando .vercel/output).
-ENV ADAPTER=node
+# Dos variables de build. `ADAPTER=node` elige adapter-node y genera `build/`
+# (la build de Vercel, que no define esta variable, sigue generando
+# .vercel/output). `ORIGIN` es el ARG de build del origen público: kit 3
+# eliminó la variable runtime de adapter-node y ahora va horneado en
+# `paths.origin` (lo lee vite.config.ts de process.env en build); el job
+# `release` de CI lo pasa con el mismo valor que `serverAlias` en
+# deploy/lib/app.libsonnet, y los builds sin él (Vercel, smoke test, local) lo
+# dejan vacío y kit deriva el origen de la request.
+ARG ORIGIN=""
+ENV ADAPTER=node ORIGIN=${ORIGIN}
 RUN bun run build
 
 # Poda del árbol de dependencias para el runtime. `bun install --production` de

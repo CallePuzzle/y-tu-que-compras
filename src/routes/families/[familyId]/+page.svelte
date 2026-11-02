@@ -7,8 +7,8 @@
 	import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import UserMinus from '@lucide/svelte/icons/user-minus';
-	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-	import { m } from '$lib/paraglide/messages.js';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -40,10 +40,9 @@
 
 <section class="mx-auto max-w-md">
 	<p>
-		<a href={resolve('/families')} class="btn btn-ghost btn-sm -ml-2">
-			<ArrowLeft aria-hidden="true" />
-			{m.ui_back()}
-		</a>
+		<a href={resolve('/families')} class="btn btn-ghost btn-sm -ml-2"
+			><ArrowLeft aria-hidden="true" /> {m.ui_back()}</a
+		>
 	</p>
 
 	<h1 class="text-2xl font-bold">{m.families_members_title({ family: familia.name })}</h1>

@@ -348,7 +348,7 @@ export const MAX_FAMILY_MEMBERS = 20;
 
 /**
  * Mensaje del 400 que lanza el endpoint `invitation/create` con la familia
- * llena. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
+ * llena. Es un contrato con `#lib/server/families.ts`, que lo traduce al error
  * de formulario (`FamilyMemberLimitReachedError`); no cambiarlo sin ajustar allí.
  */
 export const FAMILY_MEMBERS_LIMIT_MESSAGE = `Family members limit reached: max ${MAX_FAMILY_MEMBERS}.`;
@@ -404,7 +404,7 @@ export function isFamilyInvitationPending(error: unknown): boolean {
 /**
  * Mensaje del 403 que lanzan los hooks de `invitation/accept` y
  * `invitation/decline` cuando el email de la sesión no es el del invitado
- * (checklist de la issue #61). Es un contrato con `$lib/server/families.ts`,
+ * (checklist de la issue #61). Es un contrato con `#lib/server/families.ts`,
  * que lo traduce al error de formulario (`FamilyInvitationNotForAccountError`);
  * no cambiarlo sin ajustar allí.
  */
@@ -418,7 +418,7 @@ export function isInvitationNotForAccount(error: unknown): boolean {
 /**
  * Mensaje del 400 que lanzan los hooks de `member/remove` y
  * `member/role/update` cuando la operación dejaría a la familia sin su único
- * admin (issue #62). Es un contrato con `$lib/server/families.ts`, que lo
+ * admin (issue #62). Es un contrato con `#lib/server/families.ts`, que lo
  * traduce al error de formulario (`FamilyLastAdminError`); no cambiarlo sin
  * ajustar allí.
  */
@@ -438,7 +438,7 @@ export function isLastFamilyAdmin(error: unknown): boolean {
 
 /**
  * Mensaje del 403 que lanza el endpoint `organization/create` al superar el
- * tope. Es un contrato con `$lib/server/families.ts`, que lo traduce al error
+ * tope. Es un contrato con `#lib/server/families.ts`, que lo traduce al error
  * de formulario (`FamilyLimitReachedError`); no cambiarlo sin ajustar allí.
  */
 export const FAMILY_LIMIT_MESSAGE = `Family limit reached: max ${MAX_FAMILIES_PER_USER}.`;
@@ -1033,7 +1033,7 @@ export const tenancyConfig: TenancyConfig = {
 			// Familia llena al aceptar: la invitación se envió con sitio libre,
 			// pero otras aceptaciones pudieron llenarla mientras tanto. Lanzar
 			// devuelve la invitación a `pending` (400 arriba, con este mensaje
-			// como contrato de `$lib/server/families.ts`).
+			// como contrato de `#lib/server/families.ts`).
 			const members = await adapter.findMany({
 				model: 'member',
 				where: [

@@ -1,4 +1,4 @@
-import { baseLocale, overwriteGetLocale, toLocale } from '$lib/paraglide/runtime.js';
+import { baseLocale, overwriteGetLocale, toLocale } from '#lib/paraglide/runtime.js';
 
 // En el cliente la locale es SIEMPRE la que resolvió el SSR (cookie o
 // Accept-Language) y dejó en `<html lang>` (`%paraglide.lang%`, ver

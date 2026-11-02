@@ -1,11 +1,11 @@
 import { fail } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
-import { m } from '$lib/paraglide/messages.js';
-import { listSchema } from '$lib/schemas/list.js';
-import { requireActiveFamily } from '$lib/server/family-context.js';
-import { createList, deleteList, listLists, updateList } from '$lib/server/lists.js';
-import logger from '$lib/server/logger';
+import { m } from '#lib/paraglide/messages.js';
+import { listSchema } from '#lib/schemas/list.js';
+import { requireActiveFamily } from '#lib/server/family-context.js';
+import { createList, deleteList, listLists, updateList } from '#lib/server/lists.js';
+import logger from '#lib/server/logger.js';
 import type { Actions, PageServerLoad } from './$types';
 
 // Los schemas se construyen EN REQUEST, nunca en scope de módulo (regla i18n

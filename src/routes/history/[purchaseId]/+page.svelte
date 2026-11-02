@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
-	import { formatQuantity } from '$lib/format.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { unitLabels } from '$lib/units.js';
-	import { getLocale } from '$lib/paraglide/runtime.js';
+	import { formatQuantity } from '#lib/format.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { unitLabels } from '#lib/units.js';
+	import { getLocale } from '#lib/paraglide/runtime.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -18,10 +18,9 @@
 </svelte:head>
 
 <section class="mx-auto max-w-md">
-	<a href={resolve('/history')} class="btn btn-ghost btn-sm -ml-2">
-		<ArrowLeft aria-hidden="true" />
-		{m.ui_back()}
-	</a>
+	<a href={resolve('/history')} class="btn btn-ghost btn-sm -ml-2"
+		><ArrowLeft aria-hidden="true" /> {m.ui_back()}</a
+	>
 
 	<!-- La compra se identifica por su lista de origen y su fecha: ambos viajan
 	     en el snapshot (#75), y la lista se muestra aunque se haya borrado. -->

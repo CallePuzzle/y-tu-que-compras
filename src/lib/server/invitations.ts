@@ -2,10 +2,10 @@ import type { GenericEndpointContext } from '@better-auth/core';
 import type { InvitationCreatedEvent } from '@zytera/better-auth-tenancy';
 import { getRequestEvent } from '$app/server';
 import { APIError } from 'better-auth/api';
-import { env } from '$env/dynamic/private';
+import { BETTER_AUTH_URL, ORIGIN } from '$app/env/private';
 
-import type { Locale } from '$lib/paraglide/runtime.js';
-import { extractLocaleFromRequest } from '$lib/paraglide/runtime.js';
+import type { Locale } from '#lib/paraglide/runtime.js';
+import { extractLocaleFromRequest } from '#lib/paraglide/runtime.js';
 import { sendFamilyInvitationEmail } from './emails.js';
 import logger from './logger.js';
 
@@ -21,7 +21,7 @@ export const INVITATION_PATHNAME = '/invitations';
 export function invitationUrl(token: string): string {
 	// `BETTER_AUTH_URL` es el origen público de la app (el mismo que better-auth
 	// usa como baseURL), así que es también el del enlace del correo.
-	const base = env.BETTER_AUTH_URL ?? env.ORIGIN ?? 'http://localhost:5173';
+	const base = BETTER_AUTH_URL ?? ORIGIN ?? 'http://localhost:5173';
 	return new URL(`${INVITATION_PATHNAME}/${encodeURIComponent(token)}`, base).toString();
 }
 
@@ -30,7 +30,7 @@ export function invitationUrl(token: string): string {
  * cuenta todavía, así que su locale es desconocida.
  *
  * Se resuelve del REQUEST EVENT de SvelteKit con la misma estrategia que el
- * OTP (`$lib/server/auth.ts`): cookie del selector de idioma, Accept-Language
+ * OTP (`#lib/server/auth.ts`): cookie del selector de idioma, Accept-Language
  * y base. Tiene que ser el evento de SvelteKit y no `ctx.request` del
  * endpoint: `inviteFamily` llama a `auth.api.createInvitation` desde una
  * server action y en la llamada programática better-call deja

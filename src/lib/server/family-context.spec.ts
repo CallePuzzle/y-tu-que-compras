@@ -9,7 +9,7 @@ const prisma = vi.hoisted(() => ({
 	member: { findMany: vi.fn(), findFirst: vi.fn() },
 	organization: { findUnique: vi.fn() }
 }));
-vi.mock('$lib/server/prisma.js', () => ({ default: prisma }));
+vi.mock('#lib/server/prisma.js', () => ({ default: prisma }));
 
 import {
 	ACTIVE_FAMILY_COOKIE,

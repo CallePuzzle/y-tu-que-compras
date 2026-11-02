@@ -1,12 +1,12 @@
 # y-tu-que-compras
 
-Aplicación SvelteKit 2 + Svelte 5, desplegada en el clúster k0s de `villajilguero-oci-services`
+Aplicación SvelteKit 3 + Svelte 5, desplegada en el clúster k0s de `villajilguero-oci-services`
 (https://ytqc.callepuzzle.com). Gestor de paquetes: [bun](https://bun.sh).
 
 ## Requisitos
 
 Versiones fijadas en `.tool-versions` (asdf): node y bun. Node va alineado con el runtime de
-Vercel (`nodejs24.x` en `svelte.config.js`) y con `engines.node`; si cambias uno, cambia los tres.
+Vercel (`nodejs24.x` en vite.config.ts) y con `engines.node`; si cambias uno, cambia los tres.
 
 ```sh
 asdf install
@@ -136,7 +136,8 @@ infra). Sin `SMTP_HOST`/`SMPT_*` la app arranca, pero el login OTP falla al envi
 
 ## Seguridad
 
-- **CSP** generada por SvelteKit (`kit.csp` en `svelte.config.js`) y resto de cabeceras
+- **CSP** generada por SvelteKit (opciones `csp` del plugin `sveltekit()` en vite.config.ts) y
+  resto de cabeceras
   (`HSTS`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options`) en
   `src/hooks.server.ts`. Si añades orígenes externos (imágenes, analítica, APIs), declara el
   origen en la directiva correspondiente.

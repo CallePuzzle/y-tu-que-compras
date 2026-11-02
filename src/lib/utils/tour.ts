@@ -1,8 +1,8 @@
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
 import type { RouteId } from '$app/types';
-import { m } from '$lib/paraglide/messages.js';
-import type { TourGuideClient, TourGuideOptions, TourGuideStep } from '$lib/types/tourguide';
+import { m } from '#lib/paraglide/messages.js';
+import type { TourGuideClient, TourGuideOptions, TourGuideStep } from '#lib/types/tourguide.js';
 import { tourUi } from './tour-ui.svelte.js';
 
 async function createTourGuideClient(options: TourGuideOptions): Promise<TourGuideClient> {

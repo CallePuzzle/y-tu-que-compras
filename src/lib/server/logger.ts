@@ -1,6 +1,6 @@
 import { context, trace } from '@opentelemetry/api';
-import { dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
+import { dev } from '$app/env';
+import { LOG_LEVEL, VERCEL_ENV } from '$app/env/private';
 import pino, { type Logger } from 'pino';
 
 // Campos sensibles que no deben salir en los logs: Vercel envía el stdout tal
@@ -34,12 +34,12 @@ function mixin(): Record<string, string> {
 function createLogger(): Logger {
 	return pino({
 		// `LOG_LEVEL` con `info` por defecto; `debug` solo tiene sentido en local.
-		level: env.LOG_LEVEL ?? 'info',
+		level: LOG_LEVEL ?? 'info',
 		base: {
 			service: 'y-tu-que-compras',
 			// development | preview | production (VERCEL_ENV); fuera de Vercel cae a
 			// `development`/`production` según cómo se esté ejecutando.
-			env: env.VERCEL_ENV ?? (dev ? 'development' : 'production')
+			env: VERCEL_ENV ?? (dev ? 'development' : 'production')
 		},
 		redact: { paths: REDACT_PATHS, censor: '[redacted]' },
 		mixin,

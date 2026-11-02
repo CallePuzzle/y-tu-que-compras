@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Modal } from '@callepuzzle/svelte-ui';
-	import { formatQuantity } from '$lib/format.js';
-	import { textoError } from '$lib/forms.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { getLocale } from '$lib/paraglide/runtime.js';
-	import { unitLabels } from '$lib/units.js';
+	import { formatQuantity } from '#lib/format.js';
+	import { textoError } from '#lib/forms.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { getLocale } from '#lib/paraglide/runtime.js';
+	import { unitLabels } from '#lib/units.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { purchaseFormSchema } from './schemas.js';

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance as kitEnhance } from '$app/forms';
+	import { enhance as kitEnhance, type SubmitFunction } from '$app/forms';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
@@ -10,18 +10,17 @@
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-	import { formatQuantity } from '$lib/format.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { useRefetchOnVisible } from '$lib/refetch-on-visible.svelte.js';
-	import { unitLabels } from '$lib/units.js';
-	import { textoError } from '$lib/forms.js';
-	import { buildTourContext, continueOnboardingTour } from '$lib/utils/tour';
-	import { getLocale } from '$lib/paraglide/runtime.js';
-	import { UNIT_STEP, redondearCantidad } from '$lib/pantry-steps.js';
-	import { readdSchema } from '$lib/schemas/pantry.js';
-	import type { Unit } from '$lib/schemas/item.js';
-	import type { SubmitFunction } from '@sveltejs/kit';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import { formatQuantity } from '#lib/format.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
+	import { unitLabels } from '#lib/units.js';
+	import { textoError } from '#lib/forms.js';
+	import { buildTourContext, continueOnboardingTour } from '#lib/utils/tour.js';
+	import { getLocale } from '#lib/paraglide/runtime.js';
+	import { UNIT_STEP, redondearCantidad } from '#lib/pantry-steps.js';
+	import { readdSchema } from '#lib/schemas/pantry.js';
+	import type { Unit } from '#lib/schemas/item.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';
@@ -378,6 +377,7 @@
 				>
 					{m.pantry_section_out()}
 				</h2>
+
 				<ul class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
 					{#each agotados as item (item.id)}
 						{@render filaProducto(item)}

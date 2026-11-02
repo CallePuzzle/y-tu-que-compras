@@ -2,8 +2,8 @@
 	import Check from '@lucide/svelte/icons/check';
 	import Globe from '@lucide/svelte/icons/globe';
 	import { DropdownMenu } from '@callepuzzle/svelte-ui';
-	import { m } from '$lib/paraglide/messages.js';
-	import { getLocale, locales, setLocale, type Locale } from '$lib/paraglide/runtime.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { getLocale, locales, setLocale, type Locale } from '#lib/paraglide/runtime.js';
 
 	// Selector de idioma (issue #78). En la cabecera (`navbar-end` del layout),
 	// visible también en móvil: dos locales, sin ajustes a los que esconderlo.
@@ -11,7 +11,7 @@
 	// La persistencia la pone Paraglide: `setLocale` escribe su cookie
 	// (`PARAGLIDE_LOCALE`, primera de la estrategia) y recarga la página, de
 	// modo que el siguiente SSR ya sale entero en la locale elegida — textos,
-	// emails que la request dispare y formatos de `$lib/format.ts`.
+	// emails que la request dispare y formatos de `#lib/format.ts`.
 	interface Props {
 		class?: string;
 	}

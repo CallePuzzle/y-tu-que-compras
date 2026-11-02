@@ -67,7 +67,7 @@ async function sessionCookieFor(
 	// esquema que `setSessionCookie` de better-auth (`token.firma` HMAC-SHA256
 	// en base64, URL-encodeado). El secret se saca del CONTEXTO de better-auth
 	// (el que realmente verificará la cookie, sea el del `.env` o el fallback
-	// de better-auth cuando no hay ninguno): leer `$env/dynamic/private` a pelo
+	// de better-auth cuando no hay ninguno): leer `$app/env/private` a pelo
 	// sería frágil porque ese env se congela al arrancar vitest.
 	//
 	// Caducidad LARGA (30 días) y no una hora: con una sesión próxima a caducar
@@ -411,7 +411,7 @@ describe('invitar por email (#60)', () => {
  * invitado es miembro y la familia sale en SU listado (el «selector»).
  */
 describe('aceptar y rechazar invitación (#61)', () => {
-	/** Evento mínimo para las funciones de `$lib/server/families.ts`. */
+	/** Evento mínimo para las funciones de `#lib/server/families.ts`. */
 	function eventOf(cookie: string): RequestEvent {
 		return {
 			request: new Request(BASE, { headers: { cookie } })
@@ -555,11 +555,11 @@ describe('aceptar y rechazar invitación (#61)', () => {
 /**
  * Gestionar miembros (issue #62): listar, expulsar, abandonar, promover y
  * borrar la familia. Las llamadas van por las funciones de
- * `$lib/server/families.ts` (las mismas que usan los form actions), así que
+ * `#lib/server/families.ts` (las mismas que usan los form actions), así que
  * los guards reales de los hooks (`tenancy.ts`) están en el camino.
  */
 describe('expulsar, abandonar, promover y borrar (#62)', () => {
-	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	/** Evento con sesión para las funciones de `#lib/server/families.ts`. */
 	function eventOf(cookie: string, userId?: string): RequestEvent {
 		return {
 			request: new Request(BASE, { headers: { cookie } }),
@@ -841,7 +841,7 @@ describe('perímetro de miembros entre familias (#101)', () => {
  * y el admin puede cancelar las pendientes desde la gestión de la familia.
  */
 describe('caducidad y cancelación de invitaciones (#102)', () => {
-	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	/** Evento con sesión para las funciones de `#lib/server/families.ts`. */
 	function eventOf(cookie: string, userId?: string): RequestEvent {
 		return {
 			request: new Request(BASE, { headers: { cookie } }),
@@ -1010,7 +1010,7 @@ describe('caducidad y cancelación de invitaciones (#102)', () => {
  * sale en inglés.
  */
 describe('locale del correo de invitación (#103)', () => {
-	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	/** Evento con sesión para las funciones de `#lib/server/families.ts`. */
 	function eventOf(cookie: string): RequestEvent {
 		return {
 			request: new Request(BASE, { headers: { cookie } }),
@@ -1066,7 +1066,7 @@ describe('locale del correo de invitación (#103)', () => {
  * el mismo valor) y comprueban el estado final en la BD.
  */
 describe('carreras y límites de familia (#104)', () => {
-	/** Evento con sesión para las funciones de `$lib/server/families.ts`. */
+	/** Evento con sesión para las funciones de `#lib/server/families.ts`. */
 	function eventOf(cookie: string): RequestEvent {
 		return {
 			request: new Request(BASE, { headers: { cookie } }),

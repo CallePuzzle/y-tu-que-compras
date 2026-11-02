@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guía para agentes de IA. App **y-tu-que-compras**: SvelteKit 2 + Svelte 5 (runes), TypeScript, Tailwind CSS 4 + daisyUI 5, Prisma 7 + PostgreSQL, better-auth (login OTP por email), Paraglide JS (i18n `es`/`en`). README y comentarios del código en español.
+Guía para agentes de IA. App **y-tu-que-compras**: SvelteKit 3 + Svelte 5 (runes), TypeScript, Tailwind CSS 4 + daisyUI 5, Prisma 7 + PostgreSQL, better-auth (login OTP por email), Paraglide JS (i18n `es`/`en`). README y comentarios del código en español.
 
 ## Repos relacionados (fuera de este repo)
 
@@ -25,7 +25,7 @@ Guía para agentes de IA. App **y-tu-que-compras**: SvelteKit 2 + Svelte 5 (rune
 ## Código generado — no editar a mano
 
 - `src/lib/generated/prisma` — cliente Prisma (output custom de `prisma generate`; importar desde
-  `$lib/generated/prisma/client`, no de `@prisma/client`).
+  `#lib/generated/prisma/client`, no de `@prisma/client`).
 - `src/lib/paraglide` — mensajes i18n compilados. Los textos viven en `messages/{es,en}.json`.
 
 ## Comandos
@@ -96,8 +96,13 @@ Reparto:
   `families_create`). No crear rutas ni claves en español.
 - El typo **`SMPT_`** en las variables de email (`SMPT_AUTH_USER`, etc.) es intencionado: así están
   nombradas en producción. No "corregirlo".
-- Usar **`$env/dynamic/private`**, no `process.env`, para env en código de servidor (bun no inyecta
-  el `.env` en los scripts; es Vite/SvelteKit quien lo carga — ver `src/lib/server/auth.ts`).
+- Usar las **variables de entorno explícitas** de kit 3 (`src/env.ts` +
+  `defineEnvVars`; importar las variables desde `$app/env/private`), no
+  `process.env`, en código de servidor (bun no inyecta el `.env` en los
+  scripts; es Vite/SvelteKit quien lo carga — ver `src/lib/server/auth.ts`).
+  Los esquemas van con `(input) => input` para que sigan siendo opcionales
+  (`string | undefined`, como el viejo `env.X`); el env dinámico se congela al
+  arrancar Vite/vitest.
 - Tampoco el CLI de Prisma ve el `.env`: lo carga `dotenv` en `prisma.config.ts`. Ni `bunx` ni
   `bun run` lo inyectan (los flags `--env-file` de bun solo valen para scripts del propio bun).
 - El cliente Prisma (`src/lib/server/prisma.ts`) se instancia perezosamente vía Proxy para que
@@ -108,9 +113,9 @@ Reparto:
   pertenencia (`requireActiveFamily`). No añadir checks de rol ahí sin decidirlo antes (issue #111).
 - `ssr.noExternal` en `vite.config.ts`: los paquetes `@callepuzzle/*`, formsnap y
   sveltekit-superforms deben bundlarse en SSR porque importan los módulos virtuales `$app/*`.
-- Imports dentro del código de servidor: alias **`$lib/*`** (el nativo de SvelteKit; eslint lo
-  impone: `#lib/*` está prohibido). Imports relativos con extensión `.js`
-  (`import { sendEmail } from './sender.js'`).
+- Imports dentro del código de servidor: alias **`#lib/*`** (subpath imports de Node que kit 3
+  declara en `package.json`; eslint lo impone: `$lib/*` está prohibido). Imports relativos con
+  extensión `.js` (`import { sendEmail } from './sender.js'`).
 
 ## Despliegue (clúster k0s, fase 3 de la issue #30 de villajilguero-oci-services)
 
@@ -162,7 +167,7 @@ Reparto:
     bump lleva `[skip ci]`. En PRs el CI cancela el run anterior; en `main`, no: la cola serializa
     también las releases.
 - **Runtime**: la imagen es todo bun, como `Zytera/auth`: build con `oven/bun:1.4.4` (exporta
-  `ADAPTER=node`, que hace que `svelte.config.js` elija adapter-node) y runtime
+  `ADAPTER=node`, que hace que vite.config.ts elija adapter-node) y runtime
   `oven/bun:1.4.4-distroless` ejecutando `bun run /app/build/index.js` (el output de adapter-node
   es JS puro y el cliente de Prisma va con el driver adapter, sin binario Rust; solo el CLI usa el
   schema-engine de `@prisma/engines`, para cuyas libs el Dockerfile copia `libssl3`/`libcrypto`/
@@ -172,8 +177,10 @@ Reparto:
   excluyendo `svelte` y `@sveltejs/kit`: quedan como imports externos del servidor y aunque están
   en devDependencies son necesarios en runtime. `prisma` y `dotenv` están en `dependencies` (no
   dev) porque la imagen runtime necesita el CLI de Prisma y `prisma.config.ts` importa dotenv. El
-  servidor fija `ORIGIN`/`BETTER_AUTH_URL` al host público (ver `deploy/lib/app.libsonnet`):
-  detrás del proxy no se usan `PROTOCOL_HEADER`/`HOST_HEADER`.
+  origen público va en dos sitios desde kit 3: horneado en `paths.origin` en BUILD (el ARG
+  `ORIGIN` del Dockerfile, que el job `release` de CI fija al mismo valor que `serverAlias`;
+  adapter-node 6 ya no lee la variable runtime) y `BETTER_AUTH_URL` en runtime (ver
+  `deploy/lib/app.libsonnet`): detrás del proxy no se usan `PROTOCOL_HEADER`/`HOST_HEADER`.
 - **Dos adapters, uno por build**: SvelteKit solo admite uno y se elige al compilar. Con
   `ADAPTER=node` (lo exporta el Dockerfile) → `@sveltejs/adapter-node` (`build/`, el clúster k0s).
   Sin esa variable → `@sveltejs/adapter-vercel` (`.vercel/output`), que es como sigue compilando

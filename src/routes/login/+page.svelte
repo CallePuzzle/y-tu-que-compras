@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import type { Pathname } from '$app/types';
+	import type { Path } from '$app/types';
 	import { FormLoginOtp } from '@callepuzzle/svelte-ui/otp';
 	import { createLoginSchema } from '@callepuzzle/core/schema';
-	import { m } from '$lib/paraglide/messages.js';
-	import { authClient } from '$lib/auth-client.js';
-	import { sanitizeInvitedEmail, sanitizeRedirectTo } from '$lib/redirect.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { authClient } from '#lib/auth-client.js';
+	import { sanitizeInvitedEmail, sanitizeRedirectTo } from '#lib/redirect.js';
 
 	// Redirección post-login: el guard manda aquí con `?redirectTo=<url original>`.
 	// Se acepta sólo si es una ruta interna (`sanitizeRedirectTo`), nunca una URL
@@ -19,7 +19,7 @@
 	// `redirectTo` es un pathname interno arbitrario. (El cast anterior vía
 	// `Parameters<typeof resolve>[0]` colapsaba a `never` en cuanto el proyecto
 	// estrenó su primera ruta con parámetro: /invitations/[token].)
-	const afterLoginHref = $derived(resolve((redirectTo ?? '/') as Pathname));
+	const afterLoginHref = $derived(resolve((redirectTo ?? '/') as Path));
 
 	// Invitación pendiente de responder (issue #61): quien llega del enlace del
 	// correo sin sesión aterriza aquí con `?email=<email del invitado>`, para no
@@ -29,7 +29,7 @@
 	// La libreria no invalida ni navega: aqui repintamos la sesion (el layout
 	// la recibe del load) y volvemos a la página que pidió el usuario (o al inicio).
 	async function onLoginSuccess() {
-		await invalidateAll();
+		await refreshAll();
 		await goto(afterLoginHref);
 	}
 

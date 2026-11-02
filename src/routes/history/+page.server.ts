@@ -1,7 +1,7 @@
-import { formatDateTime, formatPrice } from '$lib/format.js';
-import { getLocale } from '$lib/paraglide/runtime.js';
-import { requireActiveFamily } from '$lib/server/family-context.js';
-import { listPurchases, MAX_PURCHASES_OFFSET, PURCHASES_PAGE_SIZE } from '$lib/server/purchases.js';
+import { formatDateTime, formatPrice } from '#lib/format.js';
+import { getLocale } from '#lib/paraglide/runtime.js';
+import { requireActiveFamily } from '#lib/server/family-context.js';
+import { listPurchases, MAX_PURCHASES_OFFSET, PURCHASES_PAGE_SIZE } from '#lib/server/purchases.js';
 import type { PageServerLoad } from './$types';
 
 // El historial de compras de la familia activa (issues #47 y #76): lectura

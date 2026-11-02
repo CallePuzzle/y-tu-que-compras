@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 
-import prisma from '$lib/server/prisma';
+import prisma from '#lib/server/prisma.js';
 
 /**
  * Readiness del clúster (issue #124): 200 solo si la base de datos responde

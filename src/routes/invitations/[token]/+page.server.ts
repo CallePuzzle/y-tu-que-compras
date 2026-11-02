@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { m } from '$lib/paraglide/messages.js';
+import { m } from '#lib/paraglide/messages.js';
 import {
 	FAMILIES_MAX,
 	FAMILY_MEMBERS_MAX,
@@ -10,8 +10,8 @@ import {
 	acceptFamilyInvitation,
 	familyInvitationView,
 	rejectFamilyInvitation
-} from '$lib/server/families.js';
-import logger from '$lib/server/logger';
+} from '#lib/server/families.js';
+import logger from '#lib/server/logger.js';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -29,7 +29,7 @@ import type { Actions, PageServerLoad } from './$types';
  *
  * Responder (aceptar/rechazar) exige sesión siempre: los form actions lo
  * comprueban y los endpoints del plugin lo vuelven a exigir (hooks
- * `invitation/accept`/`decline` en `$lib/server/tenancy.ts`).
+ * `invitation/accept`/`decline` en `#lib/server/tenancy.ts`).
  */
 export const load: PageServerLoad = async ({ params, locals, url }) => {
 	const invitation = await familyInvitationView(params.token);

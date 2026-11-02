@@ -7,8 +7,8 @@
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import Users from '@lucide/svelte/icons/users';
-	import { m } from '$lib/paraglide/messages.js';
-	import logo from '$lib/assets/logo.webp';
+	import { m } from '#lib/paraglide/messages.js';
+	import logo from '#lib/assets/logo.webp';
 
 	// La landing sólo se pinta SIN sesión (la portada bifurca por `data.user`,
 	// issue #160): el CTA manda siempre a crear cuenta/acceder, sin mirar quién

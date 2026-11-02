@@ -4,8 +4,15 @@ const env: Record<string, string | undefined> = {};
 const appEnvironment = { dev: false, building: false };
 const constructed = vi.fn();
 
-vi.mock('$env/dynamic/private', () => ({ env }));
-vi.mock('$app/environment', () => ({
+// `prisma.ts` lee las variables explícitas (`$app/env/private`): el mock da el
+// mismo contrato, con getter para que cada test las cambie sin resetear el
+// módulo mockeado.
+vi.mock('$app/env/private', () => ({
+	get DATABASE_URL() {
+		return env.DATABASE_URL;
+	}
+}));
+vi.mock('$app/env', () => ({
 	get dev() {
 		return appEnvironment.dev;
 	},
@@ -14,7 +21,7 @@ vi.mock('$app/environment', () => ({
 	}
 }));
 vi.mock('@prisma/adapter-pg', () => ({ PrismaPg: class {} }));
-vi.mock('$lib/generated/prisma/client', () => ({
+vi.mock('#lib/generated/prisma/client.js', () => ({
 	PrismaClient: class {
 		user = { findMany: () => 'findMany' };
 		constructor() {

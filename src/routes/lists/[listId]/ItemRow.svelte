@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { formatQuantity } from '$lib/format.js';
-	import { m } from '$lib/paraglide/messages.js';
-	import { getLocale } from '$lib/paraglide/runtime.js';
-	import { unitLabels } from '$lib/units.js';
-	import type { SubmitFunction } from '@sveltejs/kit';
+	import { formatQuantity } from '#lib/format.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { getLocale } from '#lib/paraglide/runtime.js';
+	import { unitLabels } from '#lib/units.js';
 	import type { PageData } from './$types';
 
 	/**

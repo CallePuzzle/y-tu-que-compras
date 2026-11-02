@@ -1,5 +1,5 @@
-import prisma from '$lib/server/prisma.js';
-import type { ItemData, Unit } from '$lib/schemas/item.js';
+import prisma from '#lib/server/prisma.js';
+import type { ItemData, Unit } from '#lib/schemas/item.js';
 
 // CRUD de items de una lista (issues #67 y #68) y marca de comprado (#69).
 // Como en `lists.ts`, la familia viaja SIEMPRE en los argumentos — es la

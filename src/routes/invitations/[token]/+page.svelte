@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { m } from '$lib/paraglide/messages.js';
-	import type { SubmitFunction } from '@sveltejs/kit';
+	import { enhance, type SubmitFunction } from '$app/forms';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();

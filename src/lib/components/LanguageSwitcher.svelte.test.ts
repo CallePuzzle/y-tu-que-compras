@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // para resolver los textos del propio componente.
 const setLocale = vi.hoisted(() => vi.fn());
 const getLocale = vi.hoisted(() => vi.fn(() => 'es'));
-vi.mock('$lib/paraglide/runtime.js', async (importOriginal) => ({
+vi.mock('#lib/paraglide/runtime.js', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	getLocale,
 	setLocale

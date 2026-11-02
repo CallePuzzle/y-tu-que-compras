@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import House from '@lucide/svelte/icons/house';
-	import { m } from '$lib/paraglide/messages.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	// Página de error propia (#118): sin ella SvelteKit pinta la suya, en
 	// inglés y sin el layout de la app. Se renderiza DENTRO del layout raíz.

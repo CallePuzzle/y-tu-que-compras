@@ -1,25 +1,30 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { Handle, HandleServerError } from '@sveltejs/kit';
-import { sequence } from '@sveltejs/kit/hooks';
-import { building, dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
+import { isHttpError } from '@sveltejs/kit';
+import { sequence, type Handle, type HandleServerError } from '@sveltejs/kit/hooks';
+import { building, dev } from '$app/env';
+import { OBSERVABILITY_SALT, VERCEL, VERCEL_ENV } from '$app/env/private';
 import { betterAuthHandle } from '@callepuzzle/auth/hooks';
-import { auth } from '$lib/server/auth';
-import { handleAuthGuard } from '$lib/server/auth-guard';
-import { handleFamilyContext } from '$lib/server/family-context.js';
-import logger from '$lib/server/logger';
-import { extractLocaleFromRequest, getTextDirection, type Locale } from '$lib/paraglide/runtime.js';
-import { paraglideMiddleware } from '$lib/paraglide/server.js';
-import { m } from '$lib/paraglide/messages.js';
+import { auth } from '#lib/server/auth.js';
+import { handleAuthGuard } from '#lib/server/auth-guard.js';
+import { handleFamilyContext } from '#lib/server/family-context.js';
+import logger from '#lib/server/logger.js';
+import { extractLocaleFromRequest, getTextDirection, type Locale } from '#lib/paraglide/runtime.js';
+import { paraglideMiddleware } from '#lib/paraglide/server.js';
+import { m } from '#lib/paraglide/messages.js';
 
-// La CSP la genera SvelteKit (`kit.csp` en svelte.config.js); aquí va el resto.
+// La CSP la genera SvelteKit (opciones `csp` del plugin `sveltekit()` en
+// vite.config.ts); aquí va el resto.
 // `X-Frame-Options` duplica `frame-ancestors 'none'` para navegadores antiguos.
 const securityHeaders: Record<string, string> = {
 	'X-Content-Type-Options': 'nosniff',
 	'X-Frame-Options': 'DENY',
 	'Referrer-Policy': 'strict-origin-when-cross-origin',
 	'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-	...(dev ? {} : { 'Strict-Transport-Security': 'max-age=63072000; includeSubDomains' })
+	...(dev
+		? {}
+		: {
+				'Strict-Transport-Security': 'max-age=63072000; includeSubDomains'
+			})
 };
 
 const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
@@ -47,7 +52,7 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 // SHA-256 con una salt dedicada y truncado a 16 caracteres). Sin
 // `OBSERVABILITY_SALT` definida la traza no se etiqueta.
 const handleUserTrace: Handle = ({ event, resolve }) => {
-	const salt = env.OBSERVABILITY_SALT;
+	const salt = OBSERVABILITY_SALT;
 	const user = event.locals.user;
 	if (salt && user) {
 		const hash = createHash('sha256').update(`${user.id}${salt}`).digest('hex').slice(0, 16);
@@ -66,7 +71,7 @@ const handleLogging: Handle = async ({ event, resolve }) => {
 	// (`env.VERCEL` lo fija la plataforma). Fuera de Vercel (clúster k0s, local)
 	// cualquiera podría enviar esa cabecera y falsear o reutilizar ids en logs
 	// y trazas, así que ahí cae a un uuid aleatorio.
-	const requestId = (env.VERCEL && event.request.headers.get('x-vercel-id')) || randomUUID();
+	const requestId = (VERCEL && event.request.headers.get('x-vercel-id')) || randomUUID();
 	event.locals.log = logger.child({ requestId });
 
 	const startedAt = performance.now();
@@ -96,14 +101,37 @@ const handleLogging: Handle = async ({ event, resolve }) => {
 	}
 };
 
-// Errores no manejados de `load`/actions/`+server` que SvelteKit entrega aquí.
-// Al log siempre: id de error, tipo y mensaje; el stack solo en dev/preview
-// (guía OWASP/Vercel). Al cliente: mensaje genérico con el id, para que pueda
-// reportar el fallo sin que se filtre nada interno.
+// Errores que SvelteKit entrega aquí. Desde kit 3 llegan TODOS: los no
+// manejados de `load`/actions/`+server` Y los esperados (`error(...)`,
+// incluidos los 404 de URLs desconocidas) y los de validación. A partir de esa
+// división:
+// - Esperados (`isHttpError`): al log a nivel `info` (un 404 es tráfico
+//   normal, no un incidente), SIN id de error; y se devuelve su mensaje tal
+//   cual, para no machacar lo que la app quiso decir al lanzarlo.
+// - No manejados: al log a nivel `error` con id, tipo y mensaje; el stack solo
+//   en dev/preview (guía OWASP/Vercel). Al cliente: mensaje genérico con el
+//   id, para que pueda reportar el fallo sin que se filtre nada interno.
+//   (En kit 2 este hook solo veía los no manejados: el `errorId` que veía el
+//   usuario seguía siendo exclusivo de errores reales.)
 export const handleError: HandleServerError = ({ error, event }) => {
-	const errorId = randomUUID();
 	const isError = error instanceof Error;
-	const withStack = dev || env.VERCEL_ENV === 'preview';
+	const withStack = dev || VERCEL_ENV === 'preview';
+
+	if (isHttpError(error)) {
+		(event?.locals.log ?? logger).info(
+			{
+				status: error.status,
+				type: isError ? error.name : typeof error,
+				message: isError ? error.message : String(error)
+			},
+			'expected error'
+		);
+		// El mensaje del `error(status, message)` original: SvelteKit conserva el
+		// status de lo lanzado aunque el retorno no lo repita.
+		return { message: error.body.message };
+	}
+
+	const errorId = randomUUID();
 	(event?.locals.log ?? logger).error(
 		{
 			errorId,
@@ -145,7 +173,7 @@ export const handle: Handle = sequence(
 	// Paraglide el último: `/api/auth/*` lo atiende betterAuthHandle antes y no
 	// paga el clonado de la request del middleware. Los correos que dispara el
 	// auth (OTP e invitaciones) resuelven su locale del request event de
-	// SvelteKit con `extractLocaleFromRequest` — ver `$lib/server/auth.ts` e
+	// SvelteKit con `extractLocaleFromRequest` — ver `#lib/server/auth.ts` e
 	// `invitations.ts`.
 	handleParaglide
 );

@@ -16,10 +16,10 @@ import type {
 // ============================================================================
 // Semillas de la BD de test. Las familias se siembran IGUAL que las siembra la
 // app al crearlas vía el plugin (`onEntityCreated` + `seedFamilyRoles` de
-// `$lib/server/tenancy.ts`): organización, roles admin/member con sus
+// `#lib/server/tenancy.ts`): organización, roles admin/member con sus
 // statements y traducciones, y el creador como miembro admin. Los valores van
 // duplicados aquí a propósito: importar `tenancy.ts` arrastraría la cadena de
-// imports del servidor (`$env/dynamic/private` incluido), que no resuelve
+// imports del servidor (`$app/env/private` incluido), que no resuelve
 // fuera de Vite.
 // ============================================================================
 

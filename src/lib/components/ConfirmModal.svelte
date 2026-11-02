@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { Modal } from '@callepuzzle/svelte-ui';
-	import { m } from '$lib/paraglide/messages.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { Snippet } from 'svelte';
-	import type { SubmitFunction } from '@sveltejs/kit';
 
 	/**
 	 * Modal de confirmación de una acción sin schema (borrar, expulsar,

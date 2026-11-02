@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Users from '@lucide/svelte/icons/users';
 	import { DropdownMenu, Link } from '@callepuzzle/svelte-ui';
-	import { m } from '$lib/paraglide/messages.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	// Selector de familia activa (issue #64). Se renderiza en la cabecera y en
 	// el drawer del layout con las familias que el load del layout trae del
@@ -45,7 +45,7 @@
 			}
 			// La cookie ya apunta a la nueva familia: reejecutar TODOS los loads
 			// (el del layout también) repinta cada vista con el contexto nuevo.
-			await invalidateAll();
+			await refreshAll();
 			close();
 		} catch {
 			failed = true;

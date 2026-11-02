@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import Home from '$lib/components/Home.svelte';
-	import Landing from '$lib/components/Landing.svelte';
-	import { m } from '$lib/paraglide/messages.js';
-	import { continueOnboardingTour } from '$lib/utils/tour';
+	import Home from '#lib/components/Home.svelte';
+	import Landing from '#lib/components/Landing.svelte';
+	import { m } from '#lib/paraglide/messages.js';
+	import { continueOnboardingTour } from '#lib/utils/tour.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

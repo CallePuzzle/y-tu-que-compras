@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import History from '@lucide/svelte/icons/history';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
-	import { m } from '$lib/paraglide/messages.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -54,14 +54,13 @@
 			     un enlace (navegación en cliente) y sin JavaScript vale el submit
 			     nativo: el resultado es el mismo.
 			     Como navegación, SvelteKit subiría al principio y reiniciaría el
-			     foco (#117): `noscroll` + `keepfocus` dejan la vista donde estaba,
-			     y `replacestate` evita una entrada de historial por cada tanda
+			     foco (#117): `reset="false"` deja la vista donde estaba, y
+			     `replacestate` evita una entrada de historial por cada tanda
 			     («atrás» sale del historial, no deshace cargas). -->
 			<form
 				action={resolve('/history')}
 				class="mt-4"
-				data-sveltekit-noscroll
-				data-sveltekit-keepfocus
+				data-sveltekit-reset="false"
 				data-sveltekit-replacestate
 			>
 				<input type="hidden" name="offset" value={data.nextOffset} />
