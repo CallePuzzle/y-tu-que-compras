@@ -121,11 +121,15 @@ al directorio `deploy/` de este repo (proyecto Tanka) y sincroniza en el namespa
 «dev» (ver `AGENTS.md`). Detalles de la arquitectura y de los secretos en el `AGENTS.md`
 y en la issue [#30](https://github.com/CallePuzzle/villajilguero-oci-services/issues/30).
 
-El release (`.github/workflows/release.yml`) se dispara al mergear a `main`: construye la imagen
+El release va en el workflow de CI (`.github/workflows/ci.yml`). Al mergear a `main` y pasar todos
+los checks, un job con semantic-release calcula la versión desde los Conventional Commits:
+breaking → major, `feat` → minor, `fix` y los demás tipos habituales → patch (ver `AGENTS.md`).
+`chore(deploy)` y los commits que no siguen Conventional Commits no generan release. Ese job
+corta el tag y crea la release. Los jobs siguientes del mismo workflow construyen la imagen
 `linux/arm64` (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`, con `NPM_TOKEN` como secret de
-BuildKit), corta la release con tag y commitea el nuevo tag en `deploy/pro/version.jsonnet`, lo
-que dispara el sync de Argo CD. Las migraciones las aplica el init container `db-migrate`
-(`prisma migrate deploy`) en cada despliegue; no hace falta ejecutarlas a mano.
+BuildKit), la publican y commitean el nuevo tag en `deploy/pro/version.jsonnet`, lo que dispara el
+sync de Argo CD. Las migraciones las aplica el init container `db-migrate` (`prisma migrate deploy`) en
+cada despliegue; no hace falta ejecutarlas a mano.
 
 Secretos del despliegue: `deploy/pro/secrets.enc` (cifrado con SOPS, clave age del repo de
 infra). Sin `SMTP_HOST`/`SMPT_*` la app arranca, pero el login OTP falla al enviar el correo.

@@ -1,0 +1,8 @@
+{
+	"name": "y-tu-que-compras-release",
+	"private": true,
+	"description": "semantic-release y sus plugins con lockfile para el job release de ci.yml (npm ci --ignore-scripts)",
+	"dependencies": {
+		"semantic-release": "25.0.9"
+	}
+}

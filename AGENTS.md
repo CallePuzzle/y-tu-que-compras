@@ -128,23 +128,39 @@ Reparto:
   `db-migrate` ejecuta `prisma migrate deploy` antes de arrancar el servidor. El entorno `pro/`
   lleva `spec.json`, `main.jsonnet` (host público), `version.jsonnet` (tag de imagen) y
   `secrets.enc` (SOPS/age, misma clave age que el repo de infra; ver `~/projects/age-key.txt`).
-- **Release**: CI verde en `main` → `.github/workflows/release.yml` (disparado por
-  `workflow_run` del CI, sobre su `head_sha`: solo se despliegan commits con CI completo en main)
-  corta la release/tag, construye la imagen `linux/arm64` en el runner `ubuntu-24.04-arm`
-  (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de GitHub Packages entra como
-  secret de BuildKit, no como ARG), la publica y commitea `deploy/pro/version.jsonnet`; Argo CD
-  (autoSync) despliega el nuevo tag. El build va en un job con `GITHUB_TOKEN` de solo lectura
-  (`packages: read`): los scripts de dependencias nunca ven un token de escritura; la imagen
-  pasa como artifact al job `publish`, que es el único con `packages: write` (issue #122). El push
-  del bump va por SSH con la deploy key de escritura `bump-pro release (CI)` (secret
-  `BUMP_DEPLOY_KEY`): el ruleset de `main` exige los checks de CI a los pushes humanos y la key es
-  bypass actor (el `GITHUB_TOKEN` del workflow no puede pushear — lo rechazó en la v0.0.1); si
-  main avanzó mientras tanto, rebase y reintento (5 intentos). El job `docker` de `ci.yml`
-  construye la misma imagen (mismo runner ARM) en cada PR y la arranca contra Postgres
-  (`migrate deploy` como el init container, servidor y curl a `/healthz`, `/readyz` y `/login`;
-  issue #123), así que el runtime real no se estrena en pro. El CI de `main` ignora `deploy/**`
-  (`paths-ignore`) y el bump lleva `[skip ci]`: ninguno dispara release. En PRs el CI cancela el
-  run anterior; en `main`, no.
+- **Release**: CI verde en `main` → el job `release` de `.github/workflows/ci.yml` ejecuta
+  semantic-release (config en `.releaserc.json`). Calcula la versión desde los Conventional Commits
+  que hay desde el último tag: breaking → major; `feat` → minor; `fix`, `perf`, `revert`, `chore`,
+  `docs`, `refactor`, `test`, `build`, `ci` y `style` → patch. `chore(deploy)` (el bump y los
+  manifiestos) y los commits que no siguen Conventional Commits (los merges, por ejemplo) no
+  generan release. En 0.x, el primer `feat` lleva a 0.1.0 y el primer breaking, a 1.0.0. Luego
+  corta el tag y crea la GitHub Release. semantic-release solo publica si HEAD es la punta de
+  `main`, así que el job hace checkout de la punta, pero solo publica si entre `github.sha` (el
+  commit que validó ESE run) y la punta no hay cambios fuera de `deploy/**`. Esos cambios suelen
+  ser el bump del run anterior, que con `[skip ci]` no tiene run propio. Si hay otros cambios, se
+  salta: es otro merge con su propio run en cola. La versión desplegada es el tag `v*` que haya
+  entre `github.sha` y la punta, así que un re-run completo vuelve a publicar la versión ya cortada.
+  semantic-release y todo su árbol de dependencias van fijados en `.github/release/` (`package.json`
+  - `package-lock.json`, instalados con `npm ci --ignore-scripts`). Para subirlo, se edita la
+    versión allí y se regenera el lockfile con `npm install --package-lock-only --ignore-scripts`.
+    Los jobs `build`/`publish`/`bump-pro` del mismo workflow (encadenados con `needs`) construyen,
+    desde `github.sha`, la imagen `linux/arm64` en el runner `ubuntu-24.04-arm`
+    (`ghcr.io/callepuzzle/y-tu-que-compras:vX.Y.Z`; `NPM_TOKEN` de GitHub Packages entra como
+    secret de BuildKit, no como ARG), la publican y commitean `deploy/pro/version.jsonnet`; Argo CD
+    (autoSync) despliega el nuevo tag. El build va en un job con `GITHUB_TOKEN` de solo lectura
+    (`packages: read`): los scripts de dependencias nunca ven un token de escritura; la imagen
+    pasa como artifact al job `publish`, que es el único con `packages: write` (issue #122). El
+    git de semantic-release (el dry-run de su `verifyAuth` y el push del tag) va por SSH con la
+    deploy key `bump-pro release (CI)` (secret `BUMP_DEPLOY_KEY`). Esa key es bypass actor del
+    ruleset de `main`, que exige los checks de CI: con el `GITHUB_TOKEN`, el ruleset rechazaría
+    ese dry-run (como rechazó el push del bump en la v0.0.1) y semantic-release abortaría con
+    `EGITNOPERMISSION`. El push del bump va por SSH con la misma key; si main avanzó mientras
+    tanto, rebase y reintento (5 intentos). El job `docker` de `ci.yml` construye la misma imagen
+    (mismo runner ARM) en cada PR y en main, y la arranca contra Postgres (`migrate deploy` como
+    el init container, servidor y curl a `/healthz`, `/readyz` y `/login`; issue #123), así que el
+    runtime real no se estrena en pro. El CI de `main` ignora `deploy/**` (`paths-ignore`) y el
+    bump lleva `[skip ci]`. En PRs el CI cancela el run anterior; en `main`, no: la cola serializa
+    también las releases.
 - **Runtime**: la imagen es todo bun, como `Zytera/auth`: build con `oven/bun:1.4.4` (exporta
   `ADAPTER=node`, que hace que `svelte.config.js` elija adapter-node) y runtime
   `oven/bun:1.4.4-distroless` ejecutando `bun run /app/build/index.js` (el output de adapter-node

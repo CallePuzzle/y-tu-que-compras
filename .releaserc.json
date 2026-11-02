@@ -1,0 +1,47 @@
+{
+	"branches": ["main"],
+	"tagFormat": "v${version}",
+	"repositoryUrl": "git@github.com:CallePuzzle/y-tu-que-compras.git",
+	"plugins": [
+		[
+			"@semantic-release/commit-analyzer",
+			{
+				"parserOpts": {
+					"headerPattern": "^(\\w*)(?:\\((.*)\\))?!?: (.*)$",
+					"breakingHeaderPattern": "^(\\w*)(?:\\((.*)\\))?!: (.*)$",
+					"noteKeywords": ["BREAKING CHANGE", "BREAKING-CHANGE"]
+				},
+				"releaseRules": [
+					{ "breaking": true, "release": "major" },
+					{ "type": "revert", "release": "patch" },
+					{ "type": "chore", "scope": "!deploy", "release": "patch" },
+					{ "type": "chore", "scope": null, "release": "patch" },
+					{ "type": "docs", "release": "patch" },
+					{ "type": "refactor", "release": "patch" },
+					{ "type": "test", "release": "patch" },
+					{ "type": "build", "release": "patch" },
+					{ "type": "ci", "release": "patch" },
+					{ "type": "style", "release": "patch" }
+				]
+			}
+		],
+		[
+			"@semantic-release/release-notes-generator",
+			{
+				"parserOpts": {
+					"headerPattern": "^(\\w*)(?:\\((.*)\\))?!?: (.*)$",
+					"breakingHeaderPattern": "^(\\w*)(?:\\((.*)\\))?!: (.*)$",
+					"noteKeywords": ["BREAKING CHANGE", "BREAKING-CHANGE"]
+				}
+			}
+		],
+		[
+			"@semantic-release/github",
+			{
+				"successComment": false,
+				"failComment": false,
+				"releasedLabels": false
+			}
+		]
+	]
+}
