@@ -255,13 +255,44 @@ local _secret = (import 'github.com/CallePuzzle/jsonnet-lib-manifests/secret-str
     },
     spec: {
       instances: 1,
+      // DR 2026-11-02: la instancia OCI se recreó por accidente (el cluster y
+      // sus PVs vivían en disco local) y volvió a nacer vacío con initdb. Se
+      // restaura por PITR desde barman al último punto razonable antes del
+      // desastre (~19:45 UTC, la instancia murió hacia las 19:55): CNPG elige
+      // el base backup más reciente anterior a targetTime (20261102T033000) y
+      // repone el WAL archivado hasta esa hora (archive_timeout 5min). Sin
+      // recoveryTarget restauraría «el último backup», que tras la recreación
+      // es el backup vacío que el ScheduledBackup(immediate) tomó del cluster
+      // recién inicializado. El bootstrap solo aplica en la creación: una vez
+      // el cluster existe, este bloque se ignora y no re-restaura nada.
       bootstrap: {
-        initdb: {
+        recovery: {
+          source: $.values.dbClusterName,
           database: 'ytqc',
           owner: 'ytqc',
           secret: { name: $.values.dbClusterName + '-credentials' },
+          recoveryTarget: {
+            targetTime: '2026-11-02 19:45:00.00000+00',
+          },
         },
       },
+      // El nombre de la entrada DEBE ser el serverName del catálogo barman
+      // (el nombre del Cluster original): es la carpeta que CNPG busca bajo
+      // destinationPath (s3://.../ytqc-db/ytqc-db).
+      externalClusters: [
+        {
+          name: $.values.dbClusterName,
+          barmanObjectStore: {
+            destinationPath: 's3://jilguedev-db-backups/' + $.values.dbBackupPath,
+            endpointURL: 'https://axcnsuaoa3od.compat.objectstorage.eu-madrid-1.oci.customer-oci.com',
+            s3Credentials: {
+              accessKeyId: { name: $.values.dbClusterName + '-backup-credentials', key: 'ACCESS_KEY_ID' },
+              secretAccessKey: { name: $.values.dbClusterName + '-backup-credentials', key: 'ACCESS_SECRET_KEY' },
+            },
+            wal: { compression: 'gzip', maxParallel: 8 },
+          },
+        },
+      ],
       // Rotación de password declarativa: al cambiar el Secret, el operador ejecuta
       // ALTER ROLE automáticamente (initdb solo aplica en el bootstrap inicial).
       // El rol `ytqc` ya existe (lo crea initdb como owner) y se adopta sin conflictos.
