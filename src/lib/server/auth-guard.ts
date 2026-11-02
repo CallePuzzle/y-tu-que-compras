@@ -14,9 +14,10 @@ import { redirect, type Handle } from '@sveltejs/kit';
 /** Rutas que no exigen sesión: la portada (la landing pública), la página de login, la API de better-auth (el propio flujo de login va sin sesión), las probes del clúster y lo demás que va sin sesión. */
 export function isPublicPathname(pathname: string): boolean {
 	return (
-		// La portada es la landing pública (issue #133): quien llega por primera
-		// vez (p. ej. desde una invitación) debe poder ver qué es la app sin
-		// sesión. Con sesión se muestra la misma landing (sólo cambia el CTA).
+		// La portada es pública (issue #133): quien llega por primera vez
+		// (p. ej. desde una invitación) debe poder ver qué es la app sin
+		// sesión. Con sesión la misma ruta pinta el home: la bifurcación la
+		// decide la página según `data.user`, sin redirects (issue #160).
 		pathname === '/' ||
 		// Su `__data.json`, que pide el router en cliente al navegar a `/`.
 		pathname === '/__data.json' ||
