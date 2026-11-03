@@ -27,6 +27,9 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		purchase: {
 			listName: purchase.listName,
+			// El establecimiento congelado al comprar (#187): el snapshot viaja
+			// tal cual, aunque la tienda se haya renombrado o borrado desde.
+			storeName: purchase.storeName,
 			date: formatDateTime(purchase.createdAt, locale),
 			total: formatPrice(purchase.total, locale),
 			items: purchase.items.map((item) => ({

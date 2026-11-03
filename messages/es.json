@@ -256,6 +256,7 @@
 	"history_empty": "Todavía no hay compras en esta familia: se registran al finalizar una compra.",
 	"history_go_lists": "Ir a las listas",
 	"history_load_more": "Cargar más",
+	"history_no_store": "Sin establecimiento",
 	"history_total": "Total",
 	"history_items": "Artículos",
 	"categories_duplicate": "Ya existe una categoría con ese nombre en esta familia.",

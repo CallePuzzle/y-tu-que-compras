@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
-import { createFamily, createPurchaseRecord, createUser, resetDb } from '../../../e2e/helpers/seed';
+import {
+	createFamily,
+	createPurchaseRecord,
+	createStore,
+	createUser,
+	resetDb
+} from '../../../e2e/helpers/seed';
 
 test.beforeEach(async () => {
 	await resetDb();
@@ -63,6 +69,8 @@ test('muestra las compras con lista de origen, fecha y total, la más reciente p
 	await page.goto('/history');
 	await waitForHydration(page);
 
+	// Sin establecimiento en ninguna compra: un solo bloque, al final de todo.
+	await expect(page.getByRole('heading', { level: 2, name: 'Sin establecimiento' })).toBeVisible();
 	// Orden por fecha descendente (#76): la más nueva arriba.
 	const filas = page.locator('section li');
 	await expect(filas).toHaveCount(2);
@@ -71,6 +79,159 @@ test('muestra las compras con lista de origen, fecha y total, la más reciente p
 	await expect(filas.nth(0)).toContainText('7,50 €');
 	await expect(filas.nth(1)).toContainText('Compra semanal');
 	await expect(filas.nth(1)).toContainText('43,20 €');
+});
+
+test('agrupa por establecimiento: secciones por su compra más reciente y «Sin establecimiento» al final (#187)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lidl = await createStore({ familyId: family.id, name: 'Lidl' });
+	await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra Lidl',
+		storeId: lidl.id,
+		storeName: 'Lidl',
+		createdAt: new Date('2026-06-15T10:00:00Z')
+	});
+	// Compras de un establecimiento BORRADO: el nombre del snapshot agrupa
+	// igual (el historial sobrevive al borrado, SetNull + storeName).
+	await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra Mercadona nueva',
+		storeName: 'Mercadona',
+		createdAt: new Date('2026-06-10T10:00:00Z')
+	});
+	await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra Mercadona vieja',
+		storeName: 'Mercadona',
+		createdAt: new Date('2026-03-01T10:00:00Z')
+	});
+	// Sin establecimiento y además la compra MÁS NUEVA: su bloque va al final
+	// igualmente — es bloque propio, no una sección más (#187).
+	await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra suelta',
+		createdAt: new Date('2026-07-20T10:00:00Z')
+	});
+	await seedSession(page, user);
+
+	await page.goto('/history');
+	await waitForHydration(page);
+
+	// Secciones por su compra más reciente: Lidl (15 jun) sobre Mercadona
+	// (10 jun, snapshot de tienda borrada) y «Sin establecimiento» al final.
+	await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+		'Lidl',
+		'Mercadona',
+		'Sin establecimiento'
+	]);
+	// Dentro de cada sección, de la más reciente a la más antigua.
+	const filas = page.locator('section li');
+	await expect(filas).toHaveCount(4);
+	await expect(filas.nth(0)).toContainText('Compra Lidl');
+	await expect(filas.nth(1)).toContainText('Compra Mercadona nueva');
+	await expect(filas.nth(2)).toContainText('Compra Mercadona vieja');
+	await expect(filas.nth(3)).toContainText('Compra suelta');
+});
+
+test('«Cargar más» por sección: solo crece la suya, las otras quedan igual (#187)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
+	for (let i = 0; i < 25; i++) {
+		// createdAt crecientes: la «Compra Mercadona 25» es la más reciente.
+		await createPurchaseRecord({
+			familyId: family.id,
+			listName: `Compra Mercadona ${i + 1}`,
+			storeId: mercadona.id,
+			storeName: 'Mercadona',
+			createdAt: new Date(Date.UTC(2026, 0, 1, 12, i))
+		});
+	}
+	const lidl = await createStore({ familyId: family.id, name: 'Lidl' });
+	await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra Lidl',
+		storeId: lidl.id,
+		storeName: 'Lidl',
+		createdAt: new Date('2026-02-01T10:00:00Z')
+	});
+	await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra suelta',
+		createdAt: new Date('2026-01-01T10:00:00Z')
+	});
+	await seedSession(page, user);
+
+	await page.goto('/history');
+	await waitForHydration(page);
+
+	// Mercadona (sección paginada) + Lidl y «Sin establecimiento» completos.
+	const suyas = page.locator('li', { hasText: 'Compra Mercadona' });
+	await expect(suyas).toHaveCount(20);
+	await expect(page.locator('li', { hasText: 'Compra Lidl' })).toHaveCount(1);
+	await expect(page.locator('li', { hasText: 'Compra suelta' })).toHaveCount(1);
+	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(1);
+
+	await page.getByRole('button', { name: 'Cargar más' }).click();
+	// Solo la sección de Mercadona crece hasta el final; las otras no se
+	// mueven y, sin historia detrás en ninguna, el botón desaparece.
+	await expect(page).toHaveURL(/offset-/);
+	await expect(suyas).toHaveCount(25);
+	await expect(page.locator('li', { hasText: 'Compra Lidl' })).toHaveCount(1);
+	await expect(page.locator('li', { hasText: 'Compra suelta' })).toHaveCount(1);
+	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(0);
+});
+
+test('dos secciones paginadas: cargar una no reinicia la página de la otra (#187)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
+	const lidl = await createStore({ familyId: family.id, name: 'Lidl' });
+	for (let i = 0; i < 25; i++) {
+		// Mercadona con las compras más nuevas: su sección queda primera.
+		await createPurchaseRecord({
+			familyId: family.id,
+			listName: `Compra Mercadona ${i + 1}`,
+			storeId: mercadona.id,
+			storeName: 'Mercadona',
+			createdAt: new Date(Date.UTC(2026, 5, 1, 12, i))
+		});
+		await createPurchaseRecord({
+			familyId: family.id,
+			listName: `Compra Lidl ${i + 1}`,
+			storeId: lidl.id,
+			storeName: 'Lidl',
+			createdAt: new Date(Date.UTC(2026, 0, 1, 12, i))
+		});
+	}
+	await seedSession(page, user);
+
+	await page.goto('/history');
+	await waitForHydration(page);
+
+	// Dos secciones paginadas, dos botones: primero el de Mercadona (arriba).
+	const suyas = page.locator('li', { hasText: 'Compra Mercadona' });
+	const suyasLidl = page.locator('li', { hasText: 'Compra Lidl' });
+	await expect(suyas).toHaveCount(20);
+	await expect(suyasLidl).toHaveCount(20);
+	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(2);
+
+	await page.getByRole('button', { name: 'Cargar más' }).first().click();
+	await expect(suyas).toHaveCount(25);
+
+	// Queda el de Lidl. Sus inputs ocultos viajan con el offset de Mercadona:
+	// al cargar Lidl, Mercadona NO vuelve a la primera página (20 filas).
+	await page.getByRole('button', { name: 'Cargar más' }).click();
+	await expect(suyasLidl).toHaveCount(25);
+	await expect(suyas).toHaveCount(25);
+	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(0);
 });
 
 test('carga incremental: «Cargar más» añade la cola sin perder las filas ya vistas', async ({
@@ -98,7 +259,7 @@ test('carga incremental: «Cargar más» añade la cola sin perder las filas ya 
 	await expect(page.getByText('Compra 1', { exact: true })).toHaveCount(0);
 
 	await page.getByRole('button', { name: 'Cargar más' }).click();
-	await expect(page).toHaveURL(/\?offset=20$/);
+	await expect(page).toHaveURL(/\?offset-none=20$/);
 	await expect(page.locator('section li')).toHaveCount(25);
 	// Ya no queda historia detrás: el botón desaparece.
 	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(0);

@@ -307,10 +307,22 @@ export async function finalizePurchase(
 export const PURCHASES_PAGE_SIZE = 20;
 
 /**
+ * La clave de sección de las compras SIN establecimiento (#187): las de antes
+ * de la épica y las cerradas sin tienda. Es fija y sin colisiones posibles
+ * (un id de tienda es un cuid y un snapshot va con prefijo), para que el
+ * `?offset-<clave>` de su «Cargar más» no pise al de las demás.
+ */
+const SIN_ESTABLECIMIENTO = 'none';
+
+/** El prefijo de la clave de sección de un establecimiento BORRADO (#187). */
+const ESTABLECIMIENTO_BORRADO = 'nombre:';
+
+/**
  * El tope del offset de «Cargar más» (issue #109): sin él, un `?offset=1e21`
  * pasaba `Number.isInteger` y el `take` desmedido revientaba Prisma (500), y
  * un `?offset=1000000` volcaba el historial entero. 1000 compras son 50
- * páginas: para el historial de una familia, de sobra.
+ * páginas: para el historial de una familia, de sobra. Cada sección del
+ * listado agrupado (#187) acota SU offset por este tope, por su cuenta.
  */
 export const MAX_PURCHASES_OFFSET = 1000;
 
@@ -336,6 +348,8 @@ export interface PurchaseItemView {
 
 /** El detalle completo de una compra: el resumen más su snapshot de items. */
 export interface PurchaseDetailView extends PurchaseSummaryView {
+	/** Establecimiento congelado al comprar (#187); `null` si no llevó. */
+	storeName: string | null;
 	items: PurchaseItemView[];
 }
 
@@ -350,36 +364,172 @@ function toSummary(row: {
 }
 
 /**
- * Las compras de la familia, de la más reciente a la más antigua (#76), con
- * carga incremental ACUMULATIVA: la página de `offset` trae TODO hasta ese
- * límite, no solo sus filas. Así el enlace «Cargar más» (`?offset=N+pageSize`)
- * añade al final de lo ya pintado con y sin JavaScript: en cliente la
- * navegación sustituye `data.purchases` por el array más largo y el `each`
- * reutiliza las filas existentes; sin JS, la página completa llega ya crecida.
- * El orden secundario por `id` desempata los `createdAt` iguales de forma
- * determinista (dos compras en el mismo instante no bailan entre páginas).
+ * Una sección del listado agrupado (#187): las compras de UN establecimiento,
+ * con el offset de SU carga incremental y el aviso de historia detrás.
  */
-export async function listPurchases(
-	familyId: string,
-	offset: number
-): Promise<{ purchases: PurchaseSummaryView[]; hasMore: boolean }> {
-	// El offset viaja en la URL: cualquier cosa que no sea un entero no
-	// negativo es la primera página, y por encima del tope se ACOTA (issue
-	// #109): un offset desmedido no puede ni reventar el `take` de Prisma ni
-	// volcar el historial entero. Un `take` grande solo relee compras de LA
-	// FAMILIA (el `where` manda), nunca las de nadie.
-	const from = Number.isInteger(offset) && offset > 0 ? Math.min(offset, MAX_PURCHASES_OFFSET) : 0;
+export interface PurchaseGroupView {
+	/**
+	 * La clave de la sección, estable para la URL del `?offset-<clave>`: el id
+	 * del establecimiento vivo, el nombre congelado con prefijo si el
+	 * establecimiento se borró (SetNull + snapshot) o la fija de «Sin
+	 * establecimiento». El id y no el nombre, porque el nombre puede cambiar
+	 * si renombran la tienda; la clave no.
+	 */
+	key: string;
+	/**
+	 * El nombre visible del establecimiento: el actual si la tienda vive, el
+	 * del snapshot si se borró. `null` en «Sin establecimiento».
+	 */
+	storeName: string | null;
+	purchases: PurchaseSummaryView[];
+	/** El offset (acotado) que sirvió esta página de la sección. */
+	offset: number;
+	/** ¿Queda historia detrás en esta sección? Cada una pagina por su cuenta. */
+	hasMore: boolean;
+}
 
-	const rows = await prisma.purchaseRecord.findMany({
+/**
+ * El historial de la familia agrupado POR ESTABLECIMIENTO (#187): una sección
+ * por tienda con compras, ordenadas por la compra más reciente de cada una
+ * (la que compró más nuevo sube) y las compras por fecha dentro de la suya —
+ * el índice `(organizationId, createdAt desc, id)` del esquema sirve a todas
+ * las consultas. «Sin establecimiento» es un bloque propio SIEMPRE al final:
+ * las compras de antes de la épica y las cerradas sin tienda van ahí aunque
+ * sean las más nuevas de todas.
+ *
+ * El establecimiento borrado no rompe nada: su FK es `SetNull` (tarea #179)
+ * y sus compras conservan el nombre congelado en `storeName`, así que siguen
+ * juntas en una sección con ese nombre del snapshot — el historial sobrevive
+ * al borrado como sobrevive al de la lista (`listName`).
+ *
+ * Cada sección pagina de forma ACUMULATIVA (mismo patrón del listado plano
+ * #76): la página de su offset trae TODO lo suyo hasta ese límite, no solo
+ * sus filas, para que «Cargar más» añada al final de lo ya pintado. El
+ * offset viaja en la URL por sección (`?offset-<clave>=n`): cualquier cosa
+ * que no sea un entero positivo es la primera página de ese bloque, y por
+ * encima del tope se ACOTA (#109) — un offset desmedido no puede ni reventar
+ * el `take` de Prisma ni volcar el historial entero. Un `take` grande solo
+ * relee compras de LA FAMILIA (el `where` manda), nunca las de nadie.
+ */
+export async function listPurchasesByStore(
+	familyId: string,
+	offsets: Record<string, number> = {}
+): Promise<{ groups: PurchaseGroupView[] }> {
+	// Las secciones que existen: un grupo por (establecimiento, nombre del
+	// snapshot) con la fecha de su compra más reciente. Agrupar por AMBOS
+	// separa las compras de una tienda borrada (storeId null, storeName
+	// congelado) de las que nunca llevaron tienda — y las de una tienda viva
+	// renombrada a medio camino viajan con dos snapshots distintos pero caen
+	// en la MISMA sección (ver abajo).
+	const grupos = await prisma.purchaseRecord.groupBy({
+		by: ['storeId', 'storeName'],
 		where: { organizationId: familyId },
-		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-		select: { id: true, listName: true, total: true, createdAt: true },
-		// Una compra de más para saber si queda historia detrás (#76).
-		take: from + PURCHASES_PAGE_SIZE + 1
+		_max: { createdAt: true }
 	});
 
-	const hasMore = rows.length > from + PURCHASES_PAGE_SIZE;
-	return { purchases: rows.slice(0, from + PURCHASES_PAGE_SIZE).map(toSummary), hasMore };
+	// Los nombres ACTUALES de los establecimientos vivos con compras: la
+	// sección de una tienda viva se titula como la tienda de hoy, no como el
+	// snapshot de su compra más vieja.
+	const idsVivos = [...new Set(grupos.map((grupo) => grupo.storeId).filter((id) => id !== null))];
+	const vivos = await prisma.store.findMany({
+		where: { organizationId: familyId, id: { in: idsVivos } },
+		select: { id: true, name: true }
+	});
+	const nombreActual = new Map(vivos.map((store) => [store.id, store.name]));
+
+	/** Un bloque: su clave, su título, el filtro de sus compras y su tope de orden. */
+	interface Bloque {
+		key: string;
+		storeName: string | null;
+		where: Prisma.PurchaseRecordWhereInput;
+		ultima: Date;
+	}
+	const bloques = new Map<string, Bloque>();
+	for (const grupo of grupos) {
+		// Imposible que un grupo exista sin fecha (alguna fila lo creó):
+		// guardia de tipos.
+		if (grupo._max.createdAt === null) continue;
+
+		let bloque: Bloque;
+		if (grupo.storeId !== null) {
+			const nombre = nombreActual.get(grupo.storeId) ?? grupo.storeName;
+			// Sin nombre no hay sección que titular: no ocurre en la práctica
+			// (finalizar siempre congela uno), y una tienda que murió ENTRE la
+			// agrupación y esta consulta es «sin título» y se salta — sus
+			// compras reaparecen con el snapshot en la siguiente petición.
+			if (nombre === null) continue;
+			bloque = {
+				key: grupo.storeId,
+				storeName: nombre,
+				where: { storeId: grupo.storeId },
+				ultima: grupo._max.createdAt
+			};
+		} else if (grupo.storeName !== null) {
+			// Establecimiento borrado (SetNull): sus compras quedan juntas bajo
+			// el nombre congelado, como lo dejó `finalizePurchase`.
+			bloque = {
+				key: `${ESTABLECIMIENTO_BORRADO}${grupo.storeName}`,
+				storeName: grupo.storeName,
+				where: { storeId: null, storeName: grupo.storeName },
+				ultima: grupo._max.createdAt
+			};
+		} else {
+			// Sin establecimiento: el bloque final.
+			bloque = {
+				key: SIN_ESTABLECIMIENTO,
+				storeName: null,
+				where: { storeId: null, storeName: null },
+				ultima: grupo._max.createdAt
+			};
+		}
+
+		// Dos grupos con la misma clave (tienda viva renombrada a medio
+		// camino): un solo bloque, ordenado por la más nueva de las dos.
+		const previo = bloques.get(bloque.key);
+		if (previo && previo.ultima >= bloque.ultima) continue;
+		bloques.set(bloque.key, bloque);
+	}
+
+	// Secciones por su compra más reciente (el desempate por clave, canónico
+	// como en todo el módulo: dos con el mismo instante no bailan), con «Sin
+	// establecimiento» SIEMPRE al final.
+	const ordenados = [...bloques.values()].sort((a, b) => {
+		if (a.key === SIN_ESTABLECIMIENTO) return 1;
+		if (b.key === SIN_ESTABLECIMIENTO) return -1;
+		if (a.ultima.getTime() !== b.ultima.getTime()) {
+			return b.ultima.getTime() - a.ultima.getTime();
+		}
+		return ordenCanonico(a.key, b.key);
+	});
+
+	// La página de CADA bloque, acumulativa y acotada por su cuenta (#109).
+	const groups: PurchaseGroupView[] = [];
+	for (const bloque of ordenados) {
+		const pedido = offsets[bloque.key];
+		const from =
+			Number.isInteger(pedido) && pedido > 0 ? Math.min(pedido, MAX_PURCHASES_OFFSET) : 0;
+
+		const rows = await prisma.purchaseRecord.findMany({
+			where: { organizationId: familyId, ...bloque.where },
+			orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+			select: { id: true, listName: true, total: true, createdAt: true },
+			// Una compra de más para saber si queda historia detrás (#76).
+			take: from + PURCHASES_PAGE_SIZE + 1
+		});
+		// Raro (la tienda murió entre la agrupación y esta consulta): una
+		// sección vacía solo sería ruido, mejor fuera.
+		if (rows.length === 0) continue;
+
+		const hasMore = rows.length > from + PURCHASES_PAGE_SIZE;
+		groups.push({
+			key: bloque.key,
+			storeName: bloque.storeName,
+			offset: from,
+			hasMore,
+			purchases: rows.slice(0, from + PURCHASES_PAGE_SIZE).map(toSummary)
+		});
+	}
+	return { groups };
 }
 
 /**
@@ -400,6 +550,9 @@ export async function getPurchase(
 			listName: true,
 			total: true,
 			createdAt: true,
+			// El establecimiento del momento (#187): congelado al finalizar, el
+			// ticket lo muestra aunque la tienda se renombre o se borre.
+			storeName: true,
 			items: {
 				orderBy: { position: 'asc' },
 				select: { id: true, name: true, quantity: true, unit: true }
@@ -411,6 +564,7 @@ export async function getPurchase(
 	}
 	return {
 		...toSummary(row),
+		storeName: row.storeName,
 		items: row.items.map((item) => ({
 			id: item.id,
 			name: item.name,
