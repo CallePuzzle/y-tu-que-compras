@@ -110,11 +110,11 @@ model RateLimit {
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
 //
-// Las relaciones `lists`, `categories`, `purchases` y `pantryItems` son de la
-// app (no del plugin, que las ignora): al borrar la familia mueren con ella
-// sus listas de la compra (Cascade en List), sus categorías (Cascade en
-// Category), su historial de compras (Cascade en PurchaseRecord) y su despensa
-// (Cascade en PantryItem).
+// Las relaciones `lists`, `categories`, `stores`, `purchases` y `pantryItems`
+// son de la app (no del plugin, que las ignora): al borrar la familia mueren
+// con ella sus listas de la compra (Cascade en List), sus categorías (Cascade
+// en Category), sus establecimientos (Cascade en Store), su historial de
+// compras (Cascade en PurchaseRecord) y su despensa (Cascade en PantryItem).
 model Organization {
   id          String           @id
   name        String
@@ -124,6 +124,7 @@ model Organization {
   updatedAt   DateTime         @updatedAt
   lists       List[]
   categories  Category[]
+  stores      Store[]
   purchases   PurchaseRecord[]
   pantryItems PantryItem[]
 
@@ -409,15 +410,46 @@ enum Unit {
   @@map("unit")
 }
 
+// Establecimiento de una familia (épica #177, tarea #179): la tienda o el
+// supermercado donde se hace una compra. La familia es la dueña (Cascade, como
+// las listas). `name` es el nombre visible; `normalizedName` es el nombre
+// CANÓNICO de búsqueda (trim, minúsculas y sin acentos, ver
+// `normalizeItemName` en `$lib/normalize-name`) — no se muestra, existe para
+// que «Mercadona» y «mercadona» sean el mismo establecimiento.
+//
+// El único (familia, nombre normalizado) replica el contrato de Category y
+// sirve de índice al listado de establecimientos: con `organizationId`
+// delante, la propia restricción indexa la consulta por familia.
+model Store {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  purchases      PurchaseRecord[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([organizationId, normalizedName])
+  @@map("store")
+}
+
 // Registro histórico de una compra finalizada (issue #75): snapshot inmutable
 // que crea la transacción de «finalizar compra» (#43). La familia es la dueña
 // (Cascade, como las listas). La lista de origen es nullable con SetNull: el
 // historial sobrevive a que se borre la lista, por eso el nombre va snapshotado
-// en `listName`. `total` es DECIMAL(10,2) — euros con céntimos — y lo escribe a
-// mano el usuario en el modal al finalizar (moneda única EUR, sin campo). La
-// fecha de la compra es el `createdAt`: el registro se crea exactamente al
-// finalizar, no tiene vida posterior (inmutable). El usuario que finaliza
-// también va con SetNull: que borre su cuenta no debe romper el historial.
+// en `listName`. El establecimiento lleva el mismo trato (épica #177, tarea
+// #179): `storeId` es nullable con SetNull — la compra puede no llevarlo y
+// borrarlo solo le quita la referencia — y `storeName` congela el nombre
+// visible que tenía al comprar (mismo patrón que `listName` y el
+// `categoryName` de PurchaseItem), así que el historial muestra el
+// establecimiento DEL MOMENTO aunque después se renombre o desaparezca.
+// Nullable porque la compra pudo no llevar establecimiento. `total` es
+// DECIMAL(10,2) — euros con céntimos — y lo escribe a mano el usuario en el
+// modal al finalizar (moneda única EUR, sin campo). La fecha de la compra es
+// el `createdAt`: el registro se crea exactamente al finalizar, no tiene vida
+// posterior (inmutable). El usuario que finaliza también va con SetNull: que
+// borre su cuenta no debe romper el historial.
 //
 // El índice (familia, createdAt DESC, id) es el del listado del historial
 // (issue #109): la consulta ordena por `createdAt desc, id desc` y filtra por
@@ -429,6 +461,9 @@ model PurchaseRecord {
   listId         String?
   list           List?          @relation(fields: [listId], references: [id], onDelete: SetNull)
   listName       String
+  storeId        String?
+  store          Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  storeName      String?
   total          Decimal        @db.Decimal(10, 2)
   userId         String?
   user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
