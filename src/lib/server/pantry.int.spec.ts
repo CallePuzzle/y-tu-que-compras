@@ -10,7 +10,14 @@ import { describe, expect, it } from 'vitest';
 // la despensa muestra SOLO los productos de la familia activa, con la cantidad
 // Decimal aplanada a número para la vista (#72).
 import prisma from './prisma.js';
-import { adjustPantryItem, listPantryItems, removePantryItem, readdPantryItem } from './pantry.js';
+import {
+	adjustPantryItem,
+	listPantryItems,
+	removePantryItem,
+	readdPantryItem,
+	setPantryItemCategory
+} from './pantry.js';
+import { createCategory, deleteCategory } from './categories.js';
 import { createItem } from './items.js';
 import { createList } from './lists.js';
 
@@ -203,6 +210,81 @@ describe('Quitar un producto de la despensa (#148)', () => {
 	it('un id que no existe devuelve false', async () => {
 		const familyId = await familyRow('Familia Quita Fantasma');
 		await expect(removePantryItem(familyId, 'no-existe')).resolves.toBe(false);
+	});
+});
+
+describe('Recategorizar un producto (#176)', () => {
+	it('fija la categoría del producto y el listado la muestra por id y nombre', async () => {
+		const familyId = await familyRow('Familia Recategoriza');
+		const lacteos = await createCategory(familyId, { name: 'Lácteos' });
+		const leche = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+
+		await expect(setPantryItemCategory(familyId, leche.id, lacteos.id)).resolves.toBe('updated');
+
+		const items = await listPantryItems(familyId);
+		expect(items[0]).toMatchObject({
+			name: 'Leche entera',
+			categoryId: lacteos.id,
+			categoryName: 'Lácteos'
+		});
+	});
+
+	it('con null quita la categoría: el producto queda sin ella', async () => {
+		const familyId = await familyRow('Familia Descategoriza');
+		const lacteos = await createCategory(familyId, { name: 'Lácteos' });
+		const leche = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+		await setPantryItemCategory(familyId, leche.id, lacteos.id);
+
+		await expect(setPantryItemCategory(familyId, leche.id, null)).resolves.toBe('updated');
+
+		const items = await listPantryItems(familyId);
+		expect(items[0]).toMatchObject({
+			name: 'Leche entera',
+			categoryId: null,
+			categoryName: null
+		});
+	});
+
+	it('un producto de otra familia no se puede recategorizar (pantry-gone)', async () => {
+		const mia = await familyRow('Familia Recat Propia');
+		const ajena = await familyRow('Familia Recat Ajena');
+		const caviar = await pantryRow(ajena, 'Caviar', 1, 'unit');
+		const lacteos = await createCategory(mia, { name: 'Lácteos' });
+
+		await expect(setPantryItemCategory(mia, caviar.id, lacteos.id)).resolves.toBe('pantry-gone');
+
+		// El producto ajeno queda como estaba: sin categoría.
+		const fila = await prisma.pantryItem.findUniqueOrThrow({ where: { id: caviar.id } });
+		expect(fila.categoryId).toBeNull();
+	});
+
+	it('una categoría ajena o ya borrada es category-gone, sin tocar el producto', async () => {
+		const mia = await familyRow('Familia Recat Categoría');
+		const ajena = await familyRow('Familia Recat Categoría Ajena');
+		const pan = await pantryRow(mia, 'Pan', 1, 'unit');
+		const lacteosAjena = await createCategory(ajena, { name: 'Lácteos' });
+
+		// El id ajeno no vale aunque la familia tenga el mismo nombre de categoría.
+		await expect(setPantryItemCategory(mia, pan.id, lacteosAjena.id)).resolves.toBe(
+			'category-gone'
+		);
+
+		// Un id propio borrado mientras el modal estaba abierto tampoco.
+		const frutas = await createCategory(mia, { name: 'Frutas' });
+		await deleteCategory(mia, frutas.id);
+		await expect(setPantryItemCategory(mia, pan.id, frutas.id)).resolves.toBe('category-gone');
+
+		// El producto nunca se tocó: sigue sin categoría.
+		const items = await listPantryItems(mia);
+		expect(items[0]).toMatchObject({ name: 'Pan', categoryId: null, categoryName: null });
+	});
+
+	it('un id de producto que no existe devuelve pantry-gone', async () => {
+		const familyId = await familyRow('Familia Recat Fantasma');
+		const lacteos = await createCategory(familyId, { name: 'Lácteos' });
+		await expect(setPantryItemCategory(familyId, 'no-existe', lacteos.id)).resolves.toBe(
+			'pantry-gone'
+		);
 	});
 });
 

@@ -18,6 +18,10 @@ export interface PantryItemView {
 	quantity: number;
 	/** Valor del enum `Unit` (identificador inglés); la UI lo traduce con `unit_*`. */
 	unit: Unit;
+	/** Categoría del producto, si la tiene (épica #164): id para el selector de recategorización (#176). */
+	categoryId: string | null;
+	/** Nombre visible de la categoría; `null` si no la tiene o la FK está a null. */
+	categoryName: string | null;
 }
 
 /** De la fila de Prisma a la vista: el Decimal se aplana a `number`. */
@@ -26,12 +30,16 @@ function toPantryItem(row: {
 	name: string;
 	quantity: unknown;
 	unit: Unit;
+	categoryId: string | null;
+	category: { name: string } | null;
 }): PantryItemView {
 	return {
 		id: row.id,
 		name: row.name,
 		quantity: Number(row.quantity),
-		unit: row.unit
+		unit: row.unit,
+		categoryId: row.categoryId,
+		categoryName: row.category?.name ?? null
 	};
 }
 
@@ -40,12 +48,23 @@ function toPantryItem(row: {
  * es el orden en el que se mira «¿queda X?». El nombre es el que puso la
  * PRIMERA compra del producto (`purchases.ts` lo conserva aunque las siguientes
  * lleguen escritas de otra manera); solo su cantidad crece.
+ *
+ * El AGRUPADO por categorías lo monta la vista (#176) con el orden de
+ * `listCategories`: aquí solo viaja la categoría de cada producto por id y por
+ * nombre visible.
  */
 export async function listPantryItems(familyId: string): Promise<PantryItemView[]> {
 	const rows = await prisma.pantryItem.findMany({
 		where: { organizationId: familyId },
 		orderBy: { name: 'asc' },
-		select: { id: true, name: true, quantity: true, unit: true }
+		select: {
+			id: true,
+			name: true,
+			quantity: true,
+			unit: true,
+			categoryId: true,
+			category: { select: { name: true } }
+		}
 	});
 	return rows.map(toPantryItem);
 }
@@ -132,6 +151,61 @@ export async function removePantryItem(familyId: string, id: string): Promise<bo
 		where: { id, organizationId: familyId }
 	});
 	return borrado.count > 0;
+}
+
+/** Cómo acabó un cambio de categoría de un producto de despensa (#176). */
+export type SetCategoryOutcome =
+	/** El producto quedó con la categoría pedida (o sin ella, con `null`). */
+	| 'updated'
+	/** El producto ya no está en esa familia (id ajeno o rancio). */
+	| 'pantry-gone'
+	/** La categoría pedida no existe en esa familia (id ajeno o borrada mientras el modal estaba abierto). */
+	| 'category-gone';
+
+/**
+ * Fija (o quita, con `null`) la categoría de UN producto de la despensa
+ * (issue #176): escritura para cualquier miembro (issue #111) — la categoría
+ * es un agrupado de la familia, no una decisión de gestión. La categoría se
+ * valida DENTRO de la transacción: un id ajeno o borrado mientras el modal
+ * estaba abierto es «category-gone», no un silencioso «sin categoría» — aquí
+ * la categoría es TODO el propósito del cambio, y dejar el producto sin ella
+ * por un id rancio sería un resultado que el usuario no pidió.
+ *
+ * La pertenencia va en cada `where` (mismo criterio que `adjustPantryItem`):
+ * sin ventana de carrera entre el check y el write, y un producto de otra
+ * familia es «no existe». Quitar la categoría (`null`) no necesita validación:
+ * no hay id que pueda ser ajeno.
+ */
+export async function setPantryItemCategory(
+	familyId: string,
+	id: string,
+	categoryId: string | null
+): Promise<SetCategoryOutcome> {
+	return prisma.$transaction(async (tx) => {
+		const producto = await tx.pantryItem.findFirst({
+			where: { id, organizationId: familyId },
+			select: { id: true }
+		});
+		if (!producto) {
+			return 'pantry-gone';
+		}
+
+		if (categoryId !== null) {
+			const categoria = await tx.category.findFirst({
+				where: { id: categoryId, organizationId: familyId },
+				select: { id: true }
+			});
+			if (!categoria) {
+				return 'category-gone';
+			}
+		}
+
+		await tx.pantryItem.updateMany({
+			where: { id, organizationId: familyId },
+			data: { categoryId }
+		});
+		return 'updated';
+	});
 }
 
 /** Cómo acabó un re-añadido a la compra. */

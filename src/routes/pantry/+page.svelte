@@ -9,6 +9,7 @@
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
 	import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+	import Tag from '@lucide/svelte/icons/tag';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
 	import { formatQuantity } from '#lib/format.js';
@@ -65,6 +66,71 @@
 	 */
 	const enCasa = $derived(data.items.filter((item) => cantidadVisible(item) > 0));
 	const agotados = $derived(data.items.filter((item) => cantidadVisible(item) === 0));
+
+	// ---- Agrupado por categorías (#176): dentro de «En casa» y de
+	// «Agotados», los productos se reparten en secciones — una por categoría
+	// de la familia, en SU orden (posición; `listCategories` ya las trae
+	// ordenadas), y «Sin categoría» al final. Sin categorías en la familia no
+	// hay secciones que pintar: la lista queda plana, como siempre. ----
+
+	/** La clave de sección de los productos sin categoría (id `null` no vale de clave). */
+	const SIN_CATEGORIA = 'sin-categoria';
+
+	/** Una sección de la vista: su título visible y los productos que la llenan. */
+	interface SeccionDespensa {
+		key: string;
+		titulo: string;
+		items: PantryRow[];
+	}
+
+	/**
+	 * Reparte los productos (ya alfabéticos, lo trae el load) en secciones por
+	 * su categoría. Solo aparecen las categorías CON productos aquí — una
+	 * sección vacía solo añadiría ruido —, así que «En casa» y «Agotados»
+	 * pueden repartirse distinto: una categoría agotada entera no encabeza
+	 * «En casa». Los productos van en el orden que trajeron, dentro de su
+	 * sección.
+	 */
+	function agrupar(items: PantryRow[]): SeccionDespensa[] {
+		const secciones: SeccionDespensa[] = [];
+		let restantes = items;
+		for (const categoria of data.categories) {
+			const suyas = restantes.filter((item) => item.categoryId === categoria.id);
+			if (suyas.length > 0) {
+				secciones.push({ key: categoria.id, titulo: categoria.name, items: suyas });
+				restantes = restantes.filter((item) => item.categoryId !== categoria.id);
+			}
+		}
+
+		// Con una categoría borrada ENTRE las dos consultas del load, algún
+		// producto puede venir con la FK aún puesta y el nombre ya a null
+		// (SetNull en vuelo): no se pierde — sección extra al final, antes de
+		// «Sin categoría», con el título de sin categoría.
+		const huerfanas = restantes.filter((item) => item.categoryId !== null);
+		if (huerfanas.length > 0) {
+			secciones.push({
+				key: 'borradas',
+				titulo: m.pantry_section_uncategorized(),
+				items: huerfanas
+			});
+		}
+
+		// «Sin categoría» SIEMPRE al final (issue #176).
+		const sinCategoria = restantes.filter((item) => item.categoryId === null);
+		if (sinCategoria.length > 0) {
+			secciones.push({
+				key: SIN_CATEGORIA,
+				titulo: m.pantry_section_uncategorized(),
+				items: sinCategoria
+			});
+		}
+		return secciones;
+	}
+
+	/** ¿Hay categorías en la familia? Decide secciones frente a lista plana. */
+	const conCategorias = $derived(data.categories.length > 0);
+	const seccionesEnCasa = $derived(agrupar(enCasa));
+	const seccionesAgotados = $derived(agrupar(agotados));
 
 	/**
 	 * Anota el delta del botón pulsado como ajuste en vuelo (optimista). El
@@ -168,6 +234,54 @@
 		exito = null;
 		itemBorrado = item;
 		borrarModal?.showModal();
+	}
+
+	// ---- Recategorizar un producto (#176): el badge de categoría de cada
+	// fila abre SU modal — un select con «Sin categoría» y las categorías de
+	// la familia (el load las trae en su orden) — y su acción `?/recategorize`
+	// guarda. Como el re-añadido: modal compartido, el botón de la fila fija a
+	// qué producto se refiere antes de abrirlo, y el fallo se cuenta dentro. ----
+	let itemRecategorizar: PantryRow | undefined = $state();
+	let recatModal: { showModal(): void; close(): void } | undefined = $state();
+	/** La categoría elegida en el select ('' = «Sin categoría»). */
+	let categoriaElegida: string | undefined = $state();
+	let falloRecat: string | null = $state(null);
+	let enviandoRecat = $state(false);
+
+	/** Fija el producto y su categoría actual, y abre el modal. */
+	function abrirRecategorizar(item: PantryRow) {
+		exito = null;
+		itemRecategorizar = item;
+		categoriaElegida = item.categoryId ?? '';
+		falloRecat = null;
+		recatModal?.showModal();
+	}
+
+	/**
+	 * Ciclo del cambio de categoría: el éxito refresca (pesimista, como el
+	 * re-añadido — la fila salta de sección cuando la verdad ya está en
+	 * pantalla), cierra el modal y avisa a la página; el fallo se queda
+	 * DENTRO del modal, que sigue abierto sobre el select para corregir.
+	 */
+	function alRecategorizar(): SubmitFunction {
+		return () => {
+			enviandoRecat = true;
+			return async ({ result, update }) => {
+				enviandoRecat = false;
+				if (result.type === 'success') {
+					await update();
+					exito = m.pantry_recategorize_success();
+					recatModal?.close();
+				} else if (result.type === 'failure') {
+					// El texto concreto lo decide la acción (producto o categoría
+					// ya no están, error de servidor) y viaja en el resultado.
+					falloRecat =
+						(result.data as { error?: string } | undefined)?.error ?? m.pantry_recategorize_error();
+				} else {
+					falloRecat = m.pantry_recategorize_error();
+				}
+			};
+		};
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -285,8 +399,28 @@
 			<li
 				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${cantidad === 0 ? 'opacity-60' : ''}`}
 			>
-				<!-- Sin `truncate` (issue #152): el nombre largo salta a varias líneas. -->
-				<p class="min-w-0 flex-1 font-medium break-words">{item.name}</p>
+				<!-- Sin `truncate` (issue #152): el nombre largo salta a varias
+				     líneas y la fila crece con él. Debajo, el badge de categoría
+				     (#176): clasifica el producto y abre su recategorización, como
+				     el chip de la lista (#172). Solo con categorías en la familia —
+				     sin ellas, un «Sin categoría» repetido en cada fila sería ruido. -->
+				<div class="min-w-0 flex-1">
+					<p class="font-medium break-words">{item.name}</p>
+					{#if conCategorias}
+						<button
+							type="button"
+							class="badge badge-ghost badge-sm mt-0.5 max-w-full cursor-pointer hover:opacity-80"
+							title={m.pantry_change_category()}
+							aria-label={m.pantry_change_category()}
+							onclick={() => abrirRecategorizar(item)}
+						>
+							<Tag aria-hidden="true" class="size-3 shrink-0" />
+							<span class="truncate">
+								{item.categoryName ?? m.pantry_section_uncategorized()}
+							</span>
+						</button>
+					{/if}
+				</div>
 				<form
 					method="POST"
 					action="?/adjust"
@@ -350,6 +484,28 @@
 			</li>
 		{/snippet}
 
+		<!-- Una sección por categoría (#176): su cabecera (con id, para el
+		     nombre accesible de la sección) y sus productos, en el orden de la
+		     familia. Sin categorías en la familia, la sección única no lleva
+		     cabecera: la lista queda plana, como siempre. -->
+		{#snippet seccionCategoria(seccion: SeccionDespensa, prefijo: string)}
+			<section aria-labelledby={conCategorias ? `${prefijo}-${seccion.key}` : undefined}>
+				{#if conCategorias}
+					<h3
+						id={`${prefijo}-${seccion.key}`}
+						class="text-xs font-semibold tracking-wide uppercase opacity-50"
+					>
+						{seccion.titulo}
+					</h3>
+				{/if}
+				<ul class={`flex list-none flex-col gap-2 ${conCategorias ? 'mt-2' : ''}`}>
+					{#each seccion.items as item (item.id)}
+						{@render filaProducto(item)}
+					{/each}
+				</ul>
+			</section>
+		{/snippet}
+
 		<!-- Envoltorio con el `id` de ancla del tour (#142): cubre las dos
 		     secciones («En casa» y «Agotados»), una sola de las cuales puede
 		     existir según lo que haya en despensa. -->
@@ -362,11 +518,11 @@
 						{m.pantry_section_home()}
 					</h2>
 				{/if}
-				<ul class="mt-4 flex list-none flex-col gap-2">
-					{#each enCasa as item (item.id)}
-						{@render filaProducto(item)}
+				<div class={`flex flex-col gap-4 ${agotados.length > 0 ? 'mt-2' : 'mt-4'}`}>
+					{#each seccionesEnCasa as seccion (seccion.key)}
+						{@render seccionCategoria(seccion, 'casa')}
 					{/each}
-				</ul>
+				</div>
 			{/if}
 
 			<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
@@ -378,11 +534,11 @@
 					{m.pantry_section_out()}
 				</h2>
 
-				<ul class={`flex list-none flex-col gap-2 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
-					{#each agotados as item (item.id)}
-						{@render filaProducto(item)}
+				<div class={`flex flex-col gap-4 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
+					{#each seccionesAgotados as seccion (seccion.key)}
+						{@render seccionCategoria(seccion, 'fuera')}
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -471,6 +627,76 @@
 						<span class="loading loading-spinner"></span>
 					{/if}
 					{m.pantry_readd()}
+				</button>
+			</div>
+		</form>
+	{/if}
+</Modal>
+
+<!-- Recategorizar un producto (#176): una modal compartida; el badge de la
+     fila fija a qué producto se refiere antes de abrirla. Sin categorías en
+     la familia no hay nada que elegir: se explica y se manda a crearlas. Los
+     fallos del action (producto o categoría ya no están, error de servidor)
+     se cuentan aquí dentro. -->
+<Modal
+	bind:this={recatModal}
+	type="X"
+	showButton={false}
+	boxClass="modal-box max-w-md"
+	strings={{ close: m.ui_close() }}
+>
+	<h2 class="text-lg font-bold">
+		{m.pantry_recategorize_title({ name: itemRecategorizar?.name ?? '' })}
+	</h2>
+
+	{#if data.categories.length === 0}
+		<!-- Sin categorías no hay destino posible: se explica y se manda a crearlas. -->
+		<div class="mt-4 flex flex-col items-center gap-3 text-center">
+			<p class="opacity-70">{m.pantry_recategorize_no_categories()}</p>
+			<a href={resolve('/categories')} class="btn btn-primary">{m.categories_create()}</a>
+		</div>
+	{:else}
+		<form
+			method="POST"
+			action="?/recategorize"
+			use:kitEnhance={alRecategorizar()}
+			class="mt-4 flex flex-col gap-4"
+		>
+			<!-- El id del producto viaja con el formulario; la categoría, en el
+			     select ('' = «Sin categoría»). El load trae las categorías en su
+			     orden: el select las ofrece igual, con «Sin categoría» primero. -->
+			<input type="hidden" name="item" value={itemRecategorizar?.id ?? ''} />
+
+			<div class="flex flex-col gap-1">
+				<label class="fieldset-label" for="recat-category">{m.pantry_change_category()}</label>
+				<select
+					bind:value={categoriaElegida}
+					id="recat-category"
+					name="categoryId"
+					class="select w-full"
+				>
+					<option value="">{m.pantry_section_uncategorized()}</option>
+					{#each data.categories as categoria (categoria.id)}
+						<option value={categoria.id}>{categoria.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			{#if falloRecat}
+				<div class="alert alert-error text-sm" role="alert">
+					{falloRecat}
+				</div>
+			{/if}
+
+			<div class="flex justify-end gap-2">
+				<button type="button" class="btn btn-ghost" onclick={() => recatModal?.close()}>
+					{m.ui_cancel()}
+				</button>
+				<button type="submit" class="btn btn-primary" disabled={enviandoRecat}>
+					{#if enviandoRecat}
+						<span class="loading loading-spinner"></span>
+					{/if}
+					{m.categories_save()}
 				</button>
 			</div>
 		</form>

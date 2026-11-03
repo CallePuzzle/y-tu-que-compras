@@ -365,6 +365,216 @@ describe('Finalizar compra: guardas (#70)', () => {
 	});
 });
 
+// ---- Herencia de categoría al finalizar compra (#175): la despensa solo
+// toma la categoría del item si el producto no tenía ya una — la existente
+// siempre gana —, y el snapshot del historial congela la categoría del
+// momento por id y por nombre. ----
+
+/** Crea una categoría de la familia directamente en la base. */
+async function categoryRow(familyId: string, name: string, position = 0) {
+	return prisma.category.create({
+		data: {
+			organizationId: familyId,
+			name,
+			// El canónico lo calcula el test con el mismo `normalizeItemName`
+			// del servidor (el `createCategory` real lo ejercita su propio spec).
+			normalizedName: normalizeItemName(name),
+			position
+		}
+	});
+}
+
+describe('Finalizar compra: herencia de categoría y snapshot (#175)', () => {
+	it('el producto NUEVO aterriza con la categoría del item; sin categoría se queda sin ella', async () => {
+		const familyId = await familyRow('Familia Heredera');
+		const list = await createList(familyId, LISTA);
+		const lacteos = await categoryRow(familyId, 'Lácteos');
+		await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'Yogur', quantity: 4, unit: 'unit', categoryId: lacteos.id },
+			true
+		);
+		await createItemOrFail(familyId, list.id, { name: 'Pan', quantity: 1, unit: 'unit' }, true);
+
+		expect(await finalizePurchase(familyId, list.id, 6, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		const pantry = await prisma.pantryItem.findMany({
+			where: { organizationId: familyId },
+			orderBy: { name: 'asc' }
+		});
+		expect(pantry.map((row) => [row.name, row.categoryId])).toEqual([
+			['Pan', null],
+			['Yogur', lacteos.id]
+		]);
+	});
+
+	it('el producto que YA tenía categoría la conserva aunque la compra traiga otra, y suma', async () => {
+		const familyId = await familyRow('Familia Fiel');
+		const list = await createList(familyId, LISTA);
+		const vieja = await categoryRow(familyId, 'Desayuno');
+		const nueva = await categoryRow(familyId, 'Lácteos', 1);
+		await prisma.pantryItem.create({
+			data: {
+				organizationId: familyId,
+				name: 'Leche Entera',
+				normalizedName: normalizeItemName('Leche Entera'),
+				quantity: 1,
+				unit: 'liter',
+				categoryId: vieja.id
+			}
+		});
+		// El item trae OTRA categoría (Lácteos): recategorizar no es cosa de
+		// la compra — gana la existente del producto.
+		await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: nueva.id }, true);
+
+		expect(await finalizePurchase(familyId, list.id, 3, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		const leche = await prisma.pantryItem.findFirstOrThrow({
+			where: { organizationId: familyId, normalizedName: 'leche entera' }
+		});
+		expect(leche.categoryId).toBe(vieja.id);
+		expect(leche.name).toBe('Leche Entera');
+		expect(Number(leche.quantity)).toBe(3);
+	});
+
+	it('el producto SIN categoría hereda la de la compra, sin tocar nombre ni cantidad previa', async () => {
+		const familyId = await familyRow('Familia Huérfana');
+		const list = await createList(familyId, LISTA);
+		const lacteos = await categoryRow(familyId, 'Lácteos');
+		await prisma.pantryItem.create({
+			data: {
+				organizationId: familyId,
+				name: 'Yogur',
+				normalizedName: 'yogur',
+				quantity: 2,
+				unit: 'unit'
+			}
+		});
+		await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'Yogur', quantity: 4, unit: 'unit', categoryId: lacteos.id },
+			true
+		);
+
+		expect(await finalizePurchase(familyId, list.id, 4, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		const yogur = await prisma.pantryItem.findFirstOrThrow({
+			where: { organizationId: familyId, normalizedName: 'yogur' }
+		});
+		expect(yogur.categoryId).toBe(lacteos.id);
+		expect(yogur.name).toBe('Yogur');
+		expect(Number(yogur.quantity)).toBe(6);
+	});
+
+	it('la compra sin categorías no descategoriza lo que ya tenía', async () => {
+		const familyId = await familyRow('Familia Sin Categorías');
+		const list = await createList(familyId, LISTA);
+		const lacteos = await categoryRow(familyId, 'Lácteos');
+		await prisma.pantryItem.create({
+			data: {
+				organizationId: familyId,
+				name: 'Yogur',
+				normalizedName: 'yogur',
+				quantity: 1,
+				unit: 'unit',
+				categoryId: lacteos.id
+			}
+		});
+		await createItemOrFail(familyId, list.id, { name: 'Yogur', quantity: 2, unit: 'unit' }, true);
+
+		expect(await finalizePurchase(familyId, list.id, 2, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		const yogur = await prisma.pantryItem.findFirstOrThrow({
+			where: { organizationId: familyId, normalizedName: 'yogur' }
+		});
+		expect(yogur.categoryId).toBe(lacteos.id);
+		expect(Number(yogur.quantity)).toBe(3);
+	});
+
+	it('dos comprados del MISMO producto con categorías distintas: gana la primera del orden canónico', async () => {
+		const familyId = await familyRow('Familia Dúplex');
+		const list = await createList(familyId, LISTA);
+		const primera = await categoryRow(familyId, 'Lácteos');
+		const segunda = await categoryRow(familyId, 'Desayuno', 1);
+		// Mismo producto (canónico y unidad) en dos filas con categorías
+		// distintas: aterrizan juntos en UN producto y la categoría la fija
+		// el primero del orden — los gemelos de producto empatan en el
+		// canónico, así que manda el primero de la lista.
+		await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'Leche entera', quantity: 1, unit: 'liter', categoryId: primera.id },
+			true
+		);
+		await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'leche entera', quantity: 1, unit: 'liter', categoryId: segunda.id },
+			true
+		);
+
+		expect(await finalizePurchase(familyId, list.id, 2, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		const pantry = await prisma.pantryItem.findMany({ where: { organizationId: familyId } });
+		expect(pantry).toHaveLength(1);
+		expect(pantry[0].categoryId).toBe(primera.id);
+		expect(Number(pantry[0].quantity)).toBe(2);
+	});
+
+	it('el snapshot del historial congela la categoría por id y por nombre, fiel a lo comprado', async () => {
+		const familyId = await familyRow('Familia Congelada');
+		const list = await createList(familyId, LISTA);
+		const lacteos = await categoryRow(familyId, 'Lácteos');
+		await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: lacteos.id }, true);
+		await createItemOrFail(familyId, list.id, { name: 'Pan', quantity: 1, unit: 'unit' }, true);
+
+		expect(await finalizePurchase(familyId, list.id, 4, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+
+		// El snapshot guarda la categoría del momento: id y nombre visible,
+		// como el `listName` congela el de la lista.
+		const compra = await purchaseWithItems(familyId);
+		const [leche, pan] = compra.items;
+		expect(leche).toMatchObject({
+			name: 'Leche entera',
+			categoryId: lacteos.id,
+			categoryName: 'Lácteos'
+		});
+		expect(pan).toMatchObject({ name: 'Pan', categoryId: null, categoryName: null });
+
+		// Fiel a lo comprado aunque el presente cambie: recategorizar el
+		// producto de la despensa DESPUÉS no retoca el historial (el SetNull
+		// del borrado de categorías lo ejercita `categories.int.spec.ts`).
+		const producto = await prisma.pantryItem.findFirstOrThrow({
+			where: { organizationId: familyId, normalizedName: 'leche entera' }
+		});
+		const desayuno = await categoryRow(familyId, 'Desayuno', 1);
+		await prisma.pantryItem.update({
+			where: { id: producto.id },
+			data: { categoryId: desayuno.id }
+		});
+		const despues = await purchaseWithItems(familyId);
+		expect(despues.items[0]).toMatchObject({
+			name: 'Leche entera',
+			categoryId: lacteos.id,
+			categoryName: 'Lácteos'
+		});
+	});
+});
+
 // ---- Historial (issues #47 y #76): la consulta del snapshot que deja
 // `finalizePurchase`. Las compras de prueba se siembran a mano con
 // `createdAt` explícitos: es el único modo de controlar el orden y la
