@@ -26,6 +26,7 @@ export function itemFormSchema() {
 export function purchaseFormSchema() {
 	return purchaseSchema({
 		totalError: m.schema_purchase_total_error(),
-		totalLabel: m.schema_purchase_total_label()
+		totalLabel: m.schema_purchase_total_label(),
+		storeLabel: m.schema_purchase_store_label()
 	});
 }

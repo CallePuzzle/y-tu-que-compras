@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 export type PurchaseSchemaStrings = {
 	totalError?: string;
 	totalLabel?: string;
+	storeLabel?: string;
 };
 
 /**
@@ -18,13 +19,21 @@ export type PurchaseSchemaStrings = {
  *
  * Las etiquetas viajan en `.meta()`: `zodToFieldsJsonSchema` las vuelca al
  * `Field` y `FormFields` las pinta (ver `createFamilySchema`).
+ *
+ * El establecimiento es OPCIONAL (tarea #185): el select del modal ofrece las
+ * tiendas de la familia más el option vacío («Sin establecimiento»), que llega
+ * como `''` y significa lo mismo que ausente. AQUÍ solo se valida la forma —
+ * que el id pertenezca a la familia lo resuelve el SERVIDOR
+ * (`finalizePurchase`), igual que la lista: el formulario no puede autorizar
+ * por id.
  */
 export function purchaseSchema(strings?: PurchaseSchemaStrings) {
 	return z.object({
 		total: z
 			.number(strings?.totalError)
 			.nonnegative(strings?.totalError)
-			.meta({ description: strings?.totalLabel })
+			.meta({ description: strings?.totalLabel }),
+		storeId: z.string().optional().meta({ description: strings?.storeLabel })
 	});
 }
 

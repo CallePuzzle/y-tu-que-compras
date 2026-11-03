@@ -8,6 +8,7 @@ import {
 	createItem,
 	createList,
 	createPantryItem,
+	createStore,
 	createUser,
 	resetDb
 } from '../../../../e2e/helpers/seed';
@@ -565,7 +566,9 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 	await expect(page.getByRole('button', { name: 'Finalizar compra' })).toHaveCount(0);
 
 	// El historial quedó en la BD (#75): snapshot de lista, items, total y
-	// quién lo confirmó. Y el item comprado salió de la lista.
+	// quién lo confirmó. Y el item comprado salió de la lista. Sin elegir
+	// establecimiento (#185), la compra tampoco lleva tienda (criterio de
+	// aceptación: sigue funcionando sin elegirlo).
 	const record = await prisma.purchaseRecord.findFirstOrThrow({
 		where: { listId: lista.id },
 		include: { items: true }
@@ -573,8 +576,86 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 	expect(record.listName).toBe('Super');
 	expect(record.total.toString()).toBe('23.45');
 	expect(record.userId).toBe(user.id);
+	expect(record.storeId).toBeNull();
+	expect(record.storeName).toBeNull();
 	expect(record.items.map((row) => row.name)).toEqual(['Leche']);
 	await expect(prisma.item.findUnique({ where: { id: leche.id } })).resolves.toBeNull();
+});
+
+test('finalizar con establecimiento (#185): el select ofrece la familia y el historial congela nombre', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
+	// Dos tiendas sembradas en orden: el select las ofrece en el mismo orden
+	// de creación que trae el load (`listStores`).
+	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
+	await createStore({ familyId: family.id, name: 'Frapeluza' });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+	const dialog = page.locator('dialog[open]');
+
+	// El select arranca en «Sin establecimiento» y ofrece las tiendas de LA
+	// familia, por orden de creación.
+	await expect(dialog.locator('#finalize-store')).toHaveValue('');
+	await expect(dialog.locator('#finalize-store option')).toHaveText([
+		'Sin establecimiento',
+		'Mercadona',
+		'Frapeluza'
+	]);
+
+	await dialog.locator('#finalize-store').selectOption({ label: 'Mercadona' });
+	await dialog.locator('#finalize-total').fill('9.99');
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+
+	await expect(page.getByRole('status')).toContainText('Compra finalizada');
+	// La verdad quedó en la BD: la compra lleva la tienda elegida, con el
+	// nombre visible congelado en el momento de finalizar.
+	expect(
+		await prisma.purchaseRecord.findFirstOrThrow({ where: { listId: lista.id } })
+	).toMatchObject({
+		storeId: mercadona.id,
+		storeName: 'Mercadona'
+	});
+});
+
+test('un establecimiento borrado mientras se rellena el modal NO cierra la compra (#185)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
+	const tienda = await createStore({ familyId: family.id, name: 'Chino de antes' });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.locator('#finalize-store').selectOption({ label: 'Chino de antes' });
+	// Otro miembro borra la tienda justo antes de confirmar: el id que viaja
+	// queda rancio y el servidor rechaza la compra CON mensaje, sin cerrarla.
+	await prisma.store.delete({ where: { id: tienda.id } });
+	await dialog.locator('#finalize-total').fill('5');
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+
+	await expect(dialog.getByRole('alert')).toContainText(
+		'El establecimiento elegido ya no existe en esta familia'
+	);
+	// Nada se cerró: el item sigue comprado y sin historial.
+	const row = await prisma.item.findFirstOrThrow({ where: { listId: lista.id } });
+	expect(row.purchased).toBe(true);
+	await expect(
+		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
+	).resolves.toBeNull();
 });
 
 test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío', async ({
@@ -584,6 +665,7 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 	const family = await createFamily({ owner: user });
 	const lista = await createList({ familyId: family.id, name: 'Super' });
 	const item = await createItem({ listId: lista.id, name: 'Leche', purchased: true });
+	await createStore({ familyId: family.id, name: 'Mercadona' });
 	await seedSession(page, user);
 
 	await page.goto(`/lists/${lista.id}`);
@@ -592,6 +674,7 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 	await page.getByRole('button', { name: 'Finalizar compra' }).click();
 	const dialog = page.locator('dialog[open]');
 	await dialog.locator('#finalize-total').fill('10');
+	await dialog.locator('#finalize-store').selectOption({ label: 'Mercadona' });
 	await dialog.getByRole('button', { name: 'Cancelar' }).click();
 
 	// Nada se cerró: el item sigue comprado (en pantalla y en la BD) y no hay
@@ -616,4 +699,6 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 	await page.getByRole('button', { name: 'Finalizar compra' }).click();
 	await expect(page.locator('dialog[open]')).toBeVisible();
 	await expect(page.locator('#finalize-total')).toHaveValue('');
+	// El establecimiento elegido tampoco se arrastra (#185): vuelve a «Sin…».
+	await expect(page.locator('#finalize-store')).toHaveValue('');
 });
