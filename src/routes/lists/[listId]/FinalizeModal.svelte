@@ -11,21 +11,24 @@
 	import type { PageData } from './$types';
 
 	/**
-	 * Finalizar compra (checklist #71): resumen de los items comprados y el
-	 * total del ticket escrito a mano. La confirmación envía `?/finalize`
-	 * (#70), que crea el historial y actualiza la despensa en UNA transacción;
-	 * el formulario solo lleva el total, validado por el MISMO schema que usa
-	 * el action. Con SU formulario de superforms (id «finalize-purchase», lo
-	 * pone el load) para no pisar al alta rápida ni al de edición.
+	 * Finalizar compra (checklist #71): resumen de los items comprados, el
+	 * total del ticket escrito a mano y el establecimiento de la familia
+	 * (opcional, #185). La confirmación envía `?/finalize` (#70), que crea el
+	 * historial y actualiza la despensa en UNA transacción; el formulario
+	 * viaja validado por el MISMO schema que usa el action. Con SU formulario
+	 * de superforms (id «finalize-purchase», lo pone el load) para no pisar al
+	 * alta rápida ni al de edición.
 	 */
 	type Props = {
 		form: PageData['finalizeForm'];
 		/** Los comprados que se muestran (con el toggle optimista aplicado). */
 		comprados: PageData['items'];
+		/** Los establecimientos de la familia (#185), por orden de creación. */
+		stores: PageData['stores'];
 		onSuccess: (message: string) => void;
 	};
 
-	let { form, comprados, onSuccess }: Props = $props();
+	let { form, comprados, stores, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 
@@ -48,7 +51,7 @@
 	});
 	const { form: formData, enhance, delayed, message, errors } = finalizeForm;
 
-	/** Abre el modal de finalizar con el total EN BLANCO para escribirlo. */
+	/** Abre el modal con el total EN BLANCO y el establecimiento en «Sin…». */
 	export function open() {
 		message.set(undefined);
 		errors.clear();
@@ -56,7 +59,9 @@
 		// total real: el campo empieza vacío para que el total no se confirme
 		// sin mirar. El cast es el mismo truco que en la edición: undefined no
 		// es un `number`, pero superforms lo acepta y zod lo exige al enviar.
-		formData.set({ total: undefined as unknown as number });
+		// El establecimiento vuelve al option vacío (#185): lo elegido antes de
+		// cancelar no se arrastra a la siguiente compra.
+		formData.set({ total: undefined as unknown as number, storeId: '' });
 		modal?.showModal();
 	}
 </script>
@@ -115,6 +120,27 @@
 			{#if textoError($errors.total)}
 				<p class="fieldset-label text-error" role="alert">{textoError($errors.total)}</p>
 			{/if}
+		</div>
+
+		<!-- Establecimiento opcional (#185): los de la familia, en su orden
+		     de creación. El option vacío viaja como `''` y el servidor
+		     guarda la compra sin establecimiento — el mismo significado
+		     que no enviar el campo. El id lo valida el SERVIDOR contra la
+		     familia: uno rancio o ajeno explicará el fallo en este mismo
+		     modal. -->
+		<div class="flex flex-col gap-1">
+			<label class="fieldset-label" for="finalize-store">{m.schema_purchase_store_label()}</label>
+			<select
+				bind:value={$formData.storeId}
+				id="finalize-store"
+				name="storeId"
+				class="select w-full"
+			>
+				<option value="">{m.purchases_store_none()}</option>
+				{#each stores as establecimiento (establecimiento.id)}
+					<option value={establecimiento.id}>{establecimiento.name}</option>
+				{/each}
+			</select>
 		</div>
 
 		<!-- Los fallos del action (lista ajena, otro miembro se llevó los

@@ -14,6 +14,7 @@ import {
 import { getList } from '#lib/server/lists.js';
 import { finalizePurchase } from '#lib/server/purchases.js';
 import { listCategorySuggestions } from '#lib/server/suggestions.js';
+import { listStores } from '#lib/server/stores.js';
 import logger from '#lib/server/logger.js';
 import { itemFormSchema, purchaseFormSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -49,6 +50,9 @@ export const load: PageServerLoad = async (event) => {
 		// Las categorías de la familia (checklist #172): el select del alta y
 		// el de edición ofrecen exactamente estas, en su orden.
 		categories: await listCategories(family.id),
+		// Los establecimientos de la familia (#185): el select del modal de
+		// finalizar ofrece exactamente estos, en su orden de creación.
+		stores: await listStores(family.id),
 		// El mapa nombre canónico -> categoría para la sugerencia del alta
 		// rápida (#173): despensa + items de todas las listas de la familia.
 		categorySuggestions: await listCategorySuggestions(family.id),
@@ -185,6 +189,8 @@ export const actions: Actions = {
 	// viaja validado por `purchaseSchema`; la transacción de servidor (#70)
 	// hace el resto atómicamente. Sin items comprados —o si otro miembro se
 	// los llevó a la vez— la compra no se cierra y se explica en el modal.
+	// El establecimiento (#185) es opcional y el servidor comprueba que sea
+	// de la familia: un id ajeno o rancio falla CON mensaje, sin cerrar nada.
 	finalize: async (event) => {
 		const family = requireActiveFamily(event);
 		const form = await superValidate(event.request, zod4(purchaseFormSchema()), {
@@ -206,7 +212,10 @@ export const actions: Actions = {
 				family.id,
 				event.params.listId,
 				form.data.total,
-				user.id
+				user.id,
+				// El `''` del option «Sin establecimiento» significa lo mismo que
+				// ausente; `finalizePurchase` resuelve el id contra la familia.
+				form.data.storeId || undefined
 			);
 			if (outcome === 'list-gone') {
 				// La lista ya no existe: 404 (issue #110). «Nada comprado» se
@@ -216,6 +225,12 @@ export const actions: Actions = {
 			}
 			if (outcome === 'nothing-purchased') {
 				return message(form, m.purchases_empty(), { status: 400 });
+			}
+			if (outcome === 'store-gone') {
+				// El establecimiento elegido ya no está en la familia (#185):
+				// 400 como «nada comprado» — el recurso de la acción (la lista)
+				// existe; lo que no cuadra es el id del formulario.
+				return message(form, m.purchases_store_gone(), { status: 400 });
 			}
 		} catch (error) {
 			logger.error({ err: error }, 'Error al finalizar la compra');

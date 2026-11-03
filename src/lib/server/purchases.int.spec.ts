@@ -19,6 +19,7 @@ import {
 	MAX_PURCHASES_OFFSET,
 	PURCHASES_PAGE_SIZE
 } from './purchases.js';
+import { createStore } from './stores.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
 async function familyRow(prefix: string): Promise<string> {
@@ -572,6 +573,84 @@ describe('Finalizar compra: herencia de categoría y snapshot (#175)', () => {
 			categoryId: lacteos.id,
 			categoryName: 'Lácteos'
 		});
+	});
+});
+
+// ---- Establecimiento en el historial (#185): la compra congela por id y
+// nombre visible la tienda de la familia elegida en el modal de finalizar,
+// o no lleva ninguna; un id ajeno o rancio NO cierra la compra. ----
+
+describe('Finalizar compra: establecimiento (#185)', () => {
+	it('la compra con establecimiento congela id y nombre; borrarlo después solo le quita el id', async () => {
+		const familyId = await familyRow('Familia Establecida');
+		const list = await createList(familyId, LISTA);
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		await createItemOrFail(familyId, list.id, { ...ITEM, quantity: 1.5 }, true);
+
+		expect(
+			await finalizePurchase(familyId, list.id, 12.3, await userRow('Comprador'), mercadona.id)
+		).toBe('finalized');
+
+		// El snapshot guarda la tienda DEL MOMENTO: id para la FK y nombre
+		// visible congelado, como el `listName` congela el de la lista.
+		const compra = await purchaseWithItems(familyId);
+		expect(compra).toMatchObject({ storeId: mercadona.id, storeName: 'Mercadona' });
+
+		// Renombrarla después no retoca el historial; borrarla le quita el id
+		// (SetNull) pero el nombre congelado sobrevive en el ticket.
+		await prisma.store.update({ where: { id: mercadona.id }, data: { name: 'Mercadona SA' } });
+		await prisma.store.delete({ where: { id: mercadona.id } });
+		const despues = await purchaseWithItems(familyId);
+		expect(despues).toMatchObject({ storeId: null, storeName: 'Mercadona' });
+	});
+
+	it('la compra sin establecimiento no lleva ni id ni nombre', async () => {
+		const familyId = await familyRow('Familia Anónima');
+		const list = await createList(familyId, LISTA);
+		// La familia SÍ tiene tiendas: no llevar establecimiento es una
+		// decisión del formulario («Sin establecimiento»), no una ausencia.
+		await createStore(familyId, { name: 'Lidl' });
+		await createItemOrFail(familyId, list.id, { ...ITEM }, true);
+
+		expect(await finalizePurchase(familyId, list.id, 5, await userRow('Comprador'))).toBe(
+			'finalized'
+		);
+		expect(await purchaseWithItems(familyId)).toMatchObject({ storeId: null, storeName: null });
+	});
+
+	it('un id ajeno o rancio NO cierra la compra: `store-gone` y sin rastro', async () => {
+		const familyId = await familyRow('Familia Exigente');
+		const list = await createList(familyId, LISTA);
+		const pan = await createItemOrFail(
+			familyId,
+			list.id,
+			{ name: 'Pan', quantity: 1, unit: 'unit' },
+			true
+		);
+
+		// Rancio: la tienda existió y la borraron mientras se rellenaba el modal.
+		const efimera = await createStore(familyId, { name: 'Chino de antes' });
+		await prisma.store.delete({ where: { id: efimera.id } });
+		expect(
+			await finalizePurchase(familyId, list.id, 5, await userRow('Comprador'), efimera.id)
+		).toBe('store-gone');
+
+		// Ajeno: un id de OTRA familia es igual de «no existe aquí».
+		const ajena = await familyRow('Familia Tendera');
+		const ajeno = await createStore(ajena, { name: 'Mercadona ajeno' });
+		expect(await finalizePurchase(familyId, list.id, 5, await userRow('Comprador'), ajeno.id)).toBe(
+			'store-gone'
+		);
+
+		// Nada se cerró: los comprados siguen en la lista, sin historial ni
+		// despensa.
+		expect(await prisma.item.findUnique({ where: { id: pan.id } })).not.toBeNull();
+		expect(
+			await prisma.purchaseRecord.findMany({ where: { organizationId: familyId } })
+		).toHaveLength(0);
+		expect(await prisma.pantryItem.findMany({ where: { organizationId: familyId } })).toHaveLength(
+			0
+		);
 	});
 });
 

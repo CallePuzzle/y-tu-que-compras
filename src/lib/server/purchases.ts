@@ -19,6 +19,8 @@ export type FinalizeOutcome =
 	| 'finalized'
 	/** La lista no existe en esa familia (id ajeno o ya borrado). */
 	| 'list-gone'
+	/** El establecimiento elegido (#185) no existe en esa familia (id ajeno o rancio). */
+	| 'store-gone'
 	/** Nada que finalizar: no había items comprados (o los llevó otro miembro). */
 	| 'nothing-purchased';
 
@@ -57,6 +59,14 @@ function ordenCanonico(a: string, b: string): number {
  * la del item si NO tenía ya una — la existente siempre gana —, y el snapshot
  * del historial congela la categoría del momento por id y por nombre.
  *
+ * El establecimiento elegido (#185) viaja como id OPCIONAL y se resuelve
+ * DENTRO de la transacción, igual que la lista: solo vale uno de la familia
+ * activa y el snapshot congela su nombre visible (`storeName`, patrón
+ * `listName`). A diferencia de la categoría del item — que un id rancio
+ * degrada en silencio a «sin categoría» — aquí el fallo ES el resultado
+ * (`store-gone`): quien finaliza eligió la tienda a propósito, y guardar la
+ * compra sin ella sin avisar le mentiría en el historial.
+ *
  * Todo en UNA transacción: o hay historial + despensa + lista depurada, o no
  * queda rastro de nada. El total ya llega validado por `purchaseSchema` (>= 0)
  * y el usuario es el que confirma, para el `PurchaseRecord.userId`.
@@ -85,7 +95,8 @@ export async function finalizePurchase(
 	familyId: string,
 	listId: string,
 	total: number,
-	userId: string
+	userId: string,
+	storeId?: string
 ): Promise<FinalizeOutcome> {
 	try {
 		return await prisma.$transaction(async (tx) => {
@@ -97,6 +108,22 @@ export async function finalizePurchase(
 			});
 			if (!list) {
 				return 'list-gone';
+			}
+
+			// El establecimiento elegido (#185): ANTES de bloquear nada — si el id
+			// es rancio (lo borraron mientras se rellenaba el modal) o ajeno a la
+			// familia, la compra no se cierra y el action lo explica; sin locks ni
+			// escrituras que revertir. El `''` del option vacío significa
+			// «sin establecimiento», lo mismo que ausente.
+			let store: { id: string; name: string } | null = null;
+			if (storeId) {
+				store = await tx.store.findFirst({
+					where: { id: storeId, organizationId: familyId },
+					select: { id: true, name: true }
+				});
+				if (!store) {
+					return 'store-gone';
+				}
 			}
 
 			// El reclamo (ver arriba): filas bloqueadas EN ORDEN DE LISTA — el
@@ -148,6 +175,12 @@ export async function finalizePurchase(
 					organizationId: familyId,
 					listId: list.id,
 					listName: list.name,
+					// El establecimiento del momento (#185): por id para la FK y por
+					// nombre visible congelado (patrón `listName`) — borrar o
+					// renombrar la tienda después solo le quita el id (SetNull),
+					// nunca el nombre que llevaba el ticket.
+					storeId: store?.id,
+					storeName: store?.name,
 					total,
 					userId,
 					items: {

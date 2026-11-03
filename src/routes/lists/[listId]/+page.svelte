@@ -256,6 +256,7 @@
 <FinalizeModal
 	bind:this={finalizarModal}
 	form={data.finalizeForm}
+	stores={data.stores}
 	{comprados}
 	onSuccess={(texto) => (exito = texto)}
 />
