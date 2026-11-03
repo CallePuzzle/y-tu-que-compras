@@ -182,7 +182,7 @@ export async function createList(options: {
 		data: {
 			organizationId: options.familyId,
 			name: options.name ?? `Lista E2E ${randomUUID().slice(0, 8)}`,
-			color: options.color ?? 'primary',
+			color: options.color ?? 'yellow',
 			icon: options.icon ?? 'shopping-basket',
 			createdAt: now,
 			updatedAt: now

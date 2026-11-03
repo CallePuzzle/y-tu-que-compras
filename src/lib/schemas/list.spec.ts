@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { LIST_COLORS, LIST_ICONS, listSchema, type ListData } from './list.js';
 
 /** Datos mínimos que el schema acepta, para mutar campo a campo en cada spec. */
-const VALID = { name: 'Compra semanal', color: 'primary', icon: 'shopping-basket' } as const;
+const VALID = { name: 'Compra semanal', color: 'yellow', icon: 'shopping-basket' } as const;
 
 describe('listSchema', () => {
 	it('acepta datos válidos y recorta el nombre', () => {
@@ -16,7 +16,7 @@ describe('listSchema', () => {
 		if (result.success) {
 			expect(result.data).toEqual({
 				name: 'Compra semanal',
-				color: 'primary',
+				color: 'yellow',
 				icon: 'shopping-basket'
 			});
 		}
@@ -56,7 +56,7 @@ describe('listSchema', () => {
 		expect(filled.data).toEqual({ ...VALID });
 	});
 
-	it('rechaza colores fuera de la paleta daisyUI, con el mensaje inyectable', () => {
+	it('rechaza colores fuera de la paleta dedicada, con el mensaje inyectable', () => {
 		const generic = listSchema().safeParse({ ...VALID, color: 'chartreuse' });
 		const custom = listSchema({ colorError: 'Elige un color' }).safeParse({
 			...VALID,
@@ -91,10 +91,23 @@ describe('listSchema', () => {
 });
 
 describe('LIST_COLORS', () => {
-	it('son exactamente los ocho colores semánticos de daisyUI 5', () => {
-		// Sin variantes `-content` ni `base-*`: no son colores de elección.
+	it('son exactamente los doce tonos de la paleta dedicada (#147)', () => {
+		// Los ids que guarda BD; los hex y sus tintas viven en `app.css`.
 		expect([...LIST_COLORS].sort()).toEqual(
-			['accent', 'error', 'info', 'neutral', 'primary', 'secondary', 'success', 'warning'].sort()
+			[
+				'blue',
+				'brown',
+				'cyan',
+				'gray',
+				'green',
+				'lime',
+				'orange',
+				'pink',
+				'purple',
+				'red',
+				'teal',
+				'yellow'
+			].sort()
 		);
 	});
 });

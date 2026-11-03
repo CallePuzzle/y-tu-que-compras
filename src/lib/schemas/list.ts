@@ -1,72 +1,65 @@
 import { z } from 'zod/v4';
 
 /**
- * Colores de lista: la paleta semántica de daisyUI 5. Se guarda el nombre de
- * color, no un estilo, para que el tema lo traduzca (`bg-${color}` en la UI).
- * Quedan fuera las variantes `-content` y `base-*`: no son colores de elección,
- * sino de superficie y contraste.
+ * Colores de lista: paleta dedicada de 12 tonos (issue #147), desacoplada de
+ * los semánticos de daisyUI (que la UI ya no reparte entre listas: eran
+ * demasiado parecidos entre temas — amarillo/mostaza/naranja, dos teales).
+ * Se guarda el id del tono, no un estilo, para que el tema lo traduzca
+ * (`bg-list-<id>` en la UI; los pares `--color-list-*` viven en `app.css`).
+ * El remap de los 8 ids semánticos viejos lo hace la migración de datos
+ * `20261103120000_list_colors_icons` (sin cambio de esquema).
  */
 export const LIST_COLORS = [
-	'primary',
-	'secondary',
-	'accent',
-	'neutral',
-	'info',
-	'success',
-	'warning',
-	'error'
+	// Tonos tomados del logo (más un lima nuevo).
+	'red',
+	'orange',
+	'yellow',
+	'lime',
+	'green',
+	'teal',
+	'cyan',
+	// Tonos nuevos para diferenciar establecimientos.
+	'blue',
+	'purple',
+	'pink',
+	'brown',
+	'gray'
 ] as const;
 
 /**
- * Iconos de lista: subconjunto del set lucide con nombres en kebab-case, los
- * mismos que las rutas de import (`@lucide/svelte/icons/<nombre>`). La UI pinta
- * un selector cerrado con este catálogo, así que la validación es un enum y no
- * un patrón libre: cualquier otra cosa sería un icono que no se puede renderizar.
- * Un spec garantiza que cada nombre existe de verdad en `@lucide/svelte`.
+ * Iconos de lista: subconjunto moderado del set lucide (issue #147) con
+ * nombres en kebab-case, los mismos que las rutas de import
+ * (`@lucide/svelte/icons/<nombre>`). Un icono por tipo de establecimiento o
+ * producto: de 39 se baja a 20 para que el selector sea escaneable. La UI
+ * pinta un selector cerrado con este catálogo, así que la validación es un
+ * enum y no un patrón libre: cualquier otra cosa sería un icono que no se
+ * puede renderizar. Un spec garantiza que cada nombre existe de verdad en
+ * `@lucide/svelte`.
  */
 export const LIST_ICONS = [
 	// Genéricos
-	'list-checks',
-	'clipboard-list',
 	'shopping-basket',
-	'shopping-cart',
-	'shopping-bag',
-	'star',
-	'heart',
-	'sparkles',
-	'gift',
-	'ticket',
+	'list-checks',
 	'house',
+	'gift',
 	// Comida y bebida
 	'apple',
-	'carrot',
 	'croissant',
-	'egg',
-	'fish',
 	'beef',
-	'milk',
+	'fish',
+	'wine',
+	'coffee',
 	'pizza',
 	'candy',
-	'coffee',
-	'beer',
-	'wine',
-	'cup-soda',
 	// Hogar y demás
 	'baby',
 	'dog',
-	'cat',
 	'pill',
-	'leaf',
-	'flower-2',
-	'paintbrush',
-	'wrench',
-	'hammer',
 	'washing-machine',
-	'laptop',
+	'wrench',
 	'smartphone',
-	'gamepad-2',
-	'book',
-	'music'
+	'flower-2',
+	'book'
 ] as const;
 
 /** Textos inyectables del schema de lista. Defaults: ninguno (el consumidor los pasa). */
@@ -87,7 +80,7 @@ export type ListSchemaStrings = {
  * toque (en render en el cliente y en request en el servidor).
  *
  * El límite del nombre replica el de la familia (`createFamilySchema`: 1–100).
- * `color` e `icon` son enums cerrados (paleta daisyUI y catálogo lucide); el
+ * `color` e `icon` son enums cerrados (paleta dedicada y catálogo lucide); el
  * selector de la UI no ofrecerá nada fuera de ellos.
  *
  * Las etiquetas viajan en `.meta()`: `zodToFieldsJsonSchema` las vuelca al

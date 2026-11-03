@@ -10,7 +10,7 @@ import type { ListData } from '#lib/schemas/list.js';
 export interface ListView {
 	id: string;
 	name: string;
-	/** Nombre de color daisyUI (catálogo `LIST_COLORS`); la UI lo traduce a estilos. */
+	/** Id de color de la paleta dedicada (catálogo `LIST_COLORS`); la UI lo traduce a estilos. */
 	color: string;
 	/** Nombre de icono lucide (catálogo `LIST_ICONS`); la UI lo traduce a componente. */
 	icon: string;

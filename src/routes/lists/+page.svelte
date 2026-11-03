@@ -194,10 +194,13 @@
 	{:else}
 		<ul class="mt-4 flex flex-col gap-2">
 			{#each data.lists as lista (lista.id)}
-				{@const Icon = ICONS[lista.icon as ListIcon]}
+				<!-- Fallback defensivo: una fila con un color/icono retirado del
+				     catálogo (la migración los remapa, pero nunca se sabe) no
+				     rompe el render: se pinta con los del catálogo por defecto. -->
+				{@const Icon = ICONS[lista.icon as ListIcon] ?? ICONS['shopping-basket']}
 				<li class="bg-base-200 rounded-box flex items-center gap-3 px-4 py-3">
 					<span
-						class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[lista.color as ListColor]}`}
+						class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[lista.color as ListColor] ?? COLOR_CHIP.yellow}`}
 					>
 						<Icon aria-hidden="true" class="size-5" />
 					</span>
@@ -270,7 +273,7 @@
 		     role="radio" que mutan el store): sin estos hidden, el FormData del
 		     DOM saldría sin ellos y superforms rellenaría los enums con su
 		     PRIMERA opción en el servidor — la lista se crearía/editaría
-		     siempre con primary + list-checks, ignorando lo elegido. -->
+		     siempre con red + shopping-basket, ignorando lo elegido. -->
 		<input type="hidden" name="color" value={$formData.color} />
 		<input type="hidden" name="icon" value={$formData.icon} />
 

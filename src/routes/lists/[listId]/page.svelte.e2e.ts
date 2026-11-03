@@ -22,8 +22,8 @@ test('el detalle muestra la lista y su alta rápida; items en orden', async ({ p
 	const lista = await createList({
 		familyId: family.id,
 		name: 'Frutería',
-		color: 'secondary',
-		icon: 'shopping-cart'
+		color: 'teal',
+		icon: 'wine'
 	});
 	await seedSession(page, user);
 

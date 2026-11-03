@@ -31,7 +31,7 @@ async function familyRow(prefix: string): Promise<string> {
 }
 
 /** Datos válidos según `listSchema`, para crear las listas de prueba. */
-const LISTA = { name: 'Compra semanal', color: 'primary', icon: 'shopping-basket' } as const;
+const LISTA = { name: 'Compra semanal', color: 'yellow', icon: 'shopping-basket' } as const;
 
 /**
  * Crea un item para montar el escenario y falla el test si no se creó (el

@@ -24,11 +24,12 @@ function listFormSchema() {
 }
 
 /**
- * Valores iniciales del formulario: nombre vacío y la primera opción de cada
- * catálogo, para que los selectores de color e icono abran con algo elegido
- * (la familia siempre puede cambiarlos antes de guardar).
+ * Valores iniciales del formulario: nombre vacío y una opción por defecto de
+ * cada catálogo (el amarillo del pan es el color de marca; la cesta, el
+ * primer icono), para que los selectores abran con algo elegido (la familia
+ * siempre puede cambiarlos antes de guardar).
  */
-const EMPTY_LIST = { name: '', color: 'primary', icon: 'shopping-basket' } as const;
+const EMPTY_LIST = { name: '', color: 'yellow', icon: 'shopping-basket' } as const;
 
 // La familia activa es la puerta de la vista (issue #63): `requireActiveFamily`
 // manda a `/families` a quien no tiene o no ha elegido, y su id — ya

@@ -85,6 +85,67 @@
 }
 
 /*
+ * Paleta dedicada de las listas (issue #147): 12 tonos desacoplados de los
+ * semánticos daisyUI — los que guardan los `List.color` de BD como id. El
+ * namespace `--color-list-*` genera las utilidades `bg-list-*` y
+ * `text-list-*-content` que consume `COLOR_CHIP` (`list-visuals.ts`). Cada
+ * par va con su tinta de contenido verificada AA 4.5:1; donde el hex del
+ * plan original no llegaba, se ajustó el tono (brown aclarado, gray
+ * oscurecido) o la tinta (blue y purple van con tinta oscura, no cream).
+ */
+@theme {
+	/* Manzana del logo: con la tinta profunda del `error` (#08262d daba 4.11:1). */
+	--color-list-red: #f03e34;
+	--color-list-red-content: #041a20;
+
+	/* Naranja tomate del logo (7.19:1). */
+	--color-list-orange: #eb9f30;
+	--color-list-orange-content: #08262d;
+
+	/* Pan del logo (9.85:1); el color por defecto de una lista nueva. */
+	--color-list-yellow: #ffc243;
+	--color-list-yellow-content: #08262d;
+
+	/* Lima nuevo (9.45:1). */
+	--color-list-lime: #b8d43c;
+	--color-list-lime-content: #08262d;
+
+	/* Pera del logo (7.31:1). */
+	--color-list-green: #8dbe65;
+	--color-list-green-content: #08262d;
+
+	/* Teal de las sombras del logo (5.33:1). */
+	--color-list-teal: #6e9da9;
+	--color-list-teal-content: #08262d;
+
+	/* Teal claro de los círculos del logo (9.75:1). */
+	--color-list-cyan: #a8d2dd;
+	--color-list-cyan-content: #08262d;
+
+	/* Azul nuevo: con tinta oscura (4.81:1); el cream daba 2.67:1. */
+	--color-list-blue: #5b8fd9;
+	--color-list-blue-content: #08262d;
+
+	/* Morado nuevo: tinta oscura (5.06:1); el cream, 2.54:1. */
+	--color-list-purple: #9d84d6;
+	--color-list-purple-content: #08262d;
+
+	/* Rosa nuevo (6.62:1). */
+	--color-list-pink: #e08fb6;
+	--color-list-pink-content: #08262d;
+
+	/* Madera de la cesta, aclarada del #a5714f propuesto: a 4.77:1 con la
+	   tinta oscura (el original daba 3.83:1). */
+	--color-list-brown: #b5825e;
+	--color-list-brown-content: #08262d;
+
+	/* Gris azulado del logo, oscurecido del #5a7987 propuesto para pasar AA
+	   con el cream (4.87:1; el original daba 3.77:1). */
+	--color-list-gray: #4d6773;
+	--color-list-gray-content: #eae8da;
+}
+
+/*
  * Correcciones WCAG AA sobre utilidades concretas de Tailwind/daisyUI.
  * Van SIN `@layer`: el CSS sin capa gana a cualquier capa autor, así que
  * pisan las reglas de daisyUI sin jugar con la especificidad.

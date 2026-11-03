@@ -26,8 +26,9 @@
 	type Item = PageProps['data']['items'][number];
 
 	// Icono de la lista para la cabecera (el cast recupera el literal del enum
-	// tras venir de Prisma como string, igual que en /lists).
-	const Icono = $derived(ICONS[data.list.icon as ListIcon]);
+	// tras venir de Prisma como string, igual que en /lists). Fallback
+	// defensivo: un icono retirado del catálogo no rompe el render.
+	const Icono = $derived(ICONS[data.list.icon as ListIcon] ?? ICONS['shopping-basket']);
 
 	// Aviso de éxito FUERA de los modales (editar, borrar y finalizar); el
 	// error de crear se queda bajo su formulario.
@@ -135,7 +136,7 @@
 
 	<div class="mt-1 flex items-center gap-3">
 		<span
-			class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[data.list.color as ListColor]}`}
+			class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[data.list.color as ListColor] ?? COLOR_CHIP.yellow}`}
 		>
 			<Icono aria-hidden="true" class="size-5" />
 		</span>

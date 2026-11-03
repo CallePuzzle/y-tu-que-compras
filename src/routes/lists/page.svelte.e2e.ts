@@ -62,7 +62,7 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 
 	// Los selectores propios (#66): paleta de colores y catálogo de iconos.
 	await dialog.getByRole('radio', { name: 'Rosa' }).click();
-	await dialog.getByRole('radio', { name: 'Carrito' }).click();
+	await dialog.getByRole('radio', { name: 'Manzana' }).click();
 	await dialog.getByRole('button', { name: 'Nueva lista' }).click();
 
 	await expect(page.getByRole('status')).toContainText('Lista creada: ya aparece en la vista.');
@@ -72,16 +72,16 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 
 	// La selección PERSISTE (regresión: el formulario no llevaba color/icono
 	// en el FormData y superforms rellenaba los enums con su primera opción —
-	// la lista se creaba siempre primary + list-checks). Rosa es `secondary`
-	// en la paleta; el chip de la fila debe pintarlo y el editor cargarlo.
-	await expect(fila.locator('span').first()).toHaveClass(/bg-secondary/);
+	// entonces primary + list-checks). Rosa es `pink` en la paleta dedicada;
+	// el chip de la fila debe pintarlo y el editor cargarlo.
+	await expect(fila.locator('span').first()).toHaveClass(/bg-list-pink/);
 	await fila.getByRole('button', { name: 'Editar lista' }).click();
 	const dialogoCreacion = page.locator('dialog[open]');
 	await expect(dialogoCreacion.getByRole('radio', { name: 'Rosa' })).toHaveAttribute(
 		'aria-checked',
 		'true'
 	);
-	await expect(dialogoCreacion.getByRole('radio', { name: 'Carrito' })).toHaveAttribute(
+	await expect(dialogoCreacion.getByRole('radio', { name: 'Manzana' })).toHaveAttribute(
 		'aria-checked',
 		'true'
 	);
@@ -90,7 +90,7 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 test('editar lista reutiliza el mismo formulario con los datos cargados', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería', color: 'primary' });
+	const lista = await createList({ familyId: family.id, name: 'Frutería', color: 'red' });
 	await seedSession(page, user);
 
 	await page.goto('/lists');
@@ -113,9 +113,10 @@ test('editar lista reutiliza el mismo formulario con los datos cargados', async 
 	await expect(page.getByRole('status')).toContainText('Lista actualizada.');
 	await expect(page.locator('li', { hasText: 'Supermercado' })).toBeVisible();
 	await expect(page.locator('li', { hasText: lista.name })).toHaveCount(0);
-	// Amarillo es `warning`: el chip de la fila debe cambiar a él.
+	// Amarillo es `yellow` en la paleta dedicada: el chip de la fila debe
+	// cambiar a él.
 	await expect(page.locator('li', { hasText: 'Supermercado' }).locator('span').first()).toHaveClass(
-		/bg-warning/
+		/bg-list-yellow/
 	);
 });
 
