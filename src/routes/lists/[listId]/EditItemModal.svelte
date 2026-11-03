@@ -29,6 +29,12 @@
 	let modal: { showModal(): void; close(): void } | undefined = $state();
 	let itemEditado: PageData['items'][number] | undefined = $state();
 
+	// El aviso del modal es solo para FALLOS (400/404/500). En éxito el texto
+	// viaja a la página con `onSuccess`, pero superforms aún aplicará el
+	// resultado DESPUÉS de `onResult` y dejaría `$message` con el texto de
+	// éxito dentro del dialog cerrado: el flag decide sin depender de carreras.
+	let falloGuardado = $state(false);
+
 	// svelte-ignore state_referenced_locally
 	const editForm = superForm(form, {
 		validators: zod4Client(itemFormSchema()),
@@ -39,7 +45,10 @@
 				// (`message()`), como en /lists.
 				const data = result.data as { form?: { message?: string } } | undefined;
 				onSuccess(data?.form?.message ?? m.items_updated());
+				falloGuardado = false;
 				modal?.close();
+			} else if (result.type === 'failure' || result.type === 'error') {
+				falloGuardado = true;
 			}
 		}
 	});
@@ -50,6 +59,7 @@
 		itemEditado = item;
 		message.set(undefined);
 		errors.clear();
+		falloGuardado = false;
 		// El cast recupera los literales del enum tras venir de Prisma (string).
 		// La categoría `null` va como `''`, el valor del option «Sin categoría».
 		formData.set({
@@ -149,7 +159,7 @@
 			</select>
 		</div>
 
-		{#if $message}
+		{#if falloGuardado && $message}
 			<div class="alert alert-error text-sm" role="alert">
 				{$message}
 			</div>
