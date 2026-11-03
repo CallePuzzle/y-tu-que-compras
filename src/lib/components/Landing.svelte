@@ -6,6 +6,8 @@
 	import Receipt from '@lucide/svelte/icons/receipt';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
+	import Store from '@lucide/svelte/icons/store';
+	import Tags from '@lucide/svelte/icons/tags';
 	import Users from '@lucide/svelte/icons/users';
 	import { m } from '#lib/paraglide/messages.js';
 	import logo from '#lib/assets/logo.webp';
@@ -49,6 +51,16 @@
 			icon: History,
 			title: m.landing_feature_history_title(),
 			text: m.landing_feature_history_text()
+		},
+		{
+			icon: Tags,
+			title: m.landing_feature_categories_title(),
+			text: m.landing_feature_categories_text()
+		},
+		{
+			icon: Store,
+			title: m.landing_feature_stores_title(),
+			text: m.landing_feature_stores_text()
 		},
 		{
 			icon: Languages,

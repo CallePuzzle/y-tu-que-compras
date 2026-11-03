@@ -44,14 +44,25 @@ test('con sesion, la portada es el home con saludo y accesos (#161)', async ({ p
 	await expect(page.getByRole('heading', { level: 1, name: 'Hola, Ana' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Cómo funciona' })).toHaveCount(0);
 
-	// Los accesos del home: a las listas (el ancla del tour) y al historial.
-	const listas = page.getByRole('main').getByRole('link', { name: 'Listas' });
-	await expect(listas).toBeVisible();
-	await expect(listas).toHaveAttribute('href', '/lists');
-	await expect(page.getByRole('main').getByRole('link', { name: 'Historial' })).toHaveAttribute(
-		'href',
-		'/history'
-	);
+	// Los accesos del home: los seis del menú de sesión. A las listas (el
+	// ancla del tour), historial, categorías (#164) y establecimientos
+	// (#177) se suman ahora despensa y familias; cada tarjeta añade bajo la
+	// etiqueta su línea descriptiva (`home_*_text`).
+	const accesos = [
+		{ nombre: 'Listas', href: '/lists' },
+		{ nombre: 'Despensa', href: '/pantry' },
+		{ nombre: 'Historial', href: '/history' },
+		{ nombre: 'Categorías', href: '/categories' },
+		{ nombre: 'Establecimientos', href: '/stores' },
+		{ nombre: 'Familias', href: '/families' }
+	];
+	for (const acceso of accesos) {
+		await expect(page.getByRole('main').getByRole('link', { name: acceso.nombre })).toHaveAttribute(
+			'href',
+			acceso.href
+		);
+	}
+	await expect(page.getByRole('main').getByRole('link', { name: 'Listas' })).toBeVisible();
 
 	// El tour arranca con sesión y su paso 1 ancla el acceso a las listas (#142).
 	const tour = page.locator('.tg-dialog');
