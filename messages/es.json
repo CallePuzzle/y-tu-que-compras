@@ -152,7 +152,7 @@
 	"schema_categories_name_placeholder": "p. ej. Lácteos",
 	"schema_categories_name_error": "Escribe un nombre de categoría (máximo 100 caracteres).",
 	"schema_stores_name_label": "Nombre del establecimiento",
-	"schema_stores_name_placeholder": "p. ej. Mercadona",
+	"schema_stores_name_placeholder": "p. ej. Fruteria Pili",
 	"schema_stores_name_error": "Escribe un nombre de establecimiento (máximo 100 caracteres).",
 	"categories_title": "Tus categorías",
 	"categories_empty": "Todavía no hay categorías en esta familia. Crea la primera para organizar la compra.",
