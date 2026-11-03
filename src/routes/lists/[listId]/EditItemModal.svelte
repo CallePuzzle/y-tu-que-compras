@@ -13,18 +13,27 @@
 	 * Editar (checklist #68): una modal compartida con su propio formulario de
 	 * superforms (id «edit-item») para que no se pise con el alta rápida. Se
 	 * abre con `open(item)`; el éxito la cierra y pasa el aviso a la página.
+	 * Con la categoría opcional (#172): se precarga la del item y «Sin
+	 * categoría» la quita al guardar.
 	 */
 	type Props = {
 		form: PageData['editForm'];
+		categories: PageData['categories'];
 		onSuccess: (message: string) => void;
 	};
 
-	let { form, onSuccess }: Props = $props();
+	let { form, categories, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
 	let itemEditado: PageData['items'][number] | undefined = $state();
+
+	// El aviso del modal es solo para FALLOS (400/404/500). En éxito el texto
+	// viaja a la página con `onSuccess`, pero superforms aún aplicará el
+	// resultado DESPUÉS de `onResult` y dejaría `$message` con el texto de
+	// éxito dentro del dialog cerrado: el flag decide sin depender de carreras.
+	let falloGuardado = $state(false);
 
 	// svelte-ignore state_referenced_locally
 	const editForm = superForm(form, {
@@ -36,7 +45,10 @@
 				// (`message()`), como en /lists.
 				const data = result.data as { form?: { message?: string } } | undefined;
 				onSuccess(data?.form?.message ?? m.items_updated());
+				falloGuardado = false;
 				modal?.close();
+			} else if (result.type === 'failure' || result.type === 'error') {
+				falloGuardado = true;
 			}
 		}
 	});
@@ -47,8 +59,15 @@
 		itemEditado = item;
 		message.set(undefined);
 		errors.clear();
+		falloGuardado = false;
 		// El cast recupera los literales del enum tras venir de Prisma (string).
-		formData.set({ name: item.name, quantity: item.quantity, unit: item.unit } as ItemData);
+		// La categoría `null` va como `''`, el valor del option «Sin categoría».
+		formData.set({
+			name: item.name,
+			quantity: item.quantity,
+			unit: item.unit,
+			categoryId: item.categoryId ?? ''
+		} as ItemData);
 		modal?.showModal();
 	}
 </script>
@@ -123,7 +142,24 @@
 			</div>
 		</div>
 
-		{#if $message}
+		<!-- Categoría opcional (checklist #172): las mismas opciones que en el
+		     alta; elegir «Sin categoría» guarda el item sin ella. -->
+		<div class="flex flex-col gap-1">
+			<label class="fieldset-label" for="edit-category">{m.schema_items_category_label()}</label>
+			<select
+				bind:value={$formData.categoryId}
+				id="edit-category"
+				name="categoryId"
+				class="select w-full"
+			>
+				<option value="">{m.items_category_none()}</option>
+				{#each categories as categoria (categoria.id)}
+					<option value={categoria.id}>{categoria.name}</option>
+				{/each}
+			</select>
+		</div>
+
+		{#if falloGuardado && $message}
 			<div class="alert alert-error text-sm" role="alert">
 				{$message}
 			</div>

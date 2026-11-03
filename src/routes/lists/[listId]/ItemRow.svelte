@@ -10,9 +10,10 @@
 
 	/**
 	 * Una fila de item (checklists #68 y #69): checkbox de comprado, nombre,
-	 * cantidad y acciones. La comparten las dos secciones (pendientes y
-	 * comprados). El estado optimista vive en la página: aquí llega ya
-	 * resuelto en `comprado`, y el toque se avisa con `onToggle`.
+	 * cantidad y acciones, con el chip de su categoría (#172). La comparten
+	 * las dos secciones (pendientes y comprados). El estado optimista vive en
+	 * la página: aquí llega ya resuelto en `comprado`, y el toque se avisa
+	 * con `onToggle`.
 	 */
 	type Props = {
 		item: PageData['items'][number];
@@ -84,10 +85,16 @@
 	</form>
 	<!-- Sin `truncate` (issue #152): el nombre largo salta a varias líneas y
 	     la fila crece con él; `break-words` parte también palabras sin
-	     espacios para que no desborde la caja. -->
-	<p class={`min-w-0 flex-1 font-medium break-words ${comprado ? 'line-through' : ''}`}>
-		{item.name}
-	</p>
+	     espacios para que no desborde la caja. Debajo, el chip de categoría
+	     (#172): clasifica el item sin robarle sitio a la fila. -->
+	<div class="min-w-0 flex-1">
+		<p class={`font-medium break-words ${comprado ? 'line-through' : ''}`}>{item.name}</p>
+		{#if item.categoryName}
+			<span class="badge badge-ghost badge-sm mt-0.5 max-w-full">
+				<span class="truncate">{item.categoryName}</span>
+			</span>
+		{/if}
+	</div>
 	<span class="badge badge-ghost shrink-0 tabular-nums">
 		{formatQuantity(item.quantity, getLocale())}
 		{UNIT_LABEL[item.unit]}

@@ -231,6 +231,8 @@ export async function createItem(options: {
 	purchased?: boolean;
 	/** Posición en la lista: el servidor la calcula al crear; aquí explícita. */
 	order?: number;
+	/** Categoría del item (#172): si no, sin clasificar. */
+	categoryId?: string;
 }): Promise<Item> {
 	const now = new Date();
 	return prisma.item.create({
@@ -241,6 +243,7 @@ export async function createItem(options: {
 			unit: options.unit ?? 'unit',
 			purchased: options.purchased ?? false,
 			order: options.order ?? 0,
+			categoryId: options.categoryId ?? null,
 			createdAt: now,
 			updatedAt: now
 		}
@@ -250,7 +253,8 @@ export async function createItem(options: {
 /**
  * Un producto de la despensa (issue #70): lo mismo que deja `finalizePurchase`
  * al cerrar una compra — nombre visible (el de la primera compra), su canónico
- * y la cantidad acumulada.
+ * y la cantidad acumulada. Con categoría opcional (#173): es una de las
+ * fuentes del mapa de sugerencias del alta rápida.
  */
 export async function createPantryItem(options: {
 	familyId: string;
@@ -258,6 +262,7 @@ export async function createPantryItem(options: {
 	normalizedName?: string;
 	quantity?: number;
 	unit?: Unit;
+	categoryId?: string;
 }): Promise<PantryItem> {
 	const now = new Date();
 	const name = options.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`;
@@ -268,6 +273,7 @@ export async function createPantryItem(options: {
 			normalizedName: options.normalizedName ?? name.trim().toLowerCase(),
 			quantity: options.quantity ?? 1,
 			unit: options.unit ?? 'unit',
+			categoryId: options.categoryId ?? null,
 			createdAt: now,
 			updatedAt: now
 		}

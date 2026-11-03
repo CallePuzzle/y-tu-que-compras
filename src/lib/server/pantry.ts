@@ -1,6 +1,6 @@
 import { UNIT_STEP } from '#lib/pantry-steps.js';
+import { normalizeItemName } from '#lib/normalize-name.js';
 import prisma from '#lib/server/prisma.js';
-import { normalizeItemName } from '#lib/server/purchases.js';
 import type { ReaddData } from '#lib/schemas/pantry.js';
 import type { Unit } from '#lib/schemas/item.js';
 

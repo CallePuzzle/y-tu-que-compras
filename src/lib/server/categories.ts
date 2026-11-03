@@ -1,7 +1,7 @@
 import { Prisma } from '#lib/generated/prisma/client.js';
+import { normalizeItemName } from '#lib/normalize-name.js';
 import type { CategoryData } from '#lib/schemas/category.js';
 import prisma from '#lib/server/prisma.js';
-import { normalizeItemName } from '#lib/server/purchases.js';
 
 // CRUD de categorías de la familia (issue #169, épica #164). La familia viaja
 // SIEMPRE en los argumentos: es la activa que `requireActiveFamily` dejó

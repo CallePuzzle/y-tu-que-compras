@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 // Test unitario (proyecto `server`, sin base de datos) del contrato del nombre
 // canónico de la despensa: es la clave con la que `PantryItem` decide si dos
-// escrituras son el mismo producto y hay que SUMAR (issues #70 y #107).
+// escrituras son el mismo producto y hay que SUMAR (issues #70 y #107) y la
+// que el cliente usa para buscar sugerencias de categoría (#173).
 
-import { normalizeItemName } from './purchases.js';
+import { normalizeItemName } from './normalize-name.js';
 
 describe('normalizeItemName (#70, #107)', () => {
 	it('pone en minúsculas y quita acentos: el acento y la mayúscula no hacen al producto', () => {

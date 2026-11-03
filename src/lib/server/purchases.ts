@@ -1,5 +1,6 @@
 import prisma from '#lib/server/prisma.js';
 import { Prisma } from '#lib/generated/prisma/client.js';
+import { normalizeItemName } from '#lib/normalize-name.js';
 import type { Unit } from '#lib/schemas/item.js';
 
 // Finalizar compra (issues #43 y #70) e historial (#75, #76): cerrar una lista
@@ -7,26 +8,10 @@ import type { Unit } from '#lib/schemas/item.js';
 // comprado. La familia viaja SIEMPRE en los argumentos — es la activa que
 // `requireActiveFamily` dejó verificada — y una lista (o compra) de otra
 // familia es como si no existiera, como en `lists.ts`/`items.ts`.
-
-/**
- * El nombre canónico con el que la despensa identifica un producto (#70):
- * minúsculas, sin acentos y con los espacios colapsados a uno solo (issue
- * #107: el comentario prometía «sin espacios sobrantes» pero no colapsaba los
- * internos, y «Leche  entera» y «Leche entera» creaban dos filas de despensa
- * que no se sumaban al re-añadir). Es lo que se guarda en
- * `PantryItem.normalizedName` para que «Leche Entera», «leche entera» y
- * «LECHE  entera» sumen sobre el mismo item de la despensa. Mismo trato que el
- * `slugify` de las familias (NFD + quitar diacríticos), pero conservando los
- * espacios: es un nombre, no un slug.
- */
-export function normalizeItemName(name: string): string {
-	return name
-		.trim()
-		.normalize('NFD')
-		.replace(/\p{Diacritic}/gu, '')
-		.toLowerCase()
-		.replace(/\s+/g, ' ');
-}
+//
+// El nombre canónico de los productos (`normalizeItemName`) vive ahora en
+// `#lib/normalize-name`, fuera de `src/lib/server`: el cliente lo usa para
+// buscar sugerencias de categoría por nombre (#173).
 
 /** Cómo acabó un intento de finalización. */
 export type FinalizeOutcome =
