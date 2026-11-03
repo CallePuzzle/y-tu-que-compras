@@ -110,10 +110,11 @@ model RateLimit {
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
 //
-// Las relaciones `lists`, `purchases` y `pantryItems` son de la app (no del
-// plugin, que las ignora): al borrar la familia mueren con ella sus listas de
-// la compra (Cascade en List), su historial de compras (Cascade en
-// PurchaseRecord) y su despensa (Cascade en PantryItem).
+// Las relaciones `lists`, `categories`, `purchases` y `pantryItems` son de la
+// app (no del plugin, que las ignora): al borrar la familia mueren con ella
+// sus listas de la compra (Cascade en List), sus categorías (Cascade en
+// Category), su historial de compras (Cascade en PurchaseRecord) y su despensa
+// (Cascade en PantryItem).
 model Organization {
   id          String           @id
   name        String
@@ -122,6 +123,7 @@ model Organization {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   lists       List[]
+  categories  Category[]
   purchases   PurchaseRecord[]
   pantryItems PantryItem[]
 
@@ -328,6 +330,36 @@ model List {
   @@map("list")
 }
 
+// Categoría de una familia (épica #164): agrupa items de la lista y productos
+// de la despensa. Empieza vacía (sin catálogo sembrado) y la gestiona
+// cualquier miembro de la familia, sin checks de rol (issue #111). `name` es
+// el nombre visible; `normalizedName` es el nombre CANÓNICO de búsqueda (trim,
+// minúsculas y sin acentos, ver `normalizeItemName` en `$lib/server/purchases`)
+// — no se muestra, existe para que «Lácteos» y «lacteos» sean la misma
+// categoría. `position` fija el orden en el listado: lo calcula el servidor al
+// crear, sin default para que nadie inserte sin decir dónde (como el `order`
+// de Item).
+//
+// El único (familia, nombre normalizado) replica el contrato de PantryItem y
+// sirve de índice al listado de categorías: con `organizationId` delante, la
+// propia restricción indexa la consulta por familia.
+model Category {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  position       Int
+  items          Item[]
+  pantryItems    PantryItem[]
+  purchaseItems  PurchaseItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([organizationId, normalizedName])
+  @@map("category")
+}
+
 // Item de una lista de la compra (issue #67). La FK a `list` es en cascada: al
 // borrar la lista mueren sus items (el de familia ya cascada a las listas).
 // `quantity` es Decimal — DECIMAL(10,3), hasta 9.999.999,999 — para no perder
@@ -338,19 +370,26 @@ model List {
 // (claves `unit_*` en `messages/{es,en}.json`). `purchased` parte de false y
 // `order` fija la posición en la lista: lo calcula el servidor al crear, sin
 // default para que nadie inserte sin decir dónde.
+//
+// `categoryId` es opcional con SetNull (épica #164): la categoría es un
+// agrupado opcional del item y borrarla solo le quita la referencia — el item
+// sobrevive sin categoría.
 model Item {
-  id        String   @id @default(cuid())
-  listId    String
-  list      List     @relation(fields: [listId], references: [id], onDelete: Cascade)
-  name      String
-  quantity  Decimal  @db.Decimal(10, 3)
-  unit      Unit
-  purchased Boolean  @default(false)
-  order     Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  listId     String
+  list       List      @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name       String
+  quantity   Decimal   @db.Decimal(10, 3)
+  unit       Unit
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  purchased  Boolean   @default(false)
+  order      Int
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([listId])
+  @@index([categoryId])
   @@map("item")
 }
 
@@ -409,6 +448,13 @@ model PurchaseRecord {
 // Postgres no promete; ahora el detalle lee por `position` y sale SIEMPRE
 // igual. Lo escribe `finalizePurchase` (nadie inserta sin decir dónde, como
 // el `order` de Item).
+//
+// La categoría va snapshotada (épica #164): `categoryId` es nullable con
+// SetNull — el historial no se rompe si la categoría se borra — y
+// `categoryName` congela el nombre visible que tenía al comprar (patrón
+// `listName` de PurchaseRecord), así que el detalle muestra la categoría DEL
+// MOMENTO aunque después se renombre o desaparezca. Nullable porque el item
+// pudo no llevar categoría.
 model PurchaseItem {
   id               String         @id @default(cuid())
   purchaseRecordId String
@@ -417,8 +463,12 @@ model PurchaseItem {
   name             String
   quantity         Decimal        @db.Decimal(10, 3)
   unit             Unit
+  categoryId       String?
+  category         Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryName     String?
 
   @@index([purchaseRecordId])
+  @@index([categoryId])
   @@map("purchaseItem")
 }
 
@@ -437,6 +487,10 @@ model PurchaseItem {
 // Postgres, dos compras concurrentes nunca lo parten) y sirve de índice para
 // las consultas de la familia — con `organizationId` delante, la propia
 // restricción indexa el listado de la despensa.
+//
+// `categoryId` es opcional con SetNull (épica #164): el producto puede no
+// llevar categoría y borrarla no debe borrar el producto — solo la referencia.
+// Al finalizar una compra hereda la del item solo si no tenía ya una.
 model PantryItem {
   id             String       @id @default(cuid())
   organizationId String
@@ -445,9 +499,12 @@ model PantryItem {
   normalizedName String
   quantity       Decimal      @db.Decimal(10, 3)
   unit           Unit
+  categoryId     String?
+  category       Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, normalizedName, unit])
+  @@index([categoryId])
   @@map("pantryItem")
 }
