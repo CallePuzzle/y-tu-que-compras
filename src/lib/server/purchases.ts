@@ -53,6 +53,10 @@ function ordenCanonico(a: string, b: string): number {
  * comprados desaparecen de la lista — que NO se borra y conserva intactos los
  * pendientes (criterio de aceptación de la #43).
  *
+ * La categoría hereda al aterrizar (#175): el producto de despensa solo toma
+ * la del item si NO tenía ya una — la existente siempre gana —, y el snapshot
+ * del historial congela la categoría del momento por id y por nombre.
+ *
  * Todo en UNA transacción: o hay historial + despensa + lista depurada, o no
  * queda rastro de nada. El total ya llega validado por `purchaseSchema` (>= 0)
  * y el usuario es el que confirma, para el `PurchaseRecord.userId`.
@@ -98,14 +102,27 @@ export async function finalizePurchase(
 			// El reclamo (ver arriba): filas bloqueadas EN ORDEN DE LISTA — el
 			// mismo que el alta rápida y el que mostrará el historial. `quantity`
 			// vuelve como Decimal de la base y `unit` como el string del enum.
+			// La categoría viaja por id y por nombre visible (#175): el id para
+			// la FK del snapshot y el nombre para congelarlo (patrón `listName`).
+			// El `FOR UPDATE OF i` es obligatorio con el JOIN: a secas intentaría
+			// bloquear también las filas de `category` — lado nullable del LEFT
+			// JOIN — y Postgres lo rechaza con error.
 			const purchased = await tx.$queryRaw<
-				Array<{ id: string; name: string; quantity: Prisma.Decimal; unit: Unit }>
+				Array<{
+					id: string;
+					name: string;
+					quantity: Prisma.Decimal;
+					unit: Unit;
+					categoryId: string | null;
+					categoryName: string | null;
+				}>
 			>`
-				SELECT "id", "name", quantity, unit
-				FROM "item"
-				WHERE "listId" = ${list.id} AND purchased = true
-				ORDER BY "order" ASC, "createdAt" ASC, "id" ASC
-				FOR UPDATE
+				SELECT i."id", i."name", i.quantity, i.unit, i."categoryId", c.name AS "categoryName"
+				FROM "item" i
+				LEFT JOIN "category" c ON c."id" = i."categoryId"
+				WHERE i."listId" = ${list.id} AND i.purchased = true
+				ORDER BY i."order" ASC, i."createdAt" ASC, i."id" ASC
+				FOR UPDATE OF i
 			`;
 			// «No permitir finalizar sin items comprados»: sin comprados no hay
 			// compra que cerrar (y tampoco historial sin items).
@@ -138,7 +155,12 @@ export async function finalizePurchase(
 							position,
 							name: item.name,
 							quantity: item.quantity,
-							unit: item.unit
+							unit: item.unit,
+							// El snapshot es fiel a lo comprado (#175): la categoría del
+							// momento, por id Y por nombre. Borrar la categoría después
+							// quita el id (SetNull) pero nunca el nombre congelado.
+							categoryId: item.categoryId,
+							categoryName: item.categoryName
 						}))
 					}
 				}
@@ -150,11 +172,18 @@ export async function finalizePurchase(
 			// se agregan en un solo aterrizaje, y el bucle va en orden
 			// canónico global: es lo que hace imposible el deadlock entre
 			// compras concurrentes (ver arriba).
+			//
+			// La categoría del aterrizaje la fija el PRIMER item del grupo
+			// (#175): el recorrido sigue el orden de lista y los items del
+			// mismo producto empatan en el orden canónico (mismo canónico y
+			// unidad), así que «la primera del orden canónico» es este
+			// primero de lista — determinista en compras y duplicados.
 			interface Aterrizaje {
 				name: string;
 				normalizedName: string;
 				unit: Unit;
 				quantity: number;
+				categoryId: string | null;
 			}
 			const aterrizajes = new Map<string, Aterrizaje>();
 			for (const item of purchased) {
@@ -169,7 +198,8 @@ export async function finalizePurchase(
 					name: item.name,
 					normalizedName,
 					unit: item.unit,
-					quantity: Number(item.quantity)
+					quantity: Number(item.quantity),
+					categoryId: item.categoryId
 				});
 			}
 			const enOrden = [...aterrizajes.values()].sort(
@@ -179,7 +209,27 @@ export async function finalizePurchase(
 			// El upsert es el INSERT ON CONFLICT nativo de Postgres, así que dos
 			// compras concurrentes que traen el mismo producto también suman
 			// sin partirse.
+			//
+			// La herencia de categoría (#175) va ANTES, como UPDATE condicional:
+			// el `where` solo matchea el producto SIN categoría, así que la
+			// existente del producto siempre gana — y no hay leer-decidir-
+			// escribir, la guarda la aplica la base. El create del upsert estrena
+			// la categoría del aterrizaje (un producto nuevo no tenía ninguna que
+			// perder) y su rama update solo suma cantidad: nunca toca la
+			// categoría ya fijada. Ambas escrituras siguen el mismo orden
+			// canónico del bucle, así que no aparecen ciclos de locks nuevos.
 			for (const aterrizaje of enOrden) {
+				if (aterrizaje.categoryId) {
+					await tx.pantryItem.updateMany({
+						where: {
+							organizationId: familyId,
+							normalizedName: aterrizaje.normalizedName,
+							unit: aterrizaje.unit,
+							categoryId: null
+						},
+						data: { categoryId: aterrizaje.categoryId }
+					});
+				}
 				await tx.pantryItem.upsert({
 					where: {
 						organizationId_normalizedName_unit: {
@@ -195,7 +245,8 @@ export async function finalizePurchase(
 						name: aterrizaje.name,
 						normalizedName: aterrizaje.normalizedName,
 						quantity: aterrizaje.quantity,
-						unit: aterrizaje.unit
+						unit: aterrizaje.unit,
+						categoryId: aterrizaje.categoryId
 					},
 					update: { quantity: { increment: aterrizaje.quantity } }
 				});
