@@ -15,7 +15,7 @@ import { createList } from './lists.js';
 import {
 	finalizePurchase,
 	getPurchase,
-	listPurchases,
+	listPurchasesByStore,
 	MAX_PURCHASES_OFFSET,
 	PURCHASES_PAGE_SIZE
 } from './purchases.js';
@@ -654,10 +654,10 @@ describe('Finalizar compra: establecimiento (#185)', () => {
 	});
 });
 
-// ---- Historial (issues #47 y #76): la consulta del snapshot que deja
-// `finalizePurchase`. Las compras de prueba se siembran a mano con
-// `createdAt` explícitos: es el único modo de controlar el orden y la
-// paginación sin depender del reloj. ----
+// ---- Historial (issues #47 y #76), agrupado por establecimiento (#187): la
+// consulta del snapshot que deja `finalizePurchase`. Las compras de prueba se
+// siembran a mano con `createdAt` explícitos: es el único modo de controlar
+// el orden de secciones y la paginación sin depender del reloj. ----
 
 /** Siembra una compra con su snapshot, como la deja `finalizePurchase`. */
 async function purchaseRow(
@@ -666,6 +666,9 @@ async function purchaseRow(
 		listName: string;
 		total: number;
 		createdAt: Date;
+		/** El establecimiento del snapshot (#187): id + nombre congelados. */
+		storeId?: string;
+		storeName?: string | null;
 		/** Los items del snapshot; si se omite, uno solo de relleno. */
 		items?: Array<{ name: string; quantity: number; unit: ItemData['unit'] }>;
 		listId?: string;
@@ -676,6 +679,8 @@ async function purchaseRow(
 			organizationId: familyId,
 			listId: options.listId,
 			listName: options.listName,
+			storeId: options.storeId,
+			storeName: options.storeName,
 			total: options.total,
 			createdAt: options.createdAt,
 			items: {
@@ -692,87 +697,222 @@ async function purchaseRow(
 	});
 }
 
-describe('Historial: listado de la familia (#76)', () => {
-	it('lista las compras de la más reciente a la más antigua, y solo las de ESA familia', async () => {
-		const familyId = await familyRow('Familia Historiada');
-		const vieja = await purchaseRow(familyId, {
-			listName: 'Compra vieja',
-			total: 10,
-			createdAt: new Date('2026-01-01T10:00:00Z')
-		});
-		const nueva = await purchaseRow(familyId, {
-			listName: 'Compra reciente',
+// ---- El listado agrupado por establecimiento (#187): orden de secciones por
+// la compra más reciente de cada tienda, orden por fecha dentro de la suya,
+// «Sin establecimiento» al final y paginación acumulativa por bloque. ----
+
+describe('Historial: listado agrupado por establecimiento (#187)', () => {
+	it('agrupa por establecimiento: secciones por su compra más reciente, compras por fecha dentro y «Sin establecimiento» al final', async () => {
+		const familyId = await familyRow('Familia Agrupada');
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		const lidl = await createStore(familyId, { name: 'Lidl' });
+		await purchaseRow(familyId, {
+			listName: 'Compra Mercadona nueva',
 			total: 20,
-			createdAt: new Date('2026-06-01T10:00:00Z')
+			createdAt: new Date('2026-06-10T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		await purchaseRow(familyId, {
+			listName: 'Compra Mercadona vieja',
+			total: 15,
+			createdAt: new Date('2026-03-01T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		await purchaseRow(familyId, {
+			listName: 'Compra Lidl',
+			total: 30,
+			createdAt: new Date('2026-06-15T10:00:00Z'),
+			storeId: lidl.id,
+			storeName: lidl.name
+		});
+		// Sin establecimiento, con la compra MÁS NUEVA de todas: su bloque va
+		// igualmente al final — es bloque propio, no una sección más (#187).
+		await purchaseRow(familyId, {
+			listName: 'Compra suelta nueva',
+			total: 5,
+			createdAt: new Date('2026-07-20T10:00:00Z')
+		});
+		await purchaseRow(familyId, {
+			listName: 'Compra suelta vieja',
+			total: 8,
+			createdAt: new Date('2026-01-05T10:00:00Z')
 		});
 
 		// El historial es por familia (criterio de la #33): la compra de otra
 		// no aparece, como si no existiera.
-		const ajena = await familyRow('Familia Historiada Ajena');
+		const ajena = await familyRow('Familia Agrupada Ajena');
 		await purchaseRow(ajena, {
 			listName: 'Caviar ajeno',
 			total: 99,
-			createdAt: new Date('2026-06-02T10:00:00Z')
+			createdAt: new Date('2026-06-16T10:00:00Z')
 		});
 
-		const { purchases, hasMore } = await listPurchases(familyId, 0);
-		expect(purchases.map((row) => row.id)).toEqual([nueva.id, vieja.id]);
-		expect(hasMore).toBe(false);
-		// La vista aplana el Decimal del total y conserva el nombre de lista
-		// del snapshot.
-		expect(purchases[1]).toMatchObject({ listName: 'Compra vieja', total: 10 });
+		const { groups } = await listPurchasesByStore(familyId);
+
+		// Secciones por su compra más reciente: Lidl (15 jun) sobre Mercadona
+		// (10 jun), y «Sin establecimiento» al final aunque su compra sea la
+		// más nueva. La clave de una sección viva es el id de la tienda; su
+		// título, el nombre visible.
+		expect(groups.map((grupo) => [grupo.key, grupo.storeName])).toEqual([
+			[lidl.id, 'Lidl'],
+			[mercadona.id, 'Mercadona'],
+			['none', null]
+		]);
+		// Dentro de cada sección, de la más reciente a la más antigua.
+		expect(groups.map((grupo) => grupo.purchases.map((row) => row.listName))).toEqual([
+			['Compra Lidl'],
+			['Compra Mercadona nueva', 'Compra Mercadona vieja'],
+			['Compra suelta nueva', 'Compra suelta vieja']
+		]);
+		// Ni historia detrás ni offset pedido en la primera página.
+		expect(groups.map((grupo) => [grupo.offset, grupo.hasMore])).toEqual([
+			[0, false],
+			[0, false],
+			[0, false]
+		]);
 	});
 
-	it('pagina de forma ACUMULATIVA: la página de un offset incluye todo lo anterior y avisa si queda más', async () => {
-		const familyId = await familyRow('Familia Paginada');
+	it('la paginación es ACUMULATIVA por sección: la página de un offset incluye todo lo anterior de SU bloque, sin tocar las demás', async () => {
+		const familyId = await familyRow('Familia Paginada Agrupada');
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		const lidl = await createStore(familyId, { name: 'Lidl' });
 		const total = PURCHASES_PAGE_SIZE + 5;
 		for (let i = 0; i < total; i++) {
 			// createdAt crecientes: la compra i+1 es la más nueva de las i+1.
 			await purchaseRow(familyId, {
-				listName: `Compra ${i + 1}`,
+				listName: `Compra Mercadona ${i + 1}`,
 				total: i,
-				createdAt: new Date(Date.UTC(2026, 0, 1, 0, i))
+				createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)),
+				storeId: mercadona.id,
+				storeName: mercadona.name
 			});
 		}
-
-		const primera = await listPurchases(familyId, 0);
-		expect(primera.purchases).toHaveLength(PURCHASES_PAGE_SIZE);
-		expect(primera.hasMore).toBe(true);
-		// La más nueva primero: la última sembrada.
-		expect(primera.purchases[0].listName).toBe(`Compra ${total}`);
-
-		// La «segunda página» trae TODO el historial, no solo sus 5 filas: es
-		// lo que hace que «Cargar más» añada al final de lo ya pintado.
-		const crecida = await listPurchases(familyId, PURCHASES_PAGE_SIZE);
-		expect(crecida.purchases).toHaveLength(total);
-		expect(crecida.hasMore).toBe(false);
-		// Las filas ya vistas no cambian de sitio ni de contenido.
-		expect(crecida.purchases.slice(0, PURCHASES_PAGE_SIZE)).toEqual(primera.purchases);
-	});
-
-	it('un offset basura o negativo es la primera página, y uno desmedido se acota (#109)', async () => {
-		const familyId = await familyRow('Familia Offset Basura');
 		await purchaseRow(familyId, {
-			listName: 'Única',
+			listName: 'Compra Lidl',
 			total: 1,
-			createdAt: new Date('2026-03-01T10:00:00Z')
+			createdAt: new Date('2026-02-01T10:00:00Z'),
+			storeId: lidl.id,
+			storeName: lidl.name
 		});
 
-		const basura = await listPurchases(familyId, Number.NaN);
-		expect(basura.purchases).toHaveLength(1);
-		expect(basura.hasMore).toBe(false);
-		const negativo = await listPurchases(familyId, -5);
-		expect(negativo.purchases).toHaveLength(1);
+		const primera = await listPurchasesByStore(familyId);
+		const suMercadona = primera.groups.find((grupo) => grupo.key === mercadona.id);
+		expect(suMercadona?.purchases).toHaveLength(PURCHASES_PAGE_SIZE);
+		expect(suMercadona?.hasMore).toBe(true);
+		// La más nueva primero: la última sembrada.
+		expect(suMercadona?.purchases[0].listName).toBe(`Compra Mercadona ${total}`);
+		// La sección del Lidl, completa e intacta.
+		expect(primera.groups.find((grupo) => grupo.key === lidl.id)?.purchases).toHaveLength(1);
 
-		// Sin acotar, `1e21` pasaba Number.isInteger y el `take` desmedido
-		// reventaba Prisma (500); un millón volcaba el historial entero.
-		expect(() => listPurchases(familyId, 1e21)).not.toThrow();
-		const acotado = await listPurchases(familyId, 1e21);
-		expect(acotado.purchases).toHaveLength(1);
-		expect(await listPurchases(familyId, 1_000_000)).toEqual(acotado);
-		expect(await listPurchases(familyId, MAX_PURCHASES_OFFSET)).toEqual(acotado);
+		// La «segunda página» de Mercadona trae TODO lo suyo, no solo sus 5
+		// filas: es lo que hace que «Cargar más» añada al final de lo pintado.
+		// El offset de Lidl no viaja: su sección se sirve entera igual.
+		const crecida = await listPurchasesByStore(familyId, { [mercadona.id]: PURCHASES_PAGE_SIZE });
+		const mercadonaCrecida = crecida.groups.find((grupo) => grupo.key === mercadona.id);
+		expect(mercadonaCrecida?.purchases).toHaveLength(total);
+		expect(mercadonaCrecida?.hasMore).toBe(false);
+		// Las filas ya vistas no cambian de sitio ni de contenido.
+		expect(mercadonaCrecida?.purchases.slice(0, PURCHASES_PAGE_SIZE)).toEqual(
+			suMercadona?.purchases
+		);
+		expect(crecida.groups.find((grupo) => grupo.key === lidl.id)?.purchases).toHaveLength(1);
 	});
 
+	it('un offset basura o negativo es la primera página del bloque, y uno desmedido se acota POR SECCIÓN (#109)', async () => {
+		const familyId = await familyRow('Familia Offset Basura');
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		await purchaseRow(familyId, {
+			listName: 'De tienda',
+			total: 1,
+			createdAt: new Date('2026-03-01T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		await purchaseRow(familyId, {
+			listName: 'Única suelta',
+			total: 2,
+			createdAt: new Date('2026-03-02T10:00:00Z')
+		});
+
+		const basura = await listPurchasesByStore(familyId, { [mercadona.id]: Number.NaN });
+		expect(basura.groups.find((grupo) => grupo.key === mercadona.id)?.purchases).toHaveLength(1);
+		const negativo = await listPurchasesByStore(familyId, { [mercadona.id]: -5 });
+		expect(negativo.groups.find((grupo) => grupo.key === mercadona.id)?.purchases).toHaveLength(1);
+
+		// Sin acotar, `1e21` pasaba Number.isInteger y el `take` desmedido
+		// reventaba Prisma (500); un millón volcaba la sección entera. El tope
+		// es POR BLOQUE: cada sección acota el suyo, sea de tienda o el final.
+		const acotado = await listPurchasesByStore(familyId, { [mercadona.id]: 1e21 });
+		expect(() => listPurchasesByStore(familyId, { [mercadona.id]: 1e21 })).not.toThrow();
+		const suBloque = acotado.groups.find((grupo) => grupo.key === mercadona.id);
+		expect(suBloque?.purchases).toHaveLength(1);
+		expect(suBloque?.offset).toBe(MAX_PURCHASES_OFFSET);
+		expect(
+			(await listPurchasesByStore(familyId, { [mercadona.id]: 1_000_000 })).groups.find(
+				(grupo) => grupo.key === mercadona.id
+			)
+		).toEqual(suBloque);
+		expect(
+			(await listPurchasesByStore(familyId, { [mercadona.id]: MAX_PURCHASES_OFFSET })).groups.find(
+				(grupo) => grupo.key === mercadona.id
+			)
+		).toEqual(suBloque);
+
+		// El bloque de «Sin establecimiento» acota el suyo con la misma regla.
+		const { groups } = await listPurchasesByStore(familyId);
+		const sinBloque = groups.find((grupo) => grupo.storeName === null);
+		expect(sinBloque).toBeDefined();
+		const acotadoSin = await listPurchasesByStore(familyId, { [sinBloque!.key]: 1e21 });
+		expect(acotadoSin.groups.find((grupo) => grupo.storeName === null)?.offset).toBe(
+			MAX_PURCHASES_OFFSET
+		);
+	});
+
+	it('el establecimiento borrado deja sus compras juntas bajo el nombre del snapshot, y «Sin establecimiento» sigue al final', async () => {
+		const familyId = await familyRow('Familia Tienda Muerta');
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		await purchaseRow(familyId, {
+			listName: 'Compra tras el borrado',
+			total: 20,
+			createdAt: new Date('2026-06-10T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		await purchaseRow(familyId, {
+			listName: 'Compra antes del borrado',
+			total: 15,
+			createdAt: new Date('2026-03-01T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		// Sin establecimiento y además la compra MÁS NUEVA de todas: el bloque
+		// «Sin establecimiento» va al final igualmente.
+		await purchaseRow(familyId, {
+			listName: 'Compra suelta',
+			total: 5,
+			createdAt: new Date('2026-07-20T10:00:00Z')
+		});
+
+		// Borrar el establecimiento le quita la FK a las compras (SetNull,
+		// tarea #179) pero el nombre congelado sobrevive en el snapshot.
+		await prisma.store.delete({ where: { id: mercadona.id } });
+
+		const { groups } = await listPurchasesByStore(familyId);
+		expect(groups.map((grupo) => [grupo.key, grupo.storeName])).toEqual([
+			[`nombre:${mercadona.name}`, 'Mercadona'],
+			['none', null]
+		]);
+		expect(groups[0].purchases.map((row) => row.listName)).toEqual([
+			'Compra tras el borrado',
+			'Compra antes del borrado'
+		]);
+		expect(groups[1].purchases.map((row) => row.listName)).toEqual(['Compra suelta']);
+	});
+});
+
+describe('Historial: detalle de una compra (#76)', () => {
 	it('el detalle sale en el orden CONGELADO por `position`, no alfabético ni físico (#109)', async () => {
 		const familyId = await familyRow('Familia Detalle Ordenado');
 		// En la lista se compró primero Pan y luego Leche: el snapshot congela
@@ -793,9 +933,33 @@ describe('Historial: listado de la familia (#76)', () => {
 		const detalle = await getPurchase(familyId, compra.id);
 		expect(detalle?.items.map((item) => item.name)).toEqual(['Pan', 'Leche entera']);
 	});
-});
 
-describe('Historial: detalle de una compra (#76)', () => {
+	it('el detalle lleva el establecimiento del snapshot (#187) y sobrevive a que se borre', async () => {
+		const familyId = await familyRow('Familia Ticket Establecido');
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		const compra = await purchaseRow(familyId, {
+			listName: 'Compra con tienda',
+			total: 20,
+			createdAt: new Date('2026-06-10T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		const suelta = await purchaseRow(familyId, {
+			listName: 'Compra sin tienda',
+			total: 5,
+			createdAt: new Date('2026-06-11T10:00:00Z')
+		});
+
+		expect((await getPurchase(familyId, compra.id))?.storeName).toBe('Mercadona');
+		expect((await getPurchase(familyId, suelta.id))?.storeName).toBeNull();
+
+		// Fiel a lo comprado aunque el presente cambie: renombrar la tienda y
+		// borrarla (SetNull) no retoca el ticket — el nombre congelado queda.
+		await prisma.store.update({ where: { id: mercadona.id }, data: { name: 'Mercadona SA' } });
+		await prisma.store.delete({ where: { id: mercadona.id } });
+		expect((await getPurchase(familyId, compra.id))?.storeName).toBe('Mercadona');
+	});
+
 	it('devuelve el snapshot completo: items congelados, total a mano y nombre de lista guardado', async () => {
 		const familyId = await familyRow('Familia Detallada');
 		const lista = await createList(familyId, LISTA);

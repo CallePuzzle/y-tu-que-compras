@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Store from '@lucide/svelte/icons/store';
 	import { formatQuantity } from '#lib/format.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { unitLabels } from '#lib/units.js';
@@ -27,6 +28,15 @@
 	<div class="mt-1">
 		<h1 class="text-2xl font-bold">{data.purchase.listName}</h1>
 		<p class="mt-1 opacity-70">{data.purchase.date}</p>
+		{#if data.purchase.storeName}
+			<!-- El establecimiento del momento (#187): el nombre congelado al
+			     finalizar, fiel aunque la tienda se renombre o desaparezca
+			     (SetNull + snapshot, como la lista de origen). -->
+			<p class="mt-1 flex items-center gap-1.5 text-sm opacity-70">
+				<Store aria-hidden="true" class="size-4 shrink-0" />
+				{data.purchase.storeName}
+			</p>
+		{/if}
 	</div>
 
 	<!-- El total introducido a mano al finalizar (#70): nunca se recalcula. -->

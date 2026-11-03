@@ -1,33 +1,49 @@
 import { formatDateTime, formatPrice } from '#lib/format.js';
 import { getLocale } from '#lib/paraglide/runtime.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
-import { listPurchases, MAX_PURCHASES_OFFSET, PURCHASES_PAGE_SIZE } from '#lib/server/purchases.js';
+import {
+	listPurchasesByStore,
+	MAX_PURCHASES_OFFSET,
+	PURCHASES_PAGE_SIZE
+} from '#lib/server/purchases.js';
 import type { PageServerLoad } from './$types';
 
-// El historial de compras de la familia activa (issues #47 y #76): lectura
-// pura, sin acciones — el registro del historial es un snapshot inmutable
-// (#75). La familia activa es la puerta de la vista (issue #63):
-// `requireActiveFamily` manda a `/families` a quien no tiene o no ha elegido,
-// y su id — ya verificado contra la membresía — es el que filtra la query.
+// El historial de compras de la familia activa (issues #47 y #76), agrupado
+// por establecimiento (#187): lectura pura, sin acciones — el registro del
+// historial es un snapshot inmutable (#75). La familia activa es la puerta de
+// la vista (issue #63): `requireActiveFamily` manda a `/families` a quien no
+// tiene o no ha elegido, y su id — ya verificado contra la membresía — es el
+// que filtra TODAS las queries.
+
+/** El prefijo de los offsets de «Cargar más»: uno POR SECCIÓN (#187). */
+const OFFSET_PREFIX = 'offset-';
 
 /**
- * El offset del enlace «Cargar más», que viaja en la query. `null` o basura
- * (`?offset=abc`) es la primera página; por encima del tope se ACOTA (issue
- * #109), igual que hace `listPurchases` por su cuenta, para que el
- * `nextOffset` que alimenta el siguiente enlace sea coherente con la página
- * servida.
+ * Los offsets de las secciones, leídos de la query (`?offset-<clave>=n`, con
+ * la clave que trae el propio listado: id del establecimiento, su snapshot
+ * con prefijo si se borró o la fija de «Sin establecimiento»). `null` o
+ * basura (`?offset-x=abc`) es la primera página de ese bloque; por encima
+ * del tope se ACOTA (issue #109), igual que hace `listPurchasesByStore` por
+ * su cuenta, para que el offset que alimenta el siguiente «Cargar más» sea
+ * coherente con la página servida. Las claves que ya no corresponden a
+ * ninguna sección (el listado manda) simplemente no se usan.
  */
-function offsetOf(raw: string | null): number {
-	if (raw === null) return 0;
-	const parsed = Number(raw);
-	if (!Number.isInteger(parsed) || parsed <= 0) return 0;
-	return Math.min(parsed, MAX_PURCHASES_OFFSET);
+function offsetsOf(params: URLSearchParams): Record<string, number> {
+	const offsets: Record<string, number> = {};
+	for (const [name, raw] of params) {
+		if (!name.startsWith(OFFSET_PREFIX)) continue;
+		const key = name.slice(OFFSET_PREFIX.length);
+		if (!key) continue;
+		const parsed = Number(raw);
+		if (!Number.isInteger(parsed) || parsed <= 0) continue;
+		offsets[key] = Math.min(parsed, MAX_PURCHASES_OFFSET);
+	}
+	return offsets;
 }
 
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
-	const offset = offsetOf(event.url.searchParams.get('offset'));
-	const { purchases, hasMore } = await listPurchases(family.id, offset);
+	const { groups } = await listPurchasesByStore(family.id, offsetsOf(event.url.searchParams));
 
 	// La fecha y el precio se formatean EN SERVIDOR con la locale de la
 	// petición (regla i18n), y viajan como texto listo para pintar: el cliente
@@ -36,14 +52,23 @@ export const load: PageServerLoad = async (event) => {
 	const locale = getLocale();
 
 	return {
-		purchases: purchases.map((compra) => ({
-			id: compra.id,
-			listName: compra.listName,
-			date: formatDateTime(compra.createdAt, locale),
-			total: formatPrice(compra.total, locale)
-		})),
-		hasMore,
-		// El próximo «Cargar más» pide todo hasta aquí + una página más (#76).
-		nextOffset: hasMore ? offset + PURCHASES_PAGE_SIZE : null
+		groups: groups.map((grupo) => ({
+			key: grupo.key,
+			storeName: grupo.storeName,
+			purchases: grupo.purchases.map((compra) => ({
+				id: compra.id,
+				listName: compra.listName,
+				date: formatDateTime(compra.createdAt, locale),
+				total: formatPrice(compra.total, locale)
+			})),
+			// El offset servido vuelve al cliente: alimenta los inputs ocultos
+			// de los «Cargar más» de las OTRAS secciones, para que cargar una
+			// no reinicie las páginas de las demás (#187).
+			offset: grupo.offset,
+			hasMore: grupo.hasMore,
+			// El próximo «Cargar más» de la sección pide todo hasta aquí + una
+			// página más (#76).
+			nextOffset: grupo.hasMore ? grupo.offset + PURCHASES_PAGE_SIZE : null
+		}))
 	};
 };

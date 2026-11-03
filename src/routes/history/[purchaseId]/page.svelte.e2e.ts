@@ -3,6 +3,7 @@ import { seedSession, waitForHydration } from '../../../../e2e/helpers/auth';
 import {
 	createFamily,
 	createPurchaseRecord,
+	createStore,
 	createUser,
 	resetDb
 } from '../../../../e2e/helpers/seed';
@@ -11,14 +12,17 @@ test.beforeEach(async () => {
 	await resetDb();
 });
 
-test('muestra el detalle con lista de origen, fecha, total e items del snapshot', async ({
+test('muestra el detalle con lista de origen, establecimiento, fecha, total e items del snapshot', async ({
 	page
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
+	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
 	const compra = await createPurchaseRecord({
 		familyId: family.id,
 		listName: 'Compra semanal',
+		storeId: mercadona.id,
+		storeName: 'Mercadona',
 		total: 12.34,
 		createdAt: new Date('2026-10-28T18:45:00Z'),
 		items: [
@@ -33,6 +37,8 @@ test('muestra el detalle con lista de origen, fecha, total e items del snapshot'
 	await waitForHydration(page);
 
 	await expect(page.getByRole('heading', { name: 'Compra semanal', level: 1 })).toBeVisible();
+	// El establecimiento congelado al comprar (#187), bajo la fecha.
+	await expect(page.getByText('Mercadona')).toBeVisible();
 	// La fecha formateada con la locale activa (es por defecto en e2e); la
 	// hora es la de Madrid (28 oct ya va en horario de invierno: 18:45 UTC
 	// → 19:45 CET).
@@ -51,6 +57,28 @@ test('muestra el detalle con lista de origen, fecha, total e items del snapshot'
 	// La cantidad va cruda (como en la despensa): la issue #76 localiza fecha
 	// y moneda, no las cantidades.
 	await expect(tomates).toContainText('0,75 kg');
+});
+
+test('el establecimiento del snapshot se muestra aunque el establecimiento esté borrado (#187)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// Post-borrado: la FK quedó a null (SetNull) pero el nombre congelado
+	// sobrevive en el snapshot; el ticket lo muestra igual.
+	const compra = await createPurchaseRecord({
+		familyId: family.id,
+		listName: 'Compra superviviente',
+		storeName: 'Mercadona',
+		total: 7
+	});
+	await seedSession(page, user);
+
+	await page.goto(`/history/${compra.id}`);
+	await waitForHydration(page);
+
+	await expect(page.getByRole('heading', { name: 'Compra superviviente', level: 1 })).toBeVisible();
+	await expect(page.getByText('Mercadona')).toBeVisible();
 });
 
 test('el enlace de vuelta vuelve al listado', async ({ page }) => {
