@@ -5,6 +5,7 @@ import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
 import Refrigerator from '@lucide/svelte/icons/refrigerator';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
+import Tags from '@lucide/svelte/icons/tags';
 import Users from '@lucide/svelte/icons/users';
 import { m } from '#lib/paraglide/messages.js';
 
@@ -50,6 +51,16 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 			icon: Refrigerator,
 			showInMenu: true,
 			showInMobile: true
+		};
+		// La gestión de categorías de la familia (#170): en el menú de escritorio
+		// y en el cajón lateral, pero FUERA del dock móvil (#162): la barra
+		// inferior se queda con la navegación de ida y vuelta y la gestión fina
+		// de categorías no es navegación de uso diario (como el historial).
+		routes['/categories'] = {
+			label: m.routes_categories(),
+			icon: Tags,
+			showInMenu: true,
+			showInMobile: false
 		};
 		// El historial de compras de la familia activa (#76): el archivo de lo
 		// ya comprado, con el detalle de cada ticket. Fuera del dock móvil

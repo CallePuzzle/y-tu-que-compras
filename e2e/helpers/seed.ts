@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { prisma } from './db';
 
 import type {
+	Category,
 	Invitation,
 	Item,
 	List,
@@ -183,6 +184,38 @@ export async function createList(options: {
 			name: options.name ?? `Lista E2E ${randomUUID().slice(0, 8)}`,
 			color: options.color ?? 'primary',
 			icon: options.icon ?? 'shopping-basket',
+			createdAt: now,
+			updatedAt: now
+		}
+	});
+}
+
+/**
+ * Una categoría de la familia (issues #166 y #170): nombre visible, su canónico
+ * — el mismo `normalizeItemName` que usa la capa #169 (NFD, sin acentos,
+ * minúsculas, espacios colapsados), para que los duplicados se comporten igual
+ * que en la app — y la posición explícita, para poder sembrar órdenes de
+ * prueba. La posición la asigna aquí el test: la del servidor (`createCategory`
+ * de `categories.ts`) solo aplica en el alta por UI.
+ */
+export async function createCategory(options: {
+	familyId: string;
+	name?: string;
+	position?: number;
+}): Promise<Category> {
+	const now = new Date();
+	const name = options.name ?? `Categoría E2E ${randomUUID().slice(0, 8)}`;
+	return prisma.category.create({
+		data: {
+			organizationId: options.familyId,
+			name,
+			normalizedName: name
+				.trim()
+				.normalize('NFD')
+				.replace(/\p{Diacritic}/gu, '')
+				.toLowerCase()
+				.replace(/\s+/g, ' '),
+			position: options.position ?? 0,
 			createdAt: now,
 			updatedAt: now
 		}
