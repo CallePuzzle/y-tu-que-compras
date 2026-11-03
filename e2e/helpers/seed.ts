@@ -10,6 +10,7 @@ import type {
 	Organization,
 	PantryItem,
 	PurchaseRecord,
+	Store,
 	Unit,
 	User
 } from '../../src/lib/generated/prisma/client';
@@ -222,6 +223,31 @@ export async function createCategory(options: {
 	});
 }
 
+/**
+ * Un establecimiento de la familia (épica #177, #182): nombre visible y su
+ * canónico — el mismo `normalizeItemName` que usa la capa de servidor (NFD,
+ * sin acentos, minúsculas, espacios colapsados), para que los duplicados se
+ * comporten igual que en la app.
+ */
+export async function createStore(options: { familyId: string; name?: string }): Promise<Store> {
+	const now = new Date();
+	const name = options.name ?? `Establecimiento E2E ${randomUUID().slice(0, 8)}`;
+	return prisma.store.create({
+		data: {
+			organizationId: options.familyId,
+			name,
+			normalizedName: name
+				.trim()
+				.normalize('NFD')
+				.replace(/\p{Diacritic}/gu, '')
+				.toLowerCase()
+				.replace(/\s+/g, ' '),
+			createdAt: now,
+			updatedAt: now
+		}
+	});
+}
+
 /** Un item de una lista (issue #67): nombre, cantidad, unidad y estado. */
 export async function createItem(options: {
 	listId: string;
@@ -290,6 +316,9 @@ export async function createPurchaseRecord(options: {
 	familyId: string;
 	listName?: string;
 	listId?: string | null;
+	/** Establecimiento de la compra (#177): FK nullable con SetNull. */
+	storeId?: string;
+	storeName?: string;
 	total?: number;
 	userId?: string | null;
 	createdAt?: Date;
@@ -302,6 +331,8 @@ export async function createPurchaseRecord(options: {
 			organizationId: options.familyId,
 			listId: options.listId ?? null,
 			listName,
+			storeId: options.storeId ?? null,
+			storeName: options.storeName ?? null,
 			total: options.total ?? 0,
 			userId: options.userId ?? null,
 			createdAt: options.createdAt ?? new Date(),

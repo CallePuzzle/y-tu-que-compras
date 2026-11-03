@@ -5,6 +5,7 @@ import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
 import Refrigerator from '@lucide/svelte/icons/refrigerator';
 import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
+import Store from '@lucide/svelte/icons/store';
 import Tags from '@lucide/svelte/icons/tags';
 import Users from '@lucide/svelte/icons/users';
 import { m } from '#lib/paraglide/messages.js';
@@ -59,6 +60,16 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 		routes['/categories'] = {
 			label: m.routes_categories(),
 			icon: Tags,
+			showInMenu: true,
+			showInMobile: false
+		};
+		// La gestión de establecimientos de la familia (#183): como las
+		// categorías, en el menú de escritorio y en el cajón lateral pero FUERA
+		// del dock móvil — la barra inferior se queda con la navegación de ida
+		// y vuelta y la gestión fina no es navegación de uso diario.
+		routes['/stores'] = {
+			label: m.routes_stores(),
+			icon: Store,
 			showInMenu: true,
 			showInMobile: false
 		};
