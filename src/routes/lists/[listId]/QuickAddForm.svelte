@@ -11,9 +11,12 @@
 
 	/**
 	 * Alta rápida (formulario inline, siempre visible, checklist #68): nombre,
-	 * cantidad y unidad sin modal, para encadenar altas desde el móvil.
+	 * cantidad y unidad sin modal, para encadenar altas desde el móvil. Con
+	 * la categoría opcional (#172): el select ofrece las categorías de la
+	 * familia y «Sin categoría» no envía nada que clasificar.
 	 */
-	let { form }: { form: PageData['form'] } = $props();
+	let { form, categories }: { form: PageData['form']; categories: PageData['categories'] } =
+		$props();
 
 	const UNIT_LABEL = unitLabels();
 
@@ -126,6 +129,24 @@
 			<Plus aria-hidden="true" />
 			{m.items_add()}
 		</button>
+	</div>
+
+	<!-- Categoría opcional (checklist #172): las de la familia, en su orden.
+	     El option vacío viaja como `''` y el servidor lo guarda como «sin
+	     categoría» — el mismo significado que no enviar el campo. -->
+	<div class="flex flex-col gap-1">
+		<label class="fieldset-label" for="add-category">{m.schema_items_category_label()}</label>
+		<select
+			bind:value={$formData.categoryId}
+			id="add-category"
+			name="categoryId"
+			class="select w-full"
+		>
+			<option value="">{m.items_category_none()}</option>
+			{#each categories as categoria (categoria.id)}
+				<option value={categoria.id}>{categoria.name}</option>
+			{/each}
+		</select>
 	</div>
 
 	{#if $message}

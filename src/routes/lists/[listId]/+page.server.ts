@@ -3,6 +3,7 @@ import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { m } from '#lib/paraglide/messages.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
+import { listCategories } from '#lib/server/categories.js';
 import {
 	createItem,
 	deleteItem,
@@ -18,9 +19,11 @@ import type { Actions, PageServerLoad } from './$types';
 
 /**
  * Valores iniciales del alta rápida: cantidad 1 y unidad «ud», lo más común
- * en la compra, para que añadir cueste lo menos posible desde el móvil.
+ * en la compra, para que añadir cueste lo menos posible desde el móvil. La
+ * categoría arranca vacía («Sin categoría», checklist #172): el `''` del
+ * option vacío es el valor con el que el select arranca pintado.
  */
-const EMPTY_ITEM = { name: '', quantity: 1, unit: 'unit' } as const;
+const EMPTY_ITEM = { name: '', quantity: 1, unit: 'unit', categoryId: '' } as const;
 
 // El alta rápida y el modal de edición llevan cada uno SU formulario de
 // superforms (en la página hay dos a la vez): ids distintos para que cada uno
@@ -42,6 +45,9 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		list,
 		items: await listItems(family.id, event.params.listId),
+		// Las categorías de la familia (checklist #172): el select del alta y
+		// el de edición ofrecen exactamente estas, en su orden.
+		categories: await listCategories(family.id),
 		form: await superValidate(EMPTY_ITEM, zod4(itemFormSchema())),
 		editForm: await superValidate(EMPTY_ITEM, zod4(itemFormSchema()), { id: EDIT_FORM_ID }),
 		finalizeForm: await superValidate(zod4(purchaseFormSchema()), { id: FINALIZE_FORM_ID })

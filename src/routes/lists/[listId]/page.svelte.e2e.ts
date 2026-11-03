@@ -3,6 +3,7 @@ import { volverALaPestana } from '../../../../e2e/helpers/browser';
 import { seedSession, waitForHydration } from '../../../../e2e/helpers/auth';
 import { prisma } from '../../../../e2e/helpers/db';
 import {
+	createCategory,
 	createFamily,
 	createItem,
 	createList,
@@ -57,6 +58,79 @@ test('el detalle muestra la lista y su alta rápida; items en orden', async ({ p
 	await expect(page.locator('li', { hasText: 'Plátanos' }).getByText('2 kg')).toBeVisible();
 	// El orden de inserción se mantiene en pendientes.
 	await expect(page.locator('ol > li').first()).toContainText('Leche entera');
+});
+
+test('alta con categoria (#172): el chip clasifica el item y la edicion la conserva o la quita', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const limpieza = await createCategory({ familyId: family.id, name: 'Limpieza' });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// El select del alta ofrece las categorías de la familia, en su orden,
+	// más el option vacío («Sin categoría»).
+	await expect(page.locator('#add-category option')).toHaveText([
+		'Sin categoría',
+		'Lácteos',
+		'Limpieza'
+	]);
+
+	await page.locator('#add-name').fill('Leche entera');
+	await page.locator('#add-category').selectOption({ label: 'Lácteos' });
+	await page.getByRole('button', { name: 'Añadir' }).first().click();
+
+	// El chip clasifica la fila (y solo esa: ninguna otra fila trae categoría).
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+	await expect(leche).toBeVisible();
+	await expect(leche.getByText('Lácteos')).toBeVisible();
+	await expect(page.locator('li .badge-sm')).toHaveCount(1);
+
+	// La verdad quedó en el servidor.
+	const guardado = await prisma.item.findFirstOrThrow({
+		where: { listId: lista.id, name: 'Leche entera' }
+	});
+	expect(guardado.categoryId).toBe(lacteos.id);
+
+	// El formulario queda vacío (y SIN categoría) para encadenar otra alta.
+	await expect(page.locator('#add-name')).toHaveValue('');
+	await expect(page.locator('#add-category')).toHaveValue('');
+
+	// La edición abre el modal con la categoría del item cargada…
+	await leche.getByRole('button', { name: 'Editar item' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.locator('#edit-category')).toHaveValue(lacteos.id);
+
+	// …reclasificar guarda la nueva y el chip sigue…
+	await dialog.locator('#edit-category').selectOption({ label: 'Limpieza' });
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+	// Texto exacto y no `getByRole('status')`: el aviso de éxito del alta
+	// rápida («Item añadido…») sigue en su formulario hasta el próximo envío.
+	await expect(page.getByText('Item actualizado.')).toBeVisible();
+	await expect(page.locator('li', { hasText: 'Leche entera' }).getByText('Limpieza')).toBeVisible();
+	expect(await prisma.item.findUniqueOrThrow({ where: { id: guardado.id } })).toMatchObject({
+		categoryId: limpieza.id
+	});
+
+	// …y «Sin categoría» la quita: sin chip en la fila y sin categoría en la BD.
+	await page
+		.locator('li', { hasText: 'Leche entera' })
+		.getByRole('button', { name: 'Editar item' })
+		.click();
+	await page.locator('dialog[open]').locator('#edit-category').selectOption('');
+	await page.locator('dialog[open]').getByRole('button', { name: 'Guardar cambios' }).click();
+	await expect(page.getByText('Item actualizado.')).toBeVisible();
+	await expect(page.locator('li', { hasText: 'Leche entera' }).getByText('Limpieza')).toHaveCount(
+		0
+	);
+	expect(await prisma.item.findUniqueOrThrow({ where: { id: guardado.id } })).toMatchObject({
+		categoryId: null
+	});
 });
 
 test('la validacion de cantidad corta el alta en cliente', async ({ page }) => {

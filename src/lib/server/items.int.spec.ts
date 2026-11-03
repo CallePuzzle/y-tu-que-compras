@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 // (de otra familia o de otra lista) no se pueden tocar ni por error.
 import type { ItemData } from '#lib/schemas/item.js';
 import prisma from './prisma.js';
+import { createCategory } from './categories.js';
 import { createItem, deleteItem, listItems, setItemPurchased, updateItem } from './items.js';
 import { createList } from './lists.js';
 
@@ -180,6 +181,83 @@ describe('CRUD de items por familia y lista (#68)', () => {
 		await prisma.list.delete({ where: { id: list.id } });
 
 		expect(await prisma.item.findMany({ where: { id: { in: [a.id, b.id] } } })).toHaveLength(0);
+	});
+});
+
+describe('Categoría de los items (#172)', () => {
+	it('createItem guarda la categoría de la familia y listItems la devuelve con su nombre', async () => {
+		const familyId = await familyRow('Familia Clasificadora');
+		const list = await createList(familyId, LISTA);
+		const lacteos = await createCategory(familyId, { name: 'Lácteos' });
+
+		const created = await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: lacteos.id });
+		// La vista trae id y nombre para que el chip pinte sin otra consulta.
+		expect(created).toMatchObject({ categoryId: lacteos.id, categoryName: 'Lácteos' });
+
+		const row = await prisma.item.findUniqueOrThrow({ where: { id: created.id } });
+		expect(row.categoryId).toBe(lacteos.id);
+
+		const items = await listItems(familyId, list.id);
+		expect(items[0]).toMatchObject({
+			name: ITEM.name,
+			categoryId: lacteos.id,
+			categoryName: 'Lácteos'
+		});
+	});
+
+	it('createItem guarda sin categoría un id ajeno, rancio o vacío: sin 500 por FK', async () => {
+		const mia = await familyRow('Familia Sin Chip');
+		const ajena = await familyRow('Familia Categorizada');
+		const list = await createList(mia, LISTA);
+		const deAjena = await createCategory(ajena, { name: 'Lácteos' });
+
+		// Categoría de OTRA familia: se guarda como «sin categoría», sin
+		// filtrar información ni romper la FK.
+		const conAjena = await createItemOrFail(mia, list.id, {
+			...ITEM,
+			categoryId: deAjena.id
+		});
+		expect(conAjena.categoryId).toBeNull();
+
+		// Id ya borrado: la UI lo ofreció y otro miembro eliminó la categoría
+		// mientras se rellenaba el formulario — el efecto del `SetNull`.
+		const conFantasma = await createItemOrFail(mia, list.id, {
+			...ITEM,
+			name: 'Fantasma',
+			categoryId: randomUUID()
+		});
+		expect(conFantasma.categoryId).toBeNull();
+
+		// El option vacío del select («Sin categoría») viaja como ''.
+		const conVacio = await createItemOrFail(mia, list.id, {
+			...ITEM,
+			name: 'Sin clasificar',
+			categoryId: ''
+		});
+		expect(conVacio.categoryId).toBeNull();
+		expect(await listItems(mia, list.id)).toHaveLength(3);
+	});
+
+	it('updateItem cambia la categoría y la quita con «Sin categoría»', async () => {
+		const familyId = await familyRow('Familia Reclasificadora');
+		const list = await createList(familyId, LISTA);
+		const antes = await createCategory(familyId, { name: 'Lácteos' });
+		const despues = await createCategory(familyId, { name: 'Despensa' });
+		const item = await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: antes.id });
+
+		expect(await updateItem(familyId, list.id, item.id, { ...ITEM, categoryId: despues.id })).toBe(
+			true
+		);
+		expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
+			categoryId: despues.id
+		});
+
+		// «Sin categoría» (el '' del select) borra la que tuviera: la edición
+		// sustituye el campo entero, como el nombre o la unidad.
+		expect(await updateItem(familyId, list.id, item.id, { ...ITEM, categoryId: '' })).toBe(true);
+		expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
+			categoryId: null
+		});
 	});
 });
 

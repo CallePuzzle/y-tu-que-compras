@@ -31,6 +31,7 @@ export type ItemSchemaStrings = {
 	quantityLabel?: string;
 	unitError?: string;
 	unitLabel?: string;
+	categoryLabel?: string;
 };
 
 /**
@@ -76,6 +77,13 @@ export function quantitySchema(error?: string) {
  *
  * Las etiquetas viajan en `.meta()`: `zodToFieldsJsonSchema` las vuelca al
  * `Field` y `FormFields` las pinta (ver `createFamilySchema`).
+ *
+ * La categoría es OPCIONAL (checklist #172): el select de la UI ofrece las
+ * categorías de la familia más el option vacío («Sin categoría»), que llega
+ * como `''` y significa lo mismo que ausente. AQUÍ solo se valida la forma —
+ * que la categoría pertenezca a la familia lo resuelve el SERVIDOR
+ * (`resolveCategoryId` de `items.ts`), igual que la lista: el formulario no
+ * puede autorizar por id.
  */
 export function itemSchema(strings?: ItemSchemaStrings) {
 	return z.object({
@@ -86,7 +94,8 @@ export function itemSchema(strings?: ItemSchemaStrings) {
 			.max(100, strings?.nameError)
 			.meta({ description: strings?.nameLabel, placeholder: strings?.namePlaceholder }),
 		quantity: quantitySchema(strings?.quantityError).meta({ description: strings?.quantityLabel }),
-		unit: z.enum(UNITS, strings?.unitError).meta({ description: strings?.unitLabel })
+		unit: z.enum(UNITS, strings?.unitError).meta({ description: strings?.unitLabel }),
+		categoryId: z.string().optional().meta({ description: strings?.categoryLabel })
 	});
 }
 

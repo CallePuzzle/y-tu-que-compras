@@ -13,13 +13,16 @@
 	 * Editar (checklist #68): una modal compartida con su propio formulario de
 	 * superforms (id «edit-item») para que no se pise con el alta rápida. Se
 	 * abre con `open(item)`; el éxito la cierra y pasa el aviso a la página.
+	 * Con la categoría opcional (#172): se precarga la del item y «Sin
+	 * categoría» la quita al guardar.
 	 */
 	type Props = {
 		form: PageData['editForm'];
+		categories: PageData['categories'];
 		onSuccess: (message: string) => void;
 	};
 
-	let { form, onSuccess }: Props = $props();
+	let { form, categories, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 
@@ -48,7 +51,13 @@
 		message.set(undefined);
 		errors.clear();
 		// El cast recupera los literales del enum tras venir de Prisma (string).
-		formData.set({ name: item.name, quantity: item.quantity, unit: item.unit } as ItemData);
+		// La categoría `null` va como `''`, el valor del option «Sin categoría».
+		formData.set({
+			name: item.name,
+			quantity: item.quantity,
+			unit: item.unit,
+			categoryId: item.categoryId ?? ''
+		} as ItemData);
 		modal?.showModal();
 	}
 </script>
@@ -121,6 +130,23 @@
 					<p class="fieldset-label text-error" role="alert">{textoError($errors.unit)}</p>
 				{/if}
 			</div>
+		</div>
+
+		<!-- Categoría opcional (checklist #172): las mismas opciones que en el
+		     alta; elegir «Sin categoría» guarda el item sin ella. -->
+		<div class="flex flex-col gap-1">
+			<label class="fieldset-label" for="edit-category">{m.schema_items_category_label()}</label>
+			<select
+				bind:value={$formData.categoryId}
+				id="edit-category"
+				name="categoryId"
+				class="select w-full"
+			>
+				<option value="">{m.items_category_none()}</option>
+				{#each categories as categoria (categoria.id)}
+					<option value={categoria.id}>{categoria.name}</option>
+				{/each}
+			</select>
 		</div>
 
 		{#if $message}

@@ -18,7 +18,8 @@ export function itemFormSchema() {
 		quantityError: m.schema_items_quantity_error(),
 		quantityLabel: m.schema_items_quantity_label(),
 		unitError: m.schema_items_unit_error(),
-		unitLabel: m.schema_items_unit_label()
+		unitLabel: m.schema_items_unit_label(),
+		categoryLabel: m.schema_items_category_label()
 	});
 }
 

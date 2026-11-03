@@ -161,7 +161,7 @@
 		</div>
 	{/if}
 
-	<QuickAddForm bind:this={altaRapida} form={data.form} />
+	<QuickAddForm bind:this={altaRapida} form={data.form} categories={data.categories} />
 
 	{#if data.items.length === 0}
 		<!-- Estado vacío (checklist #68), con CTA que enfoca el alta. -->
@@ -230,6 +230,7 @@
 <EditItemModal
 	bind:this={editarModal}
 	form={data.editForm}
+	categories={data.categories}
 	onSuccess={(texto) => (exito = texto)}
 />
 

@@ -231,6 +231,8 @@ export async function createItem(options: {
 	purchased?: boolean;
 	/** Posición en la lista: el servidor la calcula al crear; aquí explícita. */
 	order?: number;
+	/** Categoría del item (#172): si no, sin clasificar. */
+	categoryId?: string;
 }): Promise<Item> {
 	const now = new Date();
 	return prisma.item.create({
@@ -241,6 +243,7 @@ export async function createItem(options: {
 			unit: options.unit ?? 'unit',
 			purchased: options.purchased ?? false,
 			order: options.order ?? 0,
+			categoryId: options.categoryId ?? null,
 			createdAt: now,
 			updatedAt: now
 		}

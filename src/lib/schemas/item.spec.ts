@@ -86,6 +86,27 @@ describe('itemSchema', () => {
 		}
 	});
 
+	it('acepta categoryId opcional: ausente y vacío («Sin categoría») validan (#172)', () => {
+		// Sin el campo (el FormData de un select sin categoryId).
+		const absent = itemSchema().safeParse(VALID);
+		expect(absent.success).toBe(true);
+		if (absent.success) {
+			expect(absent.data.categoryId).toBeUndefined();
+		}
+
+		// Con el option vacío («Sin categoría»), que viaja como ''.
+		const empty = itemSchema().safeParse({ ...VALID, categoryId: '' });
+		expect(empty.success).toBe(true);
+		if (empty.success) {
+			expect(empty.data.categoryId).toBe('');
+		}
+
+		// Con el id de una categoría de la familia.
+		expect(itemSchema().safeParse({ ...VALID, categoryId: 'cuid-de-categoria' }).success).toBe(
+			true
+		);
+	});
+
 	it('está lista para superforms: los errores llegan al formulario', async () => {
 		// Con el formulario vacío por defecto superforms no pinta errores (solo
 		// marca `valid: false`); con datos inválidos sí los devuelve por campo.
@@ -156,7 +177,8 @@ describe('etiquetas de unidades', () => {
 				'schema_items_quantity_label',
 				'schema_items_quantity_error',
 				'schema_items_unit_label',
-				'schema_items_unit_error'
+				'schema_items_unit_error',
+				'schema_items_category_label'
 			]) {
 				expect(
 					typeof messages[key] === 'string' && messages[key].length > 0,

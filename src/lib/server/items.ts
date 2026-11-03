@@ -1,3 +1,4 @@
+import { Prisma } from '#lib/generated/prisma/client.js';
 import prisma from '#lib/server/prisma.js';
 import type { ItemData, Unit } from '#lib/schemas/item.js';
 
@@ -15,6 +16,10 @@ export interface ItemView {
 	quantity: number;
 	/** Valor del enum `Unit` (identificador inglés); la UI lo traduce con `unit_*`. */
 	unit: Unit;
+	/** Categoría del item (checklist #172): el chip de la fila la muestra. */
+	categoryId: string | null;
+	/** Nombre visible de esa categoría, para pintar el chip sin otra consulta. */
+	categoryName: string | null;
 	/** Marca de comprado (#69): la UI la conmuta con actualización optimista. */
 	purchased: boolean;
 }
@@ -25,6 +30,8 @@ function toItem(row: {
 	name: string;
 	quantity: unknown;
 	unit: Unit;
+	categoryId: string | null;
+	category: { name: string } | null;
 	purchased: boolean;
 }): ItemView {
 	return {
@@ -32,6 +39,8 @@ function toItem(row: {
 		name: row.name,
 		quantity: Number(row.quantity),
 		unit: row.unit,
+		categoryId: row.categoryId,
+		categoryName: row.category?.name ?? null,
 		purchased: row.purchased
 	};
 }
@@ -45,9 +54,40 @@ export async function listItems(familyId: string, listId: string): Promise<ItemV
 	const rows = await prisma.item.findMany({
 		where: { listId, list: { organizationId: familyId } },
 		orderBy: [{ purchased: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
-		select: { id: true, name: true, quantity: true, unit: true, purchased: true }
+		select: {
+			id: true,
+			name: true,
+			quantity: true,
+			unit: true,
+			categoryId: true,
+			category: { select: { name: true } },
+			purchased: true
+		}
 	});
 	return rows.map(toItem);
+}
+
+/**
+ * Resuelve la categoría del item (checklist #172): el id de UNA categoría de
+ * la familia, o `null` si no viaja o ya no está en ella. La UI solo ofrece
+ * categorías de la familia, así que un id que no cuadra (rancio: la borraron
+ * mientras se rellenaba el formulario, o un id inventado) se guarda como «sin
+ * categoría» — el mismo efecto que el `SetNull` del borrado de categorías —
+ * y sin 500 por violar la FK.
+ */
+async function resolveCategoryId(
+	db: Prisma.TransactionClient,
+	familyId: string,
+	categoryId: string | undefined
+): Promise<string | null> {
+	if (!categoryId) {
+		return null;
+	}
+	const category = await db.category.findFirst({
+		where: { id: categoryId, organizationId: familyId },
+		select: { id: true }
+	});
+	return category?.id ?? null;
 }
 
 /**
@@ -85,15 +125,28 @@ export async function createItem(
 			_max: { order: true }
 		});
 
+		// La categoría (checklist #172) se resuelve DENTRO de la transacción,
+		// igual que la lista: solo vale una de la familia; si no, sin categoría.
+		const categoryId = await resolveCategoryId(tx, familyId, data.categoryId);
+
 		const row = await tx.item.create({
 			data: {
 				listId: listaId,
 				name: data.name,
 				quantity: data.quantity,
 				unit: data.unit,
+				categoryId,
 				order: (_max.order ?? -1) + 1
 			},
-			select: { id: true, name: true, quantity: true, unit: true, purchased: true }
+			select: {
+				id: true,
+				name: true,
+				quantity: true,
+				unit: true,
+				categoryId: true,
+				category: { select: { name: true } },
+				purchased: true
+			}
 		});
 		return toItem(row);
 	});
@@ -104,7 +157,8 @@ export async function createItem(
  * LISTA (y la lista, en esa familia): la pertenencia va en el `where` del
  * `updateMany`, no en una comprobación previa aparte — sin ventana de carrera
  * entre el check y el write, y sin posibilidad de tocar un item ajeno por un
- * id rancio.
+ * id rancio. La categoría (checklist #172) se sustituye entera, como el resto
+ * de campos: «Sin categoría» en el select borra la que tuviera.
  */
 export async function updateItem(
 	familyId: string,
@@ -112,9 +166,10 @@ export async function updateItem(
 	id: string,
 	data: ItemData
 ): Promise<boolean> {
+	const categoryId = await resolveCategoryId(prisma, familyId, data.categoryId);
 	const result = await prisma.item.updateMany({
 		where: { id, listId, list: { organizationId: familyId } },
-		data: { name: data.name, quantity: data.quantity, unit: data.unit }
+		data: { name: data.name, quantity: data.quantity, unit: data.unit, categoryId }
 	});
 	return result.count > 0;
 }
