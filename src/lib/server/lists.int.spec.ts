@@ -29,7 +29,7 @@ async function familyRow(prefix: string): Promise<string> {
 }
 
 /** Datos válidos según `listSchema`, para mutar campo a campo en cada spec. */
-const LISTA: ListData = { name: 'Frutería del barrio', color: 'primary', icon: 'shopping-basket' };
+const LISTA: ListData = { name: 'Frutería del barrio', color: 'yellow', icon: 'shopping-basket' };
 
 describe('CRUD de listas por familia (#66)', () => {
 	it('createList guarda nombre, color e icono en la familia dada', async () => {
@@ -87,14 +87,14 @@ describe('CRUD de listas por familia (#66)', () => {
 
 		const changed = await updateList(mia, propia.id, {
 			name: 'Lidl',
-			color: 'success',
-			icon: 'shopping-cart'
+			color: 'green',
+			icon: 'croissant'
 		});
 		expect(changed).toBe(true);
 		expect(await prisma.list.findUniqueOrThrow({ where: { id: propia.id } })).toMatchObject({
 			name: 'Lidl',
-			color: 'success',
-			icon: 'shopping-cart'
+			color: 'green',
+			icon: 'croissant'
 		});
 
 		// El id de una lista de OTRA familia no se puede actualizar aunque se

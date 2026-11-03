@@ -178,7 +178,7 @@ describe('CRUD de categorías por familia (#169)', () => {
 			data: {
 				organizationId: mia,
 				name: 'Compra semanal',
-				color: 'primary',
+				color: 'yellow',
 				icon: 'shopping-basket'
 			}
 		});

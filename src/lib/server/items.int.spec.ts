@@ -30,7 +30,7 @@ async function familyRow(prefix: string): Promise<string> {
 }
 
 /** Datos válidos según `listSchema`, para crear las listas de prueba. */
-const LISTA = { name: 'Compra semanal', color: 'primary', icon: 'shopping-basket' } as const;
+const LISTA = { name: 'Compra semanal', color: 'yellow', icon: 'shopping-basket' } as const;
 
 /** Datos válidos según `itemSchema`, para mutar campo a campo en cada spec. */
 const ITEM: ItemData = { name: 'Leche entera', quantity: 2, unit: 'liter' };
