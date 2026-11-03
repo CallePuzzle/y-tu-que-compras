@@ -7,6 +7,7 @@ import {
 	createFamily,
 	createItem,
 	createList,
+	createPantryItem,
 	createUser,
 	resetDb
 } from '../../../../e2e/helpers/seed';
@@ -130,6 +131,107 @@ test('alta con categoria (#172): el chip clasifica el item y la edicion la conse
 	);
 	expect(await prisma.item.findUniqueOrThrow({ where: { id: guardado.id } })).toMatchObject({
 		categoryId: null
+	});
+});
+
+test('la sugerencia autocompleta la categoria de nombres conocidos (#173): despensa y otras listas', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const desayuno = await createCategory({ familyId: family.id, name: 'Desayuno' });
+	// Dos fuentes de conocimiento: la despensa (con su canónico guardado)…
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche Entera',
+		normalizedName: 'leche entera',
+		categoryId: lacteos.id
+	});
+	// …y un item en OTRA lista de la misma familia: lo conocido es de la
+	// familia, no de la lista abierta.
+	const otra = await createList({ familyId: family.id, name: 'Desayunos' });
+	await createItem({ listId: otra.id, name: 'Café molido', categoryId: desayuno.id });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// Teclear un nombre conocido (aquí en MINÚSCULAS, distinto del visible
+	// «Leche Entera» de la despensa) rellena el select solo.
+	await page.locator('#add-name').fill('leche entera');
+	await expect(page.locator('#add-category')).toHaveValue(lacteos.id);
+
+	// Otro nombre conocido (de item, con acento y mayúsculas): la sugerencia
+	// se SUSTITUYE — la anterior también la puso la sugerencia.
+	await page.locator('#add-name').fill('Café Molido');
+	await expect(page.locator('#add-category')).toHaveValue(desayuno.id);
+
+	// Un nombre que la familia no conoce: la sugerencia se retira y el
+	// select vuelve a «Sin categoría» (no se queda con la del café).
+	await page.locator('#add-name').fill('Yogur griego');
+	await expect(page.locator('#add-category')).toHaveValue('');
+
+	// Y el alta sale con la sugerencia aplicada: el canónico colapsa también
+	// los espacios («leche  entera» ≡ «leche entera») y el chip clasifica.
+	await page.locator('#add-name').fill('leche  entera');
+	await expect(page.locator('#add-category')).toHaveValue(lacteos.id);
+	await page.getByRole('button', { name: 'Añadir' }).first().click();
+
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+	await expect(leche).toBeVisible();
+	await expect(leche.getByText('Lácteos')).toBeVisible();
+	expect(await prisma.item.findFirstOrThrow({ where: { listId: lista.id } })).toMatchObject({
+		name: 'leche  entera',
+		categoryId: lacteos.id
+	});
+});
+
+test('la sugerencia nunca impide elegir otra categoria (#173): lo manual manda', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const limpieza = await createCategory({ familyId: family.id, name: 'Limpieza' });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche Entera',
+		normalizedName: 'leche entera',
+		categoryId: lacteos.id
+	});
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${lista.id}`);
+	await waitForHydration(page);
+
+	// Primero sugiere (nombre conocido, select vacío)…
+	await page.locator('#add-name').fill('Leche entera');
+	await expect(page.locator('#add-category')).toHaveValue(lacteos.id);
+
+	// …pero elegir OTRA categoría a mano es sagrado: aunque el nombre siga
+	// siendo conocido (retipeado con otras mayúsculas), el select no se mueve.
+	await page.locator('#add-category').selectOption({ label: 'Limpieza' });
+	await page.locator('#add-name').fill('LECHE ENTERA');
+	await expect(page.locator('#add-category')).toHaveValue(limpieza.id);
+
+	// Tampoco un nombre desconocido retira lo manual: solo se retira lo que
+	// puso la sugerencia.
+	await page.locator('#add-name').fill('Ketchup');
+	await expect(page.locator('#add-category')).toHaveValue(limpieza.id);
+
+	// Y vuelta al nombre conocido: lo manual SIGUE mandando — el alta sale
+	// con «Limpieza», no con la «Lácteos» que ese nombre sugiere.
+	await page.locator('#add-name').fill('Leche entera');
+	await expect(page.locator('#add-category')).toHaveValue(limpieza.id);
+	await page.getByRole('button', { name: 'Añadir' }).first().click();
+	const fila = page.locator('li', { hasText: 'Leche entera' });
+	await expect(fila).toBeVisible();
+	await expect(fila.getByText('Limpieza')).toBeVisible();
+	expect(await prisma.item.findFirstOrThrow({ where: { listId: lista.id } })).toMatchObject({
+		categoryId: limpieza.id
 	});
 });
 

@@ -253,7 +253,8 @@ export async function createItem(options: {
 /**
  * Un producto de la despensa (issue #70): lo mismo que deja `finalizePurchase`
  * al cerrar una compra — nombre visible (el de la primera compra), su canónico
- * y la cantidad acumulada.
+ * y la cantidad acumulada. Con categoría opcional (#173): es una de las
+ * fuentes del mapa de sugerencias del alta rápida.
  */
 export async function createPantryItem(options: {
 	familyId: string;
@@ -261,6 +262,7 @@ export async function createPantryItem(options: {
 	normalizedName?: string;
 	quantity?: number;
 	unit?: Unit;
+	categoryId?: string;
 }): Promise<PantryItem> {
 	const now = new Date();
 	const name = options.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`;
@@ -271,6 +273,7 @@ export async function createPantryItem(options: {
 			normalizedName: options.normalizedName ?? name.trim().toLowerCase(),
 			quantity: options.quantity ?? 1,
 			unit: options.unit ?? 'unit',
+			categoryId: options.categoryId ?? null,
 			createdAt: now,
 			updatedAt: now
 		}

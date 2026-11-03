@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 // compra (issue #70): despensa, historial (#75) y lista depurada, todo a la vez
 // — y la protección contra la doble finalización.
 import type { ItemData } from '#lib/schemas/item.js';
+import { normalizeItemName } from '#lib/normalize-name.js';
 import prisma from './prisma.js';
 import { createItem, setItemPurchased } from './items.js';
 import { createList } from './lists.js';
@@ -16,7 +17,6 @@ import {
 	getPurchase,
 	listPurchases,
 	MAX_PURCHASES_OFFSET,
-	normalizeItemName,
 	PURCHASES_PAGE_SIZE
 } from './purchases.js';
 

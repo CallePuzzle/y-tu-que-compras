@@ -334,7 +334,7 @@ model List {
 // de la despensa. Empieza vacía (sin catálogo sembrado) y la gestiona
 // cualquier miembro de la familia, sin checks de rol (issue #111). `name` es
 // el nombre visible; `normalizedName` es el nombre CANÓNICO de búsqueda (trim,
-// minúsculas y sin acentos, ver `normalizeItemName` en `$lib/server/purchases`)
+// minúsculas y sin acentos, ver `normalizeItemName` en `$lib/normalize-name`)
 // — no se muestra, existe para que «Lácteos» y «lacteos» sean la misma
 // categoría. `position` fija el orden en el listado: lo calcula el servidor al
 // crear, sin default para que nadie inserte sin decir dónde (como el `order`
@@ -476,7 +476,7 @@ model PurchaseItem {
 // comprados al finalizar una compra. La familia es la dueña (Cascade, como las
 // listas). `name` es el nombre visible del item tal y como se escribió en la
 // lista; `normalizedName` es el nombre CANÓNICO de búsqueda (trim, minúsculas
-// y sin acentos, ver `normalizeItemName` en `$lib/server/purchases`) — no se
+// y sin acentos, ver `normalizeItemName` en `$lib/normalize-name`) — no se
 // muestra, existe para que «Leche Entera» y «leche entera» sean el mismo
 // producto de la despensa. `quantity` se acumula: cada compra suma sobre lo que
 // ya había, con la misma precisión que el `Item` de origen (DECIMAL(10,3)) y el

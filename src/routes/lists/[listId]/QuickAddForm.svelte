@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
+	import { normalizeItemName } from '#lib/normalize-name.js';
 	import { textoError } from '#lib/forms.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS } from '#lib/schemas/item.js';
@@ -13,10 +14,20 @@
 	 * Alta rápida (formulario inline, siempre visible, checklist #68): nombre,
 	 * cantidad y unidad sin modal, para encadenar altas desde el móvil. Con
 	 * la categoría opcional (#172): el select ofrece las categorías de la
-	 * familia y «Sin categoría» no envía nada que clasificar.
+	 * familia y «Sin categoría» no envía nada que clasificar. Con la
+	 * sugerencia (#173): un nombre que la familia ya conoce rellena el select
+	 * con su categoría — SIEMPRE editable, que es una sugerencia, no una
+	 * imposición.
 	 */
-	let { form, categories }: { form: PageData['form']; categories: PageData['categories'] } =
-		$props();
+	let {
+		form,
+		categories,
+		suggestions
+	}: {
+		form: PageData['form'];
+		categories: PageData['categories'];
+		suggestions: PageData['categorySuggestions'];
+	} = $props();
 
 	const UNIT_LABEL = unitLabels();
 
@@ -36,6 +47,29 @@
 	// rojo solo para errores.
 	let altaOk = $state(false);
 
+	// Sugerencia de categoría por nombre (#173): `sugerida` marca si la
+	// categoría que muestra el select la PUSO la sugerencia — y no quien
+	// escribe. La regla del checklist: autocompletar al detectar coincidencia
+	// SIN bloquear la edición manual, así que la sugerencia solo rellena un
+	// select vacío o sustituye a OTRA sugerencia (nunca lo elegido a mano),
+	// y el nombre dejando de casar retira la sugerencia anterior.
+	let sugerida = $state(false);
+
+	/** Cada tecla en el nombre: aplica o retira la sugerencia, sin pisar lo manual. */
+	function alTeclearNombre() {
+		const sugerencia = suggestions[normalizeItemName($formData.name)];
+		if (sugerencia && (sugerida || !$formData.categoryId)) {
+			$formData.categoryId = sugerencia;
+			sugerida = true;
+		} else if (!sugerencia && sugerida) {
+			// El nombre dejó de casar (se vació o cambió a uno desconocido): la
+			// categoría sugerida ya no responde a lo escrito y se retira. La
+			// elegida a mano se queda: no la puso la sugerencia.
+			$formData.categoryId = '';
+			sugerida = false;
+		}
+	}
+
 	// svelte-ignore state_referenced_locally
 	const addForm = superForm(form, {
 		validators: zod4Client(itemFormSchema()),
@@ -43,6 +77,11 @@
 		applyAction: 'never',
 		onResult({ result }) {
 			altaOk = result.type === 'success';
+			// El alta en limpio resetea el formulario (resetForm): la marca de
+			// sugerencia tampoco sobrevive — el siguiente nombre empieza de cero.
+			if (result.type === 'success') {
+				sugerida = false;
+			}
 		}
 	});
 	const { form: formData, enhance, delayed, message, errors } = addForm;
@@ -66,6 +105,7 @@
 		<input
 			bind:this={nameInput}
 			bind:value={$formData.name}
+			oninput={alTeclearNombre}
 			aria-invalid={textoError($errors.name) ? 'true' : undefined}
 			id="add-name"
 			name="name"
@@ -133,11 +173,16 @@
 
 	<!-- Categoría opcional (checklist #172): las de la familia, en su orden.
 	     El option vacío viaja como `''` y el servidor lo guarda como «sin
-	     categoría» — el mismo significado que no enviar el campo. -->
+	     categoría» — el mismo significado que no enviar el campo. La
+	     sugerencia (#173) la rellena sola para nombres conocidos; el
+	     `onchange` marca toda elección MANUAL (los cambios programáticos de
+	     la sugerencia no disparan eventos) para que la siguiente tecla no la
+	     pise: lo elegido a mano manda siempre. -->
 	<div class="flex flex-col gap-1">
 		<label class="fieldset-label" for="add-category">{m.schema_items_category_label()}</label>
 		<select
 			bind:value={$formData.categoryId}
+			onchange={() => (sugerida = false)}
 			id="add-category"
 			name="categoryId"
 			class="select w-full"

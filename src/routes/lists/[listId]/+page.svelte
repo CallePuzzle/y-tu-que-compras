@@ -161,7 +161,12 @@
 		</div>
 	{/if}
 
-	<QuickAddForm bind:this={altaRapida} form={data.form} categories={data.categories} />
+	<QuickAddForm
+		bind:this={altaRapida}
+		form={data.form}
+		categories={data.categories}
+		suggestions={data.categorySuggestions}
+	/>
 
 	{#if data.items.length === 0}
 		<!-- Estado vacío (checklist #68), con CTA que enfoca el alta. -->

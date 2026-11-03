@@ -13,6 +13,7 @@ import {
 } from '#lib/server/items.js';
 import { getList } from '#lib/server/lists.js';
 import { finalizePurchase } from '#lib/server/purchases.js';
+import { listCategorySuggestions } from '#lib/server/suggestions.js';
 import logger from '#lib/server/logger.js';
 import { itemFormSchema, purchaseFormSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -48,6 +49,9 @@ export const load: PageServerLoad = async (event) => {
 		// Las categorías de la familia (checklist #172): el select del alta y
 		// el de edición ofrecen exactamente estas, en su orden.
 		categories: await listCategories(family.id),
+		// El mapa nombre canónico -> categoría para la sugerencia del alta
+		// rápida (#173): despensa + items de todas las listas de la familia.
+		categorySuggestions: await listCategorySuggestions(family.id),
 		form: await superValidate(EMPTY_ITEM, zod4(itemFormSchema())),
 		editForm: await superValidate(EMPTY_ITEM, zod4(itemFormSchema()), { id: EDIT_FORM_ID }),
 		finalizeForm: await superValidate(zod4(purchaseFormSchema()), { id: FINALIZE_FORM_ID })
