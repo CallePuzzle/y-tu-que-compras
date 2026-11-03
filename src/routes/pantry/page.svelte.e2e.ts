@@ -3,6 +3,7 @@ import { volverALaPestana } from '../../../e2e/helpers/browser';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
 import {
+	createCategory,
 	createFamily,
 	createItem,
 	createList,
@@ -541,4 +542,139 @@ test('el agotado se puede quitar de la despensa con confirmación (#148)', async
 	// La leche sigue en su sitio y la sección Agotados ya no hace falta.
 	await expect(leche).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Agotados' })).toHaveCount(0);
+});
+
+test('agrupa por categorias en su orden y deja Sin categoria al final (#176)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	const frutas = await createCategory({ familyId: family.id, name: 'Frutas', position: 1 });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Yogur',
+		quantity: 4,
+		unit: 'unit',
+		categoryId: lacteos.id
+	});
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Manzana',
+		quantity: 1,
+		unit: 'kilogram',
+		categoryId: frutas.id
+	});
+	// Sin categoría: los dos últimos, que el orden de secciones los lleva al final.
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 1, unit: 'unit' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// Las secciones salen en el orden de la familia (posición) y «Sin
+	// categoría» al final; una categoría sin productos aquí no abre sección.
+	const titulos = page.locator('#tour-pantry-list h3');
+	await expect(titulos).toHaveText(['Lácteos', 'Frutas', 'Sin categoría']);
+
+	// Cada producto en SU sección.
+	await expect(
+		page.getByRole('region', { name: 'Lácteos' }).locator('li', { hasText: 'Yogur' })
+	).toBeVisible();
+	await expect(
+		page.getByRole('region', { name: 'Frutas' }).locator('li', { hasText: 'Manzana' })
+	).toBeVisible();
+	const sinCategoria = page.getByRole('region', { name: 'Sin categoría' });
+	await expect(sinCategoria.locator('li', { hasText: 'Leche entera' })).toBeVisible();
+	await expect(sinCategoria.locator('li', { hasText: 'Pan' })).toBeVisible();
+
+	// El badge de cada fila muestra su categoría — o su sitio para darle una.
+	await expect(
+		page.locator('li', { hasText: 'Yogur' }).getByRole('button', { name: 'Cambiar categoría' })
+	).toContainText('Lácteos');
+	await expect(
+		page
+			.locator('li', { hasText: 'Leche entera' })
+			.getByRole('button', { name: 'Cambiar categoría' })
+	).toContainText('Sin categoría');
+});
+
+test('recategoriza un producto desde la despensa y las secciones se reordenan (#176)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Yogur',
+		quantity: 4,
+		unit: 'unit',
+		categoryId: lacteos.id
+	});
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// La leche, sin categoría, abre el modal desde SU badge.
+	const leche = page.locator('li', { hasText: 'Leche entera' });
+	await leche.getByRole('button', { name: 'Cambiar categoría' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByRole('heading', { name: 'Categoría de «Leche entera»' })).toBeVisible();
+	// El select trae la categoría actual: sin categoría.
+	await expect(dialog.locator('#recat-category')).toHaveValue('');
+
+	// La familia elige Lácteos y guarda.
+	await dialog.locator('#recat-category').selectOption({ label: 'Lácteos' });
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	// El modal cierra, avisa y la leche aparece EN Lácteos: la sección «Sin
+	// categoría» desaparece al quedarse vacía.
+	await expect(page.locator('dialog[open]')).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Categoría actualizada.');
+	await expect(
+		page.getByRole('region', { name: 'Lácteos' }).locator('li', { hasText: 'Leche entera' })
+	).toBeVisible();
+	await expect(page.getByRole('region', { name: 'Sin categoría' })).toHaveCount(0);
+	await expect
+		.poll(async () => {
+			const fila = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
+			return fila?.categoryId;
+		})
+		.toBe(lacteos.id);
+
+	// Y al revés: devolver el yogur a «Sin categoría» lo baja de sección.
+	const yogur = page.locator('li', { hasText: 'Yogur' });
+	await yogur.getByRole('button', { name: 'Cambiar categoría' }).click();
+	await expect(dialog.getByRole('heading', { name: 'Categoría de «Yogur»' })).toBeVisible();
+	await expect(dialog.locator('#recat-category')).toHaveValue(lacteos.id);
+	await dialog.locator('#recat-category').selectOption({ label: 'Sin categoría' });
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	await expect(page.getByRole('region', { name: 'Sin categoría' })).toBeVisible();
+	await expect(
+		page.getByRole('region', { name: 'Sin categoría' }).locator('li', { hasText: 'Yogur' })
+	).toBeVisible();
+});
+
+test('sin categorias en la familia la despensa queda plana, sin secciones (#176)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// Sin categorías no hay secciones ni badges: la lista queda como siempre.
+	await expect(page.locator('#tour-pantry-list h3')).toHaveCount(0);
+	await expect(page.locator('li', { hasText: 'Leche entera' })).toBeVisible();
+	await expect(
+		page
+			.locator('li', { hasText: 'Leche entera' })
+			.getByRole('button', { name: 'Cambiar categoría' })
+	).toHaveCount(0);
 });
