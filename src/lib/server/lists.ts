@@ -49,7 +49,7 @@ export async function listLists(familyId: string): Promise<ListView[]> {
 	// (total y filtrado), así que los pendientes van en una segunda query
 	// agrupada por lista: una fila por lista con items pendientes, no una por
 	// item. El filtro de familia va también en el `groupBy`.
-	const [lists, pendientes] = await Promise.all([
+	const [lists, pending] = await Promise.all([
 		prisma.list.findMany({
 			where: { organizationId: familyId },
 			select: LIST_SELECT,
@@ -62,8 +62,8 @@ export async function listLists(familyId: string): Promise<ListView[]> {
 		})
 	]);
 
-	const pendientesPorLista = new Map(pendientes.map((row) => [row.listId, row._count._all]));
-	return lists.map((list) => toListView(list, pendientesPorLista.get(list.id) ?? 0));
+	const pendingByList = new Map(pending.map((row) => [row.listId, row._count._all]));
+	return lists.map((list) => toListView(list, pendingByList.get(list.id) ?? 0));
 }
 
 /**

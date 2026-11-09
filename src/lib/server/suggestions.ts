@@ -51,7 +51,7 @@ export interface SuggestionRow {
  *    la familia clasificó ese nombre manda sobre las anteriores).
  */
 export function resolveCategorySuggestions(rows: SuggestionRow[]): CategorySuggestions {
-	const mejores = new Map<string, { categoryId: string; source: number; updatedAt: Date }>();
+	const best = new Map<string, { categoryId: string; source: number; updatedAt: Date }>();
 	for (const row of rows) {
 		if (!row.categoryId) {
 			continue;
@@ -60,20 +60,20 @@ export function resolveCategorySuggestions(rows: SuggestionRow[]): CategorySugge
 		if (!key) {
 			continue;
 		}
-		const actual = mejores.get(key);
+		const current = best.get(key);
 		if (
-			!actual ||
-			row.source < actual.source ||
-			(row.source === actual.source && row.updatedAt > actual.updatedAt)
+			!current ||
+			row.source < current.source ||
+			(row.source === current.source && row.updatedAt > current.updatedAt)
 		) {
-			mejores.set(key, {
+			best.set(key, {
 				categoryId: row.categoryId,
 				source: row.source,
 				updatedAt: row.updatedAt
 			});
 		}
 	}
-	return Object.fromEntries([...mejores].map(([key, { categoryId }]) => [key, categoryId]));
+	return Object.fromEntries([...best].map(([key, { categoryId }]) => [key, categoryId]));
 }
 
 /**

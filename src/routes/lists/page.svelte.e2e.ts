@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { volverALaPestana } from '../../../e2e/helpers/browser';
+import { switchBackToTab } from '../../../e2e/helpers/browser';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
 import {
@@ -17,7 +17,7 @@ test.beforeEach(async () => {
 test('sin familia elegida manda a /families, y con una sola la elige sola', async ({ page }) => {
 	const user = await createUser();
 	// Dos familias: hay decisión que tomar, así que /lists no entra.
-	const familiaA = await createFamily({ name: 'Familia A', owner: user });
+	const familyA = await createFamily({ name: 'Familia A', owner: user });
 	await createFamily({ name: 'Familia B', owner: user });
 
 	await seedSession(page, user);
@@ -28,8 +28,8 @@ test('sin familia elegida manda a /families, y con una sola la elige sola', asyn
 	// funciona sin preguntar nada.
 	// Sin roles antes que sin miembros: el trigger de la BD no deja quitar al
 	// último admin de una familia que sigue viva (issue #104).
-	await prisma.role.deleteMany({ where: { contextId: familiaA.id } });
-	await prisma.member.deleteMany({ where: { contextId: familiaA.id } });
+	await prisma.role.deleteMany({ where: { contextId: familyA.id } });
+	await prisma.member.deleteMany({ where: { contextId: familyA.id } });
 	await page.goto('/lists');
 	await waitForHydration(page);
 	await expect(page).toHaveURL(/\/lists$/);
@@ -66,22 +66,22 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 	await dialog.getByRole('button', { name: 'Nueva lista' }).click();
 
 	await expect(page.getByRole('status')).toContainText('Lista creada: ya aparece en la vista.');
-	const fila = page.locator('li', { hasText: 'Frutería' });
-	await expect(fila).toBeVisible();
-	await expect(fila.getByText('Vacía')).toBeVisible();
+	const row = page.locator('li', { hasText: 'Frutería' });
+	await expect(row).toBeVisible();
+	await expect(row.getByText('Vacía')).toBeVisible();
 
 	// La selección PERSISTE (regresión: el formulario no llevaba color/icono
 	// en el FormData y superforms rellenaba los enums con su primera opción —
 	// entonces primary + list-checks). Rosa es `pink` en la paleta dedicada;
 	// el chip de la fila debe pintarlo y el editor cargarlo.
-	await expect(fila.locator('span').first()).toHaveClass(/bg-list-pink/);
-	await fila.getByRole('button', { name: 'Editar lista' }).click();
-	const dialogoCreacion = page.locator('dialog[open]');
-	await expect(dialogoCreacion.getByRole('radio', { name: 'Rosa' })).toHaveAttribute(
+	await expect(row.locator('span').first()).toHaveClass(/bg-list-pink/);
+	await row.getByRole('button', { name: 'Editar lista' }).click();
+	const createDialog = page.locator('dialog[open]');
+	await expect(createDialog.getByRole('radio', { name: 'Rosa' })).toHaveAttribute(
 		'aria-checked',
 		'true'
 	);
-	await expect(dialogoCreacion.getByRole('radio', { name: 'Manzana' })).toHaveAttribute(
+	await expect(createDialog.getByRole('radio', { name: 'Manzana' })).toHaveAttribute(
 		'aria-checked',
 		'true'
 	);
@@ -90,7 +90,7 @@ test('crear lista por UI: color e icono del catálogo y contador a cero', async 
 test('editar lista reutiliza el mismo formulario con los datos cargados', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería', color: 'red' });
+	const list = await createList({ familyId: family.id, name: 'Frutería', color: 'red' });
 	await seedSession(page, user);
 
 	await page.goto('/lists');
@@ -112,7 +112,7 @@ test('editar lista reutiliza el mismo formulario con los datos cargados', async 
 
 	await expect(page.getByRole('status')).toContainText('Lista actualizada.');
 	await expect(page.locator('li', { hasText: 'Supermercado' })).toBeVisible();
-	await expect(page.locator('li', { hasText: lista.name })).toHaveCount(0);
+	await expect(page.locator('li', { hasText: list.name })).toHaveCount(0);
 	// Amarillo es `yellow` en la paleta dedicada: el chip de la fila debe
 	// cambiar a él.
 	await expect(page.locator('li', { hasText: 'Supermercado' }).locator('span').first()).toHaveClass(
@@ -156,10 +156,10 @@ test('un doble toque en «Borrar definitivamente» envía un solo POST (#115)', 
 	await waitForHydration(page);
 
 	await page.locator('li', { hasText: 'Frutería' }).getByRole('button', { name: 'Borrar' }).click();
-	const confirmar = page
+	const confirmButton = page
 		.locator('dialog[open]')
 		.getByRole('button', { name: 'Borrar definitivamente' });
-	await confirmar.click({ clickCount: 2 });
+	await confirmButton.click({ clickCount: 2 });
 
 	// Un único éxito y ningún «ya no existe» detrás.
 	await expect(page.getByRole('status')).toContainText('Lista borrada.');
@@ -170,11 +170,11 @@ test('un doble toque en «Borrar definitivamente» envía un solo POST (#115)', 
 test('contadores de pendientes por lista', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const pendientes = await createList({ familyId: family.id, name: 'Pendientes' });
-	await createItem({ listId: pendientes.id, name: 'Leche', order: 0 });
-	await createItem({ listId: pendientes.id, name: 'Pan', order: 1 });
-	const comprada = await createList({ familyId: family.id, name: 'Comprada' });
-	await createItem({ listId: comprada.id, name: 'Lejía', purchased: true, order: 0 });
+	const pending = await createList({ familyId: family.id, name: 'Pendientes' });
+	await createItem({ listId: pending.id, name: 'Leche', order: 0 });
+	await createItem({ listId: pending.id, name: 'Pan', order: 1 });
+	const purchased = await createList({ familyId: family.id, name: 'Comprada' });
+	await createItem({ listId: purchased.id, name: 'Lejía', purchased: true, order: 0 });
 	await createList({ familyId: family.id, name: 'Limpieza' });
 	await seedSession(page, user);
 
@@ -194,11 +194,11 @@ test('contadores de pendientes por lista', async ({ page }) => {
 
 test('las listas de otras familias no se ven ni se dejan tocar', async ({ page }) => {
 	const user = await createUser();
-	const mia = await createFamily({ name: 'Familia Mía', owner: user });
-	await createList({ familyId: mia.id, name: 'Lista mía' });
-	const otro = await createUser();
-	const ajena = await createFamily({ name: 'Familia Ajena', owner: otro });
-	const listaAjena = await createList({ familyId: ajena.id, name: 'Lista ajena' });
+	const ownFamily = await createFamily({ name: 'Familia Mía', owner: user });
+	await createList({ familyId: ownFamily.id, name: 'Lista mía' });
+	const other = await createUser();
+	const otherFamily = await createFamily({ name: 'Familia Ajena', owner: other });
+	const otherFamilyList = await createList({ familyId: otherFamily.id, name: 'Lista ajena' });
 	await seedSession(page, user);
 
 	// La activa es la única familia del usuario (selección automática).
@@ -208,17 +208,17 @@ test('las listas de otras familias no se ven ni se dejan tocar', async ({ page }
 	await expect(page.locator('li', { hasText: 'Lista ajena' })).toHaveCount(0);
 
 	// Y el detalle de la lista ajena, aunque se conozca el id, bota al listado.
-	await page.goto(`/lists/${listaAjena.id}`);
+	await page.goto(`/lists/${otherFamilyList.id}`);
 	await expect(page).toHaveURL(/\/lists$/);
 	await expect(page.locator('li', { hasText: 'Lista mía' })).toBeVisible();
 });
 
 test('cambiar de familia activa cambia las listas sin recargar (#64)', async ({ page }) => {
 	const user = await createUser();
-	const familiaA = await createFamily({ name: 'Familia A', owner: user });
-	const familiaB = await createFamily({ name: 'Familia B', owner: user });
-	await createList({ familyId: familiaA.id, name: 'Compra del super' });
-	await createList({ familyId: familiaB.id, name: 'Ferretería' });
+	const familyA = await createFamily({ name: 'Familia A', owner: user });
+	const familyB = await createFamily({ name: 'Familia B', owner: user });
+	await createList({ familyId: familyA.id, name: 'Compra del super' });
+	await createList({ familyId: familyB.id, name: 'Ferretería' });
 	await seedSession(page, user);
 
 	// Dos familias y ninguna elegida: /families es la puerta, y ahí está el
@@ -257,28 +257,28 @@ test('los selectores de color e icono son una parada de tabulador con flechas (#
 	await page.getByRole('button', { name: 'Nueva lista' }).first().click();
 	const dialog = page.locator('dialog[open]');
 
-	const colores = dialog.getByRole('radiogroup', { name: 'Color' });
-	const marcado = colores.getByRole('radio', { checked: true });
+	const colors = dialog.getByRole('radiogroup', { name: 'Color' });
+	const selected = colors.getByRole('radio', { checked: true });
 	// Roving tabindex: solo la opción marcada está en el orden de tabulación.
-	await expect(colores.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
-	await expect(marcado).toHaveAttribute('tabindex', '0');
+	await expect(colors.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
+	await expect(selected).toHaveAttribute('tabindex', '0');
 
 	// → marca la siguiente y le pasa el foco; ← vuelve.
-	await marcado.focus();
-	const inicial = await marcado.getAttribute('aria-label');
+	await selected.focus();
+	const initial = await selected.getAttribute('aria-label');
 	await page.keyboard.press('ArrowRight');
-	const siguiente = colores.getByRole('radio', { checked: true });
-	await expect(siguiente).not.toHaveAttribute('aria-label', inicial ?? '');
-	await expect(siguiente).toBeFocused();
+	const next = colors.getByRole('radio', { checked: true });
+	await expect(next).not.toHaveAttribute('aria-label', initial ?? '');
+	await expect(next).toBeFocused();
 	await page.keyboard.press('ArrowLeft');
-	await expect(colores.getByRole('radio', { checked: true })).toHaveAttribute(
+	await expect(colors.getByRole('radio', { checked: true })).toHaveAttribute(
 		'aria-label',
-		inicial ?? ''
+		initial ?? ''
 	);
 	// Fin lleva a la última opción.
 	await page.keyboard.press('End');
-	await expect(colores.getByRole('radio').last()).toHaveAttribute('aria-checked', 'true');
-	await expect(colores.getByRole('radio').last()).toBeFocused();
+	await expect(colors.getByRole('radio').last()).toHaveAttribute('aria-checked', 'true');
+	await expect(colors.getByRole('radio').last()).toBeFocused();
 });
 
 test('al volver a la pestaña con el modal abierto NO refresca (no machaca el formulario)', async ({
@@ -298,14 +298,14 @@ test('al volver a la pestaña con el modal abierto NO refresca (no machaca el fo
 	await dialog.locator('input[name="name"]').fill('Congelados');
 
 	// «Otro miembro» crea una lista mientras tanto…
-	const nueva = await createList({ familyId: family.id, name: 'Huevos' });
+	const newList = await createList({ familyId: family.id, name: 'Huevos' });
 	// …y volvemos a la pestaña: con el modal abierto NO debe revalidar.
-	await volverALaPestana(page);
+	await switchBackToTab(page);
 	await expect(page.locator('li', { hasText: 'Huevos' })).toHaveCount(0);
 	await expect(dialog.locator('input[name="name"]')).toHaveValue('Congelados');
 
 	// Cerrado el modal, la vuelta a la pestaña sí refresca los contadores.
 	await dialog.getByRole('button', { name: 'Cerrar' }).click();
-	await volverALaPestana(page);
-	await expect(page.locator('li', { hasText: nueva.name })).toBeVisible();
+	await switchBackToTab(page);
+	await expect(page.locator('li', { hasText: newList.name })).toBeVisible();
 });

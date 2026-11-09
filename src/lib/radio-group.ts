@@ -34,12 +34,12 @@ export function onRadioGroupKeydown<T>(
 	current: T,
 	select: (value: T) => void
 ): void {
-	const destino = radioTarget(event.key, Math.max(values.indexOf(current), 0), values.length);
-	if (destino === null) return;
+	const targetIndex = radioTarget(event.key, Math.max(values.indexOf(current), 0), values.length);
+	if (targetIndex === null) return;
 	event.preventDefault();
-	select(values[destino]);
+	select(values[targetIndex]);
 	const radios = (event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>(
 		'[role="radio"]'
 	);
-	radios[destino]?.focus();
+	radios[targetIndex]?.focus();
 }

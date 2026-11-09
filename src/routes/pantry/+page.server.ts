@@ -42,7 +42,7 @@ function readdFormSchema() {
 // que el resultado de su acción no pise al `adjust`.
 const READD_FORM_ID = 'readd-item';
 
-/** Valores iniciales del formulario: los reales los fija `abrirReAnadir` con el producto pulsado. */
+/** Valores iniciales del formulario: los reales los fija `openReadd` con el producto pulsado. */
 const EMPTY_READD = { listId: '', quantity: 1 } as const;
 
 export const load: PageServerLoad = async (event) => {
@@ -119,8 +119,8 @@ export const actions: Actions = {
 		}
 
 		try {
-			const borrado = await removePantryItem(family.id, id);
-			if (!borrado) {
+			const deleted = await removePantryItem(family.id, id);
+			if (!deleted) {
 				return fail(404, { error: m.pantry_gone() });
 			}
 		} catch (error) {

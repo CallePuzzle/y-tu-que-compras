@@ -30,6 +30,6 @@ export const UNIT_STEP: Record<Unit, number> = {
  * `0.04999999999999999` en el badge sin este cierre, que deja la cantidad
  * optimista igual a la que guardará la base.
  */
-export function redondearCantidad(quantity: number): number {
+export function roundQuantity(quantity: number): number {
 	return Math.round(quantity * 1000) / 1000;
 }

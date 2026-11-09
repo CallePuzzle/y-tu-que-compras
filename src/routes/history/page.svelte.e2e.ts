@@ -72,13 +72,13 @@ test('muestra las compras con lista de origen, fecha y total, la más reciente p
 	// Sin establecimiento en ninguna compra: un solo bloque, al final de todo.
 	await expect(page.getByRole('heading', { level: 2, name: 'Sin establecimiento' })).toBeVisible();
 	// Orden por fecha descendente (#76): la más nueva arriba.
-	const filas = page.locator('section li');
-	await expect(filas).toHaveCount(2);
-	await expect(filas.nth(0)).toContainText('Frutería');
-	await expect(filas.nth(0)).toContainText('27 oct 2026');
-	await expect(filas.nth(0)).toContainText('7,50 €');
-	await expect(filas.nth(1)).toContainText('Compra semanal');
-	await expect(filas.nth(1)).toContainText('43,20 €');
+	const rows = page.locator('section li');
+	await expect(rows).toHaveCount(2);
+	await expect(rows.nth(0)).toContainText('Frutería');
+	await expect(rows.nth(0)).toContainText('27 oct 2026');
+	await expect(rows.nth(0)).toContainText('7,50 €');
+	await expect(rows.nth(1)).toContainText('Compra semanal');
+	await expect(rows.nth(1)).toContainText('43,20 €');
 });
 
 test('agrupa por establecimiento: secciones por su compra más reciente y «Sin establecimiento» al final (#187)', async ({
@@ -128,12 +128,12 @@ test('agrupa por establecimiento: secciones por su compra más reciente y «Sin 
 		'Sin establecimiento'
 	]);
 	// Dentro de cada sección, de la más reciente a la más antigua.
-	const filas = page.locator('section li');
-	await expect(filas).toHaveCount(4);
-	await expect(filas.nth(0)).toContainText('Compra Lidl');
-	await expect(filas.nth(1)).toContainText('Compra Mercadona nueva');
-	await expect(filas.nth(2)).toContainText('Compra Mercadona vieja');
-	await expect(filas.nth(3)).toContainText('Compra suelta');
+	const rows = page.locator('section li');
+	await expect(rows).toHaveCount(4);
+	await expect(rows.nth(0)).toContainText('Compra Lidl');
+	await expect(rows.nth(1)).toContainText('Compra Mercadona nueva');
+	await expect(rows.nth(2)).toContainText('Compra Mercadona vieja');
+	await expect(rows.nth(3)).toContainText('Compra suelta');
 });
 
 test('«Cargar más» por sección: solo crece la suya, las otras quedan igual (#187)', async ({
@@ -171,8 +171,8 @@ test('«Cargar más» por sección: solo crece la suya, las otras quedan igual (
 	await waitForHydration(page);
 
 	// Mercadona (sección paginada) + Lidl y «Sin establecimiento» completos.
-	const suyas = page.locator('li', { hasText: 'Compra Mercadona' });
-	await expect(suyas).toHaveCount(20);
+	const mercadonaLi = page.locator('li', { hasText: 'Compra Mercadona' });
+	await expect(mercadonaLi).toHaveCount(20);
 	await expect(page.locator('li', { hasText: 'Compra Lidl' })).toHaveCount(1);
 	await expect(page.locator('li', { hasText: 'Compra suelta' })).toHaveCount(1);
 	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(1);
@@ -181,7 +181,7 @@ test('«Cargar más» por sección: solo crece la suya, las otras quedan igual (
 	// Solo la sección de Mercadona crece hasta el final; las otras no se
 	// mueven y, sin historia detrás en ninguna, el botón desaparece.
 	await expect(page).toHaveURL(/offset-/);
-	await expect(suyas).toHaveCount(25);
+	await expect(mercadonaLi).toHaveCount(25);
 	await expect(page.locator('li', { hasText: 'Compra Lidl' })).toHaveCount(1);
 	await expect(page.locator('li', { hasText: 'Compra suelta' })).toHaveCount(1);
 	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(0);
@@ -217,20 +217,20 @@ test('dos secciones paginadas: cargar una no reinicia la página de la otra (#18
 	await waitForHydration(page);
 
 	// Dos secciones paginadas, dos botones: primero el de Mercadona (arriba).
-	const suyas = page.locator('li', { hasText: 'Compra Mercadona' });
-	const suyasLidl = page.locator('li', { hasText: 'Compra Lidl' });
-	await expect(suyas).toHaveCount(20);
-	await expect(suyasLidl).toHaveCount(20);
+	const mercadonaLi = page.locator('li', { hasText: 'Compra Mercadona' });
+	const lidlLi = page.locator('li', { hasText: 'Compra Lidl' });
+	await expect(mercadonaLi).toHaveCount(20);
+	await expect(lidlLi).toHaveCount(20);
 	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(2);
 
 	await page.getByRole('button', { name: 'Cargar más' }).first().click();
-	await expect(suyas).toHaveCount(25);
+	await expect(mercadonaLi).toHaveCount(25);
 
 	// Queda el de Lidl. Sus inputs ocultos viajan con el offset de Mercadona:
 	// al cargar Lidl, Mercadona NO vuelve a la primera página (20 filas).
 	await page.getByRole('button', { name: 'Cargar más' }).click();
-	await expect(suyasLidl).toHaveCount(25);
-	await expect(suyas).toHaveCount(25);
+	await expect(lidlLi).toHaveCount(25);
+	await expect(mercadonaLi).toHaveCount(25);
 	await expect(page.getByRole('button', { name: 'Cargar más' })).toHaveCount(0);
 });
 
@@ -285,12 +285,12 @@ test('«Cargar más» no devuelve la vista al principio de la página (#117)', a
 	await page.goto('/history');
 	await waitForHydration(page);
 
-	const boton = page.getByRole('button', { name: 'Cargar más' });
-	await boton.scrollIntoViewIfNeeded();
+	const button = page.getByRole('button', { name: 'Cargar más' });
+	await button.scrollIntoViewIfNeeded();
 	const antes = await page.evaluate(() => window.scrollY);
 	expect(antes).toBeGreaterThan(0);
 
-	await boton.click();
+	await button.click();
 	await expect(page.locator('section li')).toHaveCount(25);
 	// La vista sigue donde estaba: la cola nueva aparece debajo de ella.
 	expect(await page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(antes);
@@ -324,17 +324,17 @@ test('cada compra enlaza a su detalle', async ({ page }) => {
 
 test('las compras de otras familias no se ven', async ({ page }) => {
 	const user = await createUser();
-	const mia = await createFamily({ name: 'Familia Mía', owner: user });
+	const ownFamily = await createFamily({ name: 'Familia Mía', owner: user });
 	await createPurchaseRecord({
-		familyId: mia.id,
+		familyId: ownFamily.id,
 		listName: 'Compra mía',
 		total: 10,
 		items: [{ name: 'Leche', quantity: 1, unit: 'liter' }]
 	});
-	const otro = await createUser();
-	const ajena = await createFamily({ name: 'Familia Ajena', owner: otro });
+	const other = await createUser();
+	const otherFamily = await createFamily({ name: 'Familia Ajena', owner: other });
 	await createPurchaseRecord({
-		familyId: ajena.id,
+		familyId: otherFamily.id,
 		listName: 'Caviar ajeno',
 		total: 99,
 		items: [{ name: 'Caviar', quantity: 1, unit: 'unit' }]

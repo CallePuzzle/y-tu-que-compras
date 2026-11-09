@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Unit } from './generated/prisma/enums.js';
 import { UNITS } from './schemas/item.js';
-import { UNIT_STEP, redondearCantidad } from './pantry-steps.js';
+import { UNIT_STEP, roundQuantity } from './pantry-steps.js';
 
 describe('UNIT_STEP (#73)', () => {
 	it('es el paso acordado en la issue: ud/paquete/lata/docena = 1, kg/L = 0,25, g/ml = 100', () => {
@@ -23,20 +23,20 @@ describe('UNIT_STEP (#73)', () => {
 	});
 
 	it('todos los pasos son mayores que cero: un click siempre cambia la cantidad', () => {
-		for (const paso of Object.values(UNIT_STEP)) {
-			expect(paso).toBeGreaterThan(0);
+		for (const step of Object.values(UNIT_STEP)) {
+			expect(step).toBeGreaterThan(0);
 		}
 	});
 });
 
 describe('redondearCantidad', () => {
 	it('cierra el redondeo flotante a los 3 decimales de la columna', () => {
-		expect(redondearCantidad(0.3 - 0.25)).toBe(0.05);
-		expect(redondearCantidad(1.1 + 0.25)).toBe(1.35);
+		expect(roundQuantity(0.3 - 0.25)).toBe(0.05);
+		expect(roundQuantity(1.1 + 0.25)).toBe(1.35);
 	});
 
 	it('deja intactas las cantidades ya limpias', () => {
-		expect(redondearCantidad(1.5)).toBe(1.5);
-		expect(redondearCantidad(2)).toBe(2);
+		expect(roundQuantity(1.5)).toBe(1.5);
+		expect(roundQuantity(2)).toBe(2);
 	});
 });

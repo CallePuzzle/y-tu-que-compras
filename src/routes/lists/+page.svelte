@@ -10,7 +10,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { m } from '#lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
-	import { textoError } from '#lib/forms.js';
+	import { errorMessage } from '#lib/forms.js';
 	import { onRadioGroupKeydown } from '#lib/radio-group.js';
 	import { buildTourContext, continueOnboardingTour } from '#lib/utils/tour.js';
 	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
@@ -34,18 +34,18 @@
 
 	// Modal compartido de crear/editar (un solo formulario, como la invitación
 	// de /families): `undefined` = crear, una fila = editar.
-	let listaEditada: ListRow | undefined = $state();
+	let editedList: ListRow | undefined = $state();
 	// Modal de borrado: la lista elegida por su botón.
-	let listaBorrada: ListRow | undefined = $state();
+	let deletedList: ListRow | undefined = $state();
 
 	// Referencias a los modales para abrirlos por código (showButton={false}) y
 	// cerrarlos cuando la operación sale bien (el componente exporta `showModal`
 	// y `close`).
-	let listasModal: { showModal(): void; close(): void } | undefined = $state();
+	let listsModal: { showModal(): void; close(): void } | undefined = $state();
 
 	// Aviso de éxito FUERA de los modales; el de error se enseña dentro, junto
 	// al formulario, con `$message` (crear/editar) o en el `ConfirmModal` (borrar).
-	let exito: string | null = $state(null);
+	let successMessage: string | null = $state(null);
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
 	// la librería). Ojo: `superForm` no soporta cambiar el schema, así que se
@@ -73,8 +73,8 @@
 	 * primera, si ninguna lo está) entra en el orden de tabulación.
 	 */
 	function tabindexRadio<T>(values: readonly T[], current: T, value: T): 0 | -1 {
-		const marcada = values.includes(current) ? current : values[0];
-		return value === marcada ? 0 : -1;
+		const selected = values.includes(current) ? current : values[0];
+		return value === selected ? 0 : -1;
 	}
 
 	// Nombres traducidos de los selectores de color e icono (#118), en render.
@@ -95,46 +95,46 @@
 				// /families: no se lee de `$formData` porque hasta después de
 				// `onResult` superforms no aplica el resultado.
 				const data = result.data as { form?: { message?: string } } | undefined;
-				exito = data?.form?.message ?? null;
+				successMessage = data?.form?.message ?? null;
 				// Sin `invalidateAll()` a mano: superforms ya revalida el load
 				// (`invalidateAll: true` por defecto) y otro más era un 2.º load.
-				listasModal?.close();
+				listsModal?.close();
 			} else if (result.type === 'failure') {
-				exito = null;
+				successMessage = null;
 			}
 		}
 	});
 	const { form: formData, enhance, delayed, message, errors } = form;
 
 	/** Abre el modal en modo edición, con los datos de la lista cargados. */
-	function abrirEdicion(lista: ListRow) {
-		listaEditada = lista;
-		exito = null;
+	function openEdit(list: ListRow) {
+		editedList = list;
+		successMessage = null;
 		message.set(undefined);
 		errors.clear();
 		// El schema es el mismo para crear y editar (#66): los campos coinciden.
 		// El cast recupera los literales del enum tras venir de Prisma (string).
-		formData.set({ name: lista.name, color: lista.color, icon: lista.icon } as ListData);
-		listasModal?.showModal();
+		formData.set({ name: list.name, color: list.color, icon: list.icon } as ListData);
+		listsModal?.showModal();
 	}
 
 	/** Abre el modal en modo creación: vacío, sin rastro de la edición anterior. */
-	function abrirCreacion() {
-		listaEditada = undefined;
-		exito = null;
+	function openCreate() {
+		editedList = undefined;
+		successMessage = null;
 		message.set(undefined);
 		errors.clear();
 		form.reset();
-		listasModal?.showModal();
+		listsModal?.showModal();
 	}
 
 	// Borrar con confirmación (checklist #66): un `ConfirmModal` compartido;
 	// cada card fija qué lista se borra antes de abrirlo.
-	let borrarModal: ConfirmModal | undefined = $state();
+	let deleteModal: ConfirmModal | undefined = $state();
 
-	function abrirBorrado(lista: ListRow) {
-		listaBorrada = lista;
-		borrarModal?.showModal();
+	function openDelete(list: ListRow) {
+		deletedList = list;
+		deleteModal?.showModal();
 	}
 
 	// Refresco al volver a la pestaña: los contadores los mueven las altas,
@@ -161,7 +161,7 @@
 			type="button"
 			id="tour-lists-create"
 			class="btn btn-primary btn-sm"
-			onclick={() => abrirCreacion()}
+			onclick={() => openCreate()}
 		>
 			<Plus aria-hidden="true" />
 			{m.lists_create()}
@@ -175,9 +175,9 @@
 		</div>
 	{/if}
 
-	{#if exito}
+	{#if successMessage}
 		<div class="alert alert-success mt-4 text-sm" role="status">
-			{exito}
+			{successMessage}
 		</div>
 	{/if}
 
@@ -186,38 +186,38 @@
 		<div class="mt-8 flex flex-col items-center gap-3 text-center">
 			<ShoppingBasket aria-hidden="true" class="size-10 opacity-40" />
 			<p class="opacity-70">{m.lists_empty()}</p>
-			<button type="button" class="btn btn-primary" onclick={() => abrirCreacion()}>
+			<button type="button" class="btn btn-primary" onclick={() => openCreate()}>
 				<Plus aria-hidden="true" />
 				{m.lists_create()}
 			</button>
 		</div>
 	{:else}
 		<ul class="mt-4 flex flex-col gap-2">
-			{#each data.lists as lista (lista.id)}
+			{#each data.lists as list (list.id)}
 				<!-- Fallback defensivo: una fila con un color/icono retirado del
 				     catálogo (la migración los remapa, pero nunca se sabe) no
 				     rompe el render: se pinta con los del catálogo por defecto. -->
-				{@const Icon = ICONS[lista.icon as ListIcon] ?? ICONS['shopping-basket']}
+				{@const Icon = ICONS[list.icon as ListIcon] ?? ICONS['shopping-basket']}
 				<li class="bg-base-200 rounded-box flex items-center gap-3 px-4 py-3">
 					<span
-						class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[lista.color as ListColor] ?? COLOR_CHIP.yellow}`}
+						class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[list.color as ListColor] ?? COLOR_CHIP.yellow}`}
 					>
 						<Icon aria-hidden="true" class="size-5" />
 					</span>
 					<!-- El nombre y el contador abren el detalle de items (#68); los
 					     botones de editar y borrar quedan fuera del enlace. -->
-					<a href={resolve('/lists/[listId]', { listId: lista.id })} class="min-w-0 flex-1">
-						<p class="truncate font-medium">{lista.name}</p>
+					<a href={resolve('/lists/[listId]', { listId: list.id })} class="min-w-0 flex-1">
+						<p class="truncate font-medium">{list.name}</p>
 						<!-- Contador de pendientes (checklist #69): lo que falta por
 						     comprar; una lista vacía lo dice tal cual y una completada
 						     lo celebra. -->
 						<p class="text-sm opacity-60">
-							{#if lista.itemCount === 0}
+							{#if list.itemCount === 0}
 								{m.lists_no_items()}
-							{:else if lista.pendingCount === 0}
+							{:else if list.pendingCount === 0}
 								{m.lists_all_purchased()}
 							{:else}
-								{m.lists_pending_count({ count: lista.pendingCount })}
+								{m.lists_pending_count({ count: list.pendingCount })}
 							{/if}
 						</p>
 					</a>
@@ -226,7 +226,7 @@
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.lists_edit()}
-							onclick={() => abrirEdicion(lista)}
+							onclick={() => openEdit(list)}
 						>
 							<Pencil aria-hidden="true" />
 							<span class="sr-only">{m.lists_edit()}</span>
@@ -235,7 +235,7 @@
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.lists_delete()}
-							onclick={() => abrirBorrado(lista)}
+							onclick={() => openDelete(list)}
 						>
 							<Trash2 aria-hidden="true" />
 							<span class="sr-only">{m.lists_delete()}</span>
@@ -250,23 +250,23 @@
 <!-- Crear/editar (checklist #66): una modal compartida; el título, la acción
      del formulario y los datos cargados dependen del modo. -->
 <Modal
-	bind:this={listasModal}
+	bind:this={listsModal}
 	type="X"
 	showButton={false}
 	boxClass="modal-box max-w-md"
 	strings={{ close: m.ui_close() }}
 >
-	<h2 class="text-lg font-bold">{listaEditada ? m.lists_edit() : m.lists_create()}</h2>
+	<h2 class="text-lg font-bold">{editedList ? m.lists_edit() : m.lists_create()}</h2>
 
 	<form
 		method="POST"
-		action={listaEditada ? '?/update' : '?/create'}
+		action={editedList ? '?/update' : '?/create'}
 		use:enhance
 		class="mt-4 flex flex-col gap-4"
 	>
 		<!-- El id de la lista editada viaja con el formulario; crear no lo lleva. -->
-		{#if listaEditada}
-			<input type="hidden" name="listId" value={listaEditada.id} />
+		{#if editedList}
+			<input type="hidden" name="listId" value={editedList.id} />
 		{/if}
 
 		<!-- Color e icono no tienen input propio (los selectores son botones
@@ -318,8 +318,8 @@
 					</button>
 				{/each}
 			</div>
-			{#if textoError($errors.color)}
-				<p class="fieldset-label text-error" role="alert">{textoError($errors.color)}</p>
+			{#if errorMessage($errors.color)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.color)}</p>
 			{/if}
 		</fieldset>
 
@@ -334,7 +334,7 @@
 				onkeydown={(event) =>
 					onRadioGroupKeydown(event, ICON_NAMES, $formData.icon, (icon) => ($formData.icon = icon))}
 			>
-				{#each Object.entries(ICONS) as [iconName, Icono] (iconName)}
+				{#each Object.entries(ICONS) as [iconName, Icon] (iconName)}
 					<button
 						type="button"
 						role="radio"
@@ -345,12 +345,12 @@
 						class={`btn btn-square btn-sm ${$formData.icon === iconName ? 'btn-primary' : 'btn-ghost'}`}
 						onclick={() => ($formData.icon = iconName as ListIcon)}
 					>
-						<Icono aria-hidden="true" class="size-4" />
+						<Icon aria-hidden="true" class="size-4" />
 					</button>
 				{/each}
 			</div>
-			{#if textoError($errors.icon)}
-				<p class="fieldset-label text-error" role="alert">{textoError($errors.icon)}</p>
+			{#if errorMessage($errors.icon)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.icon)}</p>
 			{/if}
 		</fieldset>
 
@@ -364,7 +364,7 @@
 			{#if $delayed}
 				<span class="loading loading-spinner"></span>
 			{/if}
-			{listaEditada ? m.lists_save() : m.lists_create()}
+			{editedList ? m.lists_save() : m.lists_create()}
 		</button>
 	</form>
 </Modal>
@@ -372,12 +372,12 @@
 <!-- Borrar (checklist #66): una modal compartida; cada botón de la card fija
      a qué lista se borra antes de abrirla. -->
 <ConfirmModal
-	bind:this={borrarModal}
-	title={m.lists_delete_title({ name: listaBorrada?.name ?? '' })}
+	bind:this={deleteModal}
+	title={m.lists_delete_title({ name: deletedList?.name ?? '' })}
 	description={m.lists_delete_description()}
 	confirmLabel={m.lists_delete_confirm()}
 	action="?/delete"
-	fields={{ listId: listaBorrada?.id ?? '' }}
+	fields={{ listId: deletedList?.id ?? '' }}
 	errorFallback={m.lists_error()}
-	onSuccess={() => (exito = m.lists_deleted())}
+	onSuccess={() => (successMessage = m.lists_deleted())}
 />

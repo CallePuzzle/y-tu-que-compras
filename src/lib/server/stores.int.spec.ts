@@ -50,58 +50,60 @@ describe('CRUD de establecimientos por familia (#181)', () => {
 	});
 
 	it('createStore rechaza el duplicado normalizado; otra familia sí puede tenerlo', async () => {
-		const mia = await familyRow('Familia Primera');
-		const ajena = await familyRow('Familia Segunda');
-		await createStore(mia, MERCADONA);
+		const ownFamily = await familyRow('Familia Primera');
+		const otherFamily = await familyRow('Familia Segunda');
+		await createStore(ownFamily, MERCADONA);
 
 		// «mercadona» es el mismo canónico que «Mercadona»: el único
 		// (familia, normalizedName) lo rechaza y sale como el error de dominio
 		// que la acción traducirá al mensaje de la UI (checklist #181).
-		await expect(createStore(mia, { name: 'mercadona' })).rejects.toBeInstanceOf(StoreExistsError);
-		await expect(createStore(mia, { name: ' MERCADONA ' })).rejects.toBeInstanceOf(
+		await expect(createStore(ownFamily, { name: 'mercadona' })).rejects.toBeInstanceOf(
+			StoreExistsError
+		);
+		await expect(createStore(ownFamily, { name: ' MERCADONA ' })).rejects.toBeInstanceOf(
 			StoreExistsError
 		);
 
 		// Sin fugas entre familias: el mismo nombre en OTRA familia es válido.
-		const ajenaStore = await createStore(ajena, { name: 'MERCADONA' });
-		expect(ajenaStore.name).toBe('MERCADONA');
+		const otherFamilyStore = await createStore(otherFamily, { name: 'MERCADONA' });
+		expect(otherFamilyStore.name).toBe('MERCADONA');
 	});
 
 	it('listStores devuelve solo los de la familia, por orden de creación', async () => {
-		const mia = await familyRow('Familia Listadora');
-		const ajena = await familyRow('Familia Ajena');
+		const ownFamily = await familyRow('Familia Listadora');
+		const otherFamily = await familyRow('Familia Ajena');
 
-		const primero = await createStore(mia, MERCADONA);
-		const segundo = await createStore(mia, { name: 'Lidl' });
-		await createStore(ajena, { name: 'Establecimiento secreto' });
+		const first = await createStore(ownFamily, MERCADONA);
+		const second = await createStore(ownFamily, { name: 'Lidl' });
+		await createStore(otherFamily, { name: 'Establecimiento secreto' });
 
-		const stores = await listStores(mia);
-		expect(stores.map((store) => store.id)).toEqual([primero.id, segundo.id]);
+		const stores = await listStores(ownFamily);
+		expect(stores.map((store) => store.id)).toEqual([first.id, second.id]);
 		expect(stores).toEqual([
-			{ id: primero.id, name: 'Mercadona' },
-			{ id: segundo.id, name: 'Lidl' }
+			{ id: first.id, name: 'Mercadona' },
+			{ id: second.id, name: 'Lidl' }
 		]);
 	});
 
 	it('updateStore renombra el propio; uno ajeno o inexistente devuelve false', async () => {
-		const mia = await familyRow('Familia Editora');
-		const ajena = await familyRow('Familia Intacta');
-		const propio = await createStore(mia, MERCADONA);
-		const externo = await createStore(ajena, MERCADONA);
+		const ownFamily = await familyRow('Familia Editora');
+		const otherFamily = await familyRow('Familia Intacta');
+		const ownStore = await createStore(ownFamily, MERCADONA);
+		const externalStore = await createStore(otherFamily, MERCADONA);
 
-		expect(await updateStore(mia, propio.id, { name: 'Mercadona del barrio' })).toBe(true);
-		expect(await prisma.store.findUniqueOrThrow({ where: { id: propio.id } })).toMatchObject({
+		expect(await updateStore(ownFamily, ownStore.id, { name: 'Mercadona del barrio' })).toBe(true);
+		expect(await prisma.store.findUniqueOrThrow({ where: { id: ownStore.id } })).toMatchObject({
 			name: 'Mercadona del barrio',
 			normalizedName: 'mercadona del barrio'
 		});
 
 		// El id de un establecimiento de OTRA familia no se puede actualizar
 		// aunque se conozca: el filtro de familia activa lo hace inalcanzable.
-		expect(await updateStore(mia, externo.id, { name: 'Vándalo' })).toBe(false);
-		expect((await prisma.store.findUniqueOrThrow({ where: { id: externo.id } })).name).toBe(
+		expect(await updateStore(ownFamily, externalStore.id, { name: 'Vándalo' })).toBe(false);
+		expect((await prisma.store.findUniqueOrThrow({ where: { id: externalStore.id } })).name).toBe(
 			'Mercadona'
 		);
-		expect(await updateStore(mia, randomUUID(), MERCADONA)).toBe(false);
+		expect(await updateStore(ownFamily, randomUUID(), MERCADONA)).toBe(false);
 	});
 
 	it('updateStore rechaza el renombrado a un duplicado; renombrar al mismo nombre no choca', async () => {
@@ -123,49 +125,49 @@ describe('CRUD de establecimientos por familia (#181)', () => {
 	});
 
 	it('deleteStore borra solo el propio; las compras quedan sin store pero conservan storeName (SetNull)', async () => {
-		const mia = await familyRow('Familia Destructora');
-		const ajena = await familyRow('Familia Superviviente');
-		const propio = await createStore(mia, MERCADONA);
-		const externo = await createStore(ajena, MERCADONA);
+		const ownFamily = await familyRow('Familia Destructora');
+		const otherFamily = await familyRow('Familia Superviviente');
+		const ownStore = await createStore(ownFamily, MERCADONA);
+		const externalStore = await createStore(otherFamily, MERCADONA);
 
 		// Compra del historial apuntando al establecimiento: el snapshot
 		// `storeName` congela el nombre visible del momento de comprar (#179).
-		const compra = await prisma.purchaseRecord.create({
+		const purchase = await prisma.purchaseRecord.create({
 			data: {
-				organizationId: mia,
+				organizationId: ownFamily,
 				listName: 'Compra semanal',
-				storeId: propio.id,
+				storeId: ownStore.id,
 				storeName: 'Mercadona',
 				total: 10.5
 			}
 		});
 
 		// El ajeno no se puede borrar aunque se conozca su id…
-		expect(await deleteStore(mia, externo.id)).toBe(false);
-		expect(await prisma.store.findUnique({ where: { id: externo.id } })).not.toBeNull();
-		expect(await deleteStore(mia, randomUUID())).toBe(false);
+		expect(await deleteStore(ownFamily, externalStore.id)).toBe(false);
+		expect(await prisma.store.findUnique({ where: { id: externalStore.id } })).not.toBeNull();
+		expect(await deleteStore(ownFamily, randomUUID())).toBe(false);
 
 		// …y el propio sí: la compra sobrevive SIN establecimiento (FK SetNull)
 		// y el historial conserva el nombre snapshot (el detalle nunca muestra
 		// un hueco).
-		expect(await deleteStore(mia, propio.id)).toBe(true);
-		expect(await prisma.store.findUnique({ where: { id: propio.id } })).toBeNull();
-		const historial = await prisma.purchaseRecord.findUniqueOrThrow({
-			where: { id: compra.id }
+		expect(await deleteStore(ownFamily, ownStore.id)).toBe(true);
+		expect(await prisma.store.findUnique({ where: { id: ownStore.id } })).toBeNull();
+		const history = await prisma.purchaseRecord.findUniqueOrThrow({
+			where: { id: purchase.id }
 		});
-		expect(historial.storeId).toBeNull();
-		expect(historial.storeName).toBe('Mercadona');
+		expect(history.storeId).toBeNull();
+		expect(history.storeName).toBe('Mercadona');
 	});
 
 	it('una compra sin establecimiento sigue siendo válida (storeId nullable)', async () => {
 		const familyId = await familyRow('Familia Anónima');
 		await createStore(familyId, MERCADONA);
 
-		const compra = await prisma.purchaseRecord.create({
+		const purchase = await prisma.purchaseRecord.create({
 			data: { organizationId: familyId, listName: 'Compra rápida', total: 3.2 }
 		});
-		expect(compra.storeId).toBeNull();
-		expect(compra.storeName).toBeNull();
+		expect(purchase.storeId).toBeNull();
+		expect(purchase.storeName).toBeNull();
 	});
 
 	it('borrar la familia se lleva sus establecimientos (FK en cascada)', async () => {

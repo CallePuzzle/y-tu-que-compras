@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Modal } from '@callepuzzle/svelte-ui';
 	import { formatQuantity } from '#lib/format.js';
-	import { textoError } from '#lib/forms.js';
+	import { errorMessage } from '#lib/forms.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLocale } from '#lib/paraglide/runtime.js';
 	import { unitLabels } from '#lib/units.js';
@@ -22,13 +22,13 @@
 	type Props = {
 		form: PageData['finalizeForm'];
 		/** Los comprados que se muestran (con el toggle optimista aplicado). */
-		comprados: PageData['items'];
+		purchasedItems: PageData['items'];
 		/** Los establecimientos de la familia (#185), por orden de creación. */
 		stores: PageData['stores'];
 		onSuccess: (message: string) => void;
 	};
 
-	let { form, comprados, stores, onSuccess }: Props = $props();
+	let { form, purchasedItems, stores, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 
@@ -86,7 +86,7 @@
 		{m.purchases_modal_summary()}
 	</h3>
 	<div class="mt-2 flex flex-col gap-1">
-		{#each comprados as item (item.id)}
+		{#each purchasedItems as item (item.id)}
 			<div class="flex items-center justify-between gap-3 text-sm">
 				<!-- Sin `truncate` (issue #152): el nombre salta a varias líneas,
 			     igual que en la fila de la lista. -->
@@ -108,7 +108,7 @@
 			     abrirse). `step` guía los céntimos del importe. -->
 			<input
 				bind:value={$formData.total}
-				aria-invalid={textoError($errors.total) ? 'true' : undefined}
+				aria-invalid={errorMessage($errors.total) ? 'true' : undefined}
 				id="finalize-total"
 				name="total"
 				type="number"
@@ -117,8 +117,8 @@
 				inputmode="decimal"
 				placeholder={m.purchases_total_placeholder()}
 			/>
-			{#if textoError($errors.total)}
-				<p class="fieldset-label text-error" role="alert">{textoError($errors.total)}</p>
+			{#if errorMessage($errors.total)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.total)}</p>
 			{/if}
 		</div>
 
@@ -137,8 +137,8 @@
 				class="select w-full"
 			>
 				<option value="">{m.purchases_store_none()}</option>
-				{#each stores as establecimiento (establecimiento.id)}
-					<option value={establecimiento.id}>{establecimiento.name}</option>
+				{#each stores as store (store.id)}
+					<option value={store.id}>{store.name}</option>
 				{/each}
 			</select>
 		</div>

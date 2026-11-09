@@ -19,8 +19,8 @@ test('una familia ajena o inexistente redirige al listado', async ({ page }) => 
 	// …y existente pero ajena: de vuelta al listado, que ni siquiera la lista
 	// (no es miembro: el listado se filtra por pertenencia).
 	const admin = await createUser();
-	const ajena = await createFamily({ name: 'Familia Ajena', owner: admin });
-	await page.goto(`/families/${ajena.id}`);
+	const otherFamily = await createFamily({ name: 'Familia Ajena', owner: admin });
+	await page.goto(`/families/${otherFamily.id}`);
 	await expect(page).toHaveURL(/\/families$/);
 	await expect(page.getByText('Familia Ajena')).toHaveCount(0);
 });
@@ -37,18 +37,18 @@ test('muestra los miembros con su rol y marca al de la sesion', async ({ page })
 
 	await expect(page.getByRole('heading', { name: 'Miembros de «Familia Pérez»' })).toBeVisible();
 
-	const filaAdmin = page.locator('li', { hasText: 'papa@example.com' });
-	await expect(filaAdmin.getByText('Administrador')).toBeVisible();
-	await expect(filaAdmin.getByText('tú')).toBeVisible();
+	const adminRow = page.locator('li', { hasText: 'papa@example.com' });
+	await expect(adminRow.getByText('Administrador')).toBeVisible();
+	await expect(adminRow.getByText('tú')).toBeVisible();
 
-	const filaMiembro = page.locator('li', { hasText: 'maria@example.com' });
-	await expect(filaMiembro.getByText('Miembro', { exact: true })).toBeVisible();
+	const memberRow = page.locator('li', { hasText: 'maria@example.com' });
+	await expect(memberRow.getByText('Miembro', { exact: true })).toBeVisible();
 	// Admin sobre otros miembros: promover y expulsar.
-	await expect(filaMiembro.getByRole('button', { name: 'Hacer admin' })).toBeVisible();
-	await expect(filaMiembro.getByRole('button', { name: 'Expulsar' })).toBeVisible();
+	await expect(memberRow.getByRole('button', { name: 'Hacer admin' })).toBeVisible();
+	await expect(memberRow.getByRole('button', { name: 'Expulsar' })).toBeVisible();
 	// El admin no se promueve ni se expulsa a sí mismo.
-	await expect(filaAdmin.getByRole('button', { name: 'Hacer admin' })).toHaveCount(0);
-	await expect(filaAdmin.getByRole('button', { name: 'Expulsar' })).toHaveCount(0);
+	await expect(adminRow.getByRole('button', { name: 'Hacer admin' })).toHaveCount(0);
+	await expect(adminRow.getByRole('button', { name: 'Expulsar' })).toHaveCount(0);
 });
 
 test('un miembro corriente no ve acciones de administracion', async ({ page }) => {
@@ -84,8 +84,8 @@ test('promover a admin: el badge cambia en la vista y en la BD', async ({ page }
 		.getByRole('button', { name: 'Hacer admin' })
 		.click();
 
-	const fila = page.locator('li', { hasText: 'maria@example.com' });
-	await expect(fila.getByText('Administrador')).toBeVisible();
+	const row = page.locator('li', { hasText: 'maria@example.com' });
+	await expect(row.getByText('Administrador')).toBeVisible();
 
 	const updated = await prisma.member.findUniqueOrThrow({ where: { id: membership.id } });
 	const role = await prisma.role.findUniqueOrThrow({ where: { id: updated.roleId ?? '' } });
@@ -141,11 +141,11 @@ test('el ultimo admin no puede salir y el error se queda en el modal', async ({ 
 
 	// El error sale UNA vez (#115): no se duplica en la alerta de página, que
 	// tampoco aparece al cerrar el modal.
-	const aviso = page.getByText('Eres el último administrador', { exact: false });
-	await expect(aviso).toHaveCount(1);
+	const notice = page.getByText('Eres el último administrador', { exact: false });
+	await expect(notice).toHaveCount(1);
 	await page.keyboard.press('Escape');
 	await expect(page.locator('dialog[open]')).toHaveCount(0);
-	await expect(aviso).toBeHidden();
+	await expect(notice).toBeHidden();
 });
 
 test('abandonar la familia redirige al listado y quita la membresia', async ({ page }) => {

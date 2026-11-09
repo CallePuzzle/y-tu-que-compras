@@ -16,11 +16,11 @@
 	/** Un miembro de la lista que trae el load. */
 	type Member = PageProps['data']['family']['members'][number];
 
-	const familia = $derived(data.family);
-	const viewer = $derived(familia.viewer);
+	const family = $derived(data.family);
+	const viewer = $derived(family.viewer);
 
 	/** Miembro elegido para expulsar: título del modal compartido y su form. */
-	let miembroExpulsado: Member | undefined = $state();
+	let kickedMember: Member | undefined = $state();
 
 	// Expulsar, salir y borrar confirman en un `ConfirmModal`: el error se
 	// enseña DENTRO, que sigue abierto; el éxito cierra y el load revalidado
@@ -28,14 +28,14 @@
 	// promover (sin modal) cae al aviso de página (`form.error`).
 	let kickModal: ConfirmModal | undefined = $state();
 
-	function abrirExpulsion(miembro: Member) {
-		miembroExpulsado = miembro;
+	function openKick(member: Member) {
+		kickedMember = member;
 		kickModal?.showModal();
 	}
 </script>
 
 <svelte:head>
-	<title>{m.families_members_title({ family: familia.name })} · {m.app_brand()}</title>
+	<title>{m.families_members_title({ family: family.name })} · {m.app_brand()}</title>
 </svelte:head>
 
 <section class="mx-auto max-w-md">
@@ -45,7 +45,7 @@
 		>
 	</p>
 
-	<h1 class="text-2xl font-bold">{m.families_members_title({ family: familia.name })}</h1>
+	<h1 class="text-2xl font-bold">{m.families_members_title({ family: family.name })}</h1>
 
 	<!-- Aviso de las acciones sin modal (promover); las de modal llevan el
 	     suyo dentro. -->
@@ -56,22 +56,22 @@
 	{/if}
 
 	<ul class="mt-4 flex flex-col gap-2">
-		{#each familia.members as miembro (miembro.id)}
+		{#each family.members as member (member.id)}
 			<li
 				class="bg-base-200 rounded-box flex flex-wrap items-center justify-between gap-2 px-4 py-3"
 			>
 				<div class="min-w-0">
 					<p class="flex items-center gap-2 font-medium">
-						<span class="truncate">{miembro.name}</span>
-						{#if miembro.id === viewer?.memberId}
+						<span class="truncate">{member.name}</span>
+						{#if member.id === viewer?.memberId}
 							<span class="text-sm font-normal opacity-60">({m.families_member_you()})</span>
 						{/if}
 					</p>
-					<p class="truncate text-sm opacity-70">{miembro.email}</p>
+					<p class="truncate text-sm opacity-70">{member.email}</p>
 				</div>
 
 				<div class="flex items-center gap-1">
-					{#if miembro.isAdmin}
+					{#if member.isAdmin}
 						<span class="badge badge-primary gap-1">
 							<Crown aria-hidden="true" class="size-3" />
 							{m.families_role_admin()}
@@ -83,10 +83,10 @@
 					<!-- Acciones de admin sobre OTROS miembros: promover (issue #62)
 					     y expulsar con confirmación. El guard del endpoint es quien
 					     autoriza de verdad; la UI solo no las pinta. -->
-					{#if viewer?.isAdmin && miembro.id !== viewer.memberId}
-						{#if !miembro.isAdmin}
+					{#if viewer?.isAdmin && member.id !== viewer.memberId}
+						{#if !member.isAdmin}
 							<form method="POST" action="?/promote" use:enhance>
-								<input type="hidden" name="memberId" value={miembro.id} />
+								<input type="hidden" name="memberId" value={member.id} />
 								<button type="submit" class="btn btn-ghost btn-sm" title={m.families_promote()}>
 									<Crown aria-hidden="true" />
 									<span class="sr-only">{m.families_promote()}</span>
@@ -97,7 +97,7 @@
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.families_kick()}
-							onclick={() => abrirExpulsion(miembro)}
+							onclick={() => openKick(member)}
 						>
 							<UserMinus aria-hidden="true" />
 							<span class="sr-only">{m.families_kick()}</span>
@@ -112,26 +112,26 @@
 	     emails de terceros — y puede cancelar cada una. La caducada se señala:
 	     su enlace ya no sirve, pero sigue aquí hasta cancelarse (el cron la
 	     marcará «expired» en la base). -->
-	{#if viewer?.isAdmin && familia.pendingInvitations.length > 0}
+	{#if viewer?.isAdmin && family.pendingInvitations.length > 0}
 		<section class="mt-8">
 			<h2 class="text-sm font-bold opacity-70">{m.families_invitations_pending()}</h2>
 			<ul class="mt-2 flex flex-col gap-2">
-				{#each familia.pendingInvitations as invitacion (invitacion.id)}
+				{#each family.pendingInvitations as invitation (invitation.id)}
 					<li
 						class="bg-base-200 rounded-box flex flex-wrap items-center justify-between gap-2 px-4 py-3"
 					>
 						<div class="min-w-0">
-							<p class="truncate font-medium">{invitacion.email}</p>
+							<p class="truncate font-medium">{invitation.email}</p>
 							<p class="text-sm opacity-70">
-								{#if invitacion.expired}
+								{#if invitation.expired}
 									{m.families_invitation_expired()}
-								{:else if invitacion.expiresLabel}
-									{m.families_invitation_expires({ date: invitacion.expiresLabel })}
+								{:else if invitation.expiresLabel}
+									{m.families_invitation_expires({ date: invitation.expiresLabel })}
 								{/if}
 							</p>
 						</div>
 						<form method="POST" action="?/cancel" use:enhance>
-							<input type="hidden" name="invitationId" value={invitacion.id} />
+							<input type="hidden" name="invitationId" value={invitation.id} />
 							<button type="submit" class="btn btn-ghost btn-sm btn-error">
 								{m.families_invitation_cancel()}
 							</button>
@@ -146,7 +146,7 @@
 	     si es el último admin, el servidor lo rechaza con la explicación. -->
 	<div class="mt-6">
 		<ConfirmModal
-			title={m.families_leave_title({ family: familia.name })}
+			title={m.families_leave_title({ family: family.name })}
 			description={m.families_leave_description()}
 			confirmLabel={m.families_leave_confirm()}
 			action="?/leave"
@@ -171,7 +171,7 @@
 			</h2>
 
 			<ConfirmModal
-				title={m.families_delete_title({ family: familia.name })}
+				title={m.families_delete_title({ family: family.name })}
 				description={m.families_delete_description()}
 				confirmLabel={m.families_delete_confirm()}
 				action="?/delete"
@@ -180,7 +180,7 @@
 				{#snippet trigger({ showModal })}
 					<button type="button" class="btn btn-error btn-outline" onclick={showModal}>
 						<Trash2 aria-hidden="true" />
-						{m.families_delete_title({ family: familia.name })}
+						{m.families_delete_title({ family: family.name })}
 					</button>
 				{/snippet}
 			</ConfirmModal>
@@ -192,10 +192,10 @@
      a quién se expulsa antes de abrirla. -->
 <ConfirmModal
 	bind:this={kickModal}
-	title={m.families_kick_title({ name: miembroExpulsado?.name ?? '' })}
+	title={m.families_kick_title({ name: kickedMember?.name ?? '' })}
 	description={m.families_kick_description()}
 	confirmLabel={m.families_kick_confirm()}
 	action="?/kick"
-	fields={{ memberId: miembroExpulsado?.id ?? '' }}
+	fields={{ memberId: kickedMember?.id ?? '' }}
 	errorFallback={m.families_members_error()}
 />

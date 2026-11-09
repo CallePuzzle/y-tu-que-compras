@@ -156,25 +156,25 @@ export const actions: Actions = {
 		if (!id) {
 			return fail(400, { error: m.categories_error() });
 		}
-		const sube = data.get('direction') !== 'down';
+		const movingUp = data.get('direction') !== 'down';
 
 		const categories = await listCategories(family.id);
-		const index = categories.findIndex((categoria) => categoria.id === id);
+		const index = categories.findIndex((category) => category.id === id);
 		if (index === -1) {
 			// Id rancio o ajeno a la familia: 404, como en editar y borrar.
 			return fail(404, { error: m.categories_gone() });
 		}
-		if (sube ? index === 0 : index === categories.length - 1) {
+		if (movingUp ? index === 0 : index === categories.length - 1) {
 			return { success: true };
 		}
 
-		const orderedIds = categories.map((categoria) => categoria.id);
-		const vecino = sube ? orderedIds[index - 1] : orderedIds[index + 1];
-		if (!vecino) {
+		const orderedIds = categories.map((category) => category.id);
+		const neighbor = movingUp ? orderedIds[index - 1] : orderedIds[index + 1];
+		if (!neighbor) {
 			return { success: true };
 		}
-		orderedIds[sube ? index - 1 : index + 1] = id;
-		orderedIds[index] = vecino;
+		orderedIds[movingUp ? index - 1 : index + 1] = id;
+		orderedIds[index] = neighbor;
 
 		try {
 			await reorderCategories(family.id, orderedIds);

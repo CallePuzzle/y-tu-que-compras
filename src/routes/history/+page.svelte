@@ -33,36 +33,36 @@
 		     el servidor: secciones por su compra más reciente, compras por
 		     fecha dentro de la suya. -->
 		<div class="mt-4 flex flex-col gap-6">
-			{#each data.groups as grupo (grupo.key)}
-				<section aria-labelledby={`history-${grupo.key}`}>
+			{#each data.groups as group (group.key)}
+				<section aria-labelledby={`history-${group.key}`}>
 					<h2
-						id={`history-${grupo.key}`}
+						id={`history-${group.key}`}
 						class="text-sm font-semibold tracking-wide uppercase opacity-60"
 					>
-						{grupo.storeName ?? m.history_no_store()}
+						{group.storeName ?? m.history_no_store()}
 					</h2>
 
 					<!-- Cada compra abre su detalle: lista de origen (la del
 					     snapshot, que se conserva aunque la lista se borre), fecha y
 					     total a mano. -->
 					<ul class="mt-2 flex list-none flex-col gap-2">
-						{#each grupo.purchases as compra (compra.id)}
+						{#each group.purchases as purchase (purchase.id)}
 							<li class="bg-base-200 rounded-box">
 								<a
-									href={resolve('/history/[purchaseId]', { purchaseId: compra.id })}
+									href={resolve('/history/[purchaseId]', { purchaseId: purchase.id })}
 									class="flex items-center gap-3 px-3 py-2 sm:px-4"
 								>
 									<span class="min-w-0 flex-1">
-										<span class="block truncate font-medium">{compra.listName}</span>
-										<span class="block text-sm opacity-70">{compra.date}</span>
+										<span class="block truncate font-medium">{purchase.listName}</span>
+										<span class="block text-sm opacity-70">{purchase.date}</span>
 									</span>
-									<span class="badge badge-ghost shrink-0 tabular-nums">{compra.total}</span>
+									<span class="badge badge-ghost shrink-0 tabular-nums">{purchase.total}</span>
 								</a>
 							</li>
 						{/each}
 					</ul>
 
-					{#if grupo.hasMore}
+					{#if group.hasMore}
 						<!-- Carga incremental POR SECCIÓN (#187): el load ACUMULA (la
 						     página de un offset incluye todo lo anterior), así que este
 						     formulario GET añade al final de SU sección. Los offsets de
@@ -80,11 +80,11 @@
 							data-sveltekit-reset="false"
 							data-sveltekit-replacestate
 						>
-							{#each data.groups as otra (otra.key)}
+							{#each data.groups as other (other.key)}
 								<input
 									type="hidden"
-									name={`offset-${otra.key}`}
-									value={otra.key === grupo.key ? grupo.nextOffset : otra.offset}
+									name={`offset-${other.key}`}
+									value={other.key === group.key ? group.nextOffset : other.offset}
 								/>
 							{/each}
 							<button type="submit" class="btn btn-ghost btn-sm w-full">

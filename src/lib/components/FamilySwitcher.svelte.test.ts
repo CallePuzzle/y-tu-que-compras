@@ -34,7 +34,7 @@ const families = [
 	{ id: 'f2', name: 'Los Pérez' }
 ];
 
-const activa = { id: 'f1', name: 'Familia García' };
+const active = { id: 'f1', name: 'Familia García' };
 
 beforeEach(() => {
 	refreshAll.mockClear();
@@ -56,7 +56,7 @@ describe('FamilySwitcher', () => {
 	});
 
 	it('con familias pinta el desplegable con la activa marcada', async () => {
-		const { getByRole } = await render(FamilySwitcher, { families, activeFamily: activa });
+		const { getByRole } = await render(FamilySwitcher, { families, activeFamily: active });
 
 		// El nombre accesible lo pone el `aria-label`; el texto visible, la activa.
 		expect(firstOf(getByRole('button', { name: 'Cambiar de familia' }))?.textContent).toContain(
@@ -85,7 +85,7 @@ describe('FamilySwitcher', () => {
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
-		const { getByRole } = await render(FamilySwitcher, { families, activeFamily: activa });
+		const { getByRole } = await render(FamilySwitcher, { families, activeFamily: active });
 		await getByRole('button', { name: 'Cambiar de familia' }).click();
 		await getByRole('menuitemradio', { name: 'Los Pérez' }).click();
 
@@ -109,7 +109,7 @@ describe('FamilySwitcher', () => {
 
 		const { getByRole, getByText } = await render(FamilySwitcher, {
 			families,
-			activeFamily: activa
+			activeFamily: active
 		});
 		await getByRole('button', { name: 'Cambiar de familia' }).click();
 		await getByRole('menuitemradio', { name: 'Los Pérez' }).click();

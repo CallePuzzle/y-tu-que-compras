@@ -23,21 +23,14 @@ describe('Home', () => {
 		// El nombre accesible incluye la descripción (`home_*_text`), así que
 		// los localizadores van anclados al principio del nombre.
 		const hrefs = ['/lists', '/pantry', '/history', '/categories', '/stores', '/families'];
-		const nombres = [
-			'Listas',
-			'Despensa',
-			'Historial',
-			'Categorías',
-			'Establecimientos',
-			'Familias'
-		];
-		for (const [i, nombre] of nombres.entries()) {
-			const enlace = firstOf(getByRole('link', { name: new RegExp(`^${nombre}`) }));
-			expect(enlace?.getAttribute('href'), nombre).toBe(hrefs[i]);
+		const names = ['Listas', 'Despensa', 'Historial', 'Categorías', 'Establecimientos', 'Familias'];
+		for (const [i, name] of names.entries()) {
+			const link = firstOf(getByRole('link', { name: new RegExp(`^${name}`) }));
+			expect(link?.getAttribute('href'), name).toBe(hrefs[i]);
 		}
 		// El acceso a listas lleva el ancla del paso 1 del tour (#142).
-		const listas = firstOf(getByRole('link', { name: /^Listas/ }));
-		expect(listas?.getAttribute('id')).toBe('tour-home-cta');
+		const lists = firstOf(getByRole('link', { name: /^Listas/ }));
+		expect(lists?.getAttribute('id')).toBe('tour-home-cta');
 	});
 
 	it('sin nombre saluda con el email: el alta por OTP crea usuarios anónimos', async () => {
@@ -55,7 +48,7 @@ describe('Home', () => {
 		// categorías (#164), establecimientos (#177) y familias, todos con la
 		// línea descriptiva (`home_*_text`) bajo la etiqueta.
 		expect(getByRole('link').elements()).toHaveLength(6);
-		for (const nombre of [
+		for (const name of [
 			'Listas',
 			'Despensa',
 			'Historial',
@@ -63,8 +56,8 @@ describe('Home', () => {
 			'Establecimientos',
 			'Familias'
 		]) {
-			const enlace = firstOf(getByRole('link', { name: new RegExp(`^${nombre}`) }));
-			expect(enlace?.textContent, nombre).toContain(nombre);
+			const link = firstOf(getByRole('link', { name: new RegExp(`^${name}`) }));
+			expect(link?.textContent, name).toContain(name);
 		}
 		// El de despensa muestra su descripción (`home_pantry_text`).
 		expect(firstOf(getByRole('link', { name: /^Despensa/ }))?.textContent).toContain(

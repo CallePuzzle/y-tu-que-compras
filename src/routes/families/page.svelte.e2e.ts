@@ -127,21 +127,21 @@ test('reinvitar con invitacion pendiente da un error concreto', async ({ page })
 	await page.goto('/families');
 	await waitForHydration(page);
 
-	const invitar = page.locator('li', { hasText: 'Familia Pérez' }).getByRole('button', {
+	const inviteButton = page.locator('li', { hasText: 'Familia Pérez' }).getByRole('button', {
 		name: 'Invitar'
 	});
-	await invitar.click();
+	await inviteButton.click();
 	const dialog = page.locator('dialog[open]');
 	await dialog.locator('input[name="email"]').fill('maria@example.com');
 	await dialog.getByRole('button', { name: 'Invitar' }).click();
 	await expect(page.getByRole('status')).toContainText(/Invitación enviada/);
 
-	await invitar.click();
-	const dialogReabrir = page.locator('dialog[open]');
-	await dialogReabrir.locator('input[name="email"]').fill('maria@example.com');
-	await dialogReabrir.getByRole('button', { name: 'Invitar' }).click();
+	await inviteButton.click();
+	const reopenDialog = page.locator('dialog[open]');
+	await reopenDialog.locator('input[name="email"]').fill('maria@example.com');
+	await reopenDialog.getByRole('button', { name: 'Invitar' }).click();
 
 	await expect(
-		dialogReabrir.getByText('maria@example.com ya tiene una invitación pendiente.')
+		reopenDialog.getByText('maria@example.com ya tiene una invitación pendiente.')
 	).toBeVisible();
 });

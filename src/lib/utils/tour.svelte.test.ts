@@ -39,8 +39,8 @@ vi.mock('#lib/paraglide/runtime.js', async (importOriginal) => ({
 // guardias y constructores) para comprobar el estado compartido del diálogo
 // (`tourUi.dialogVisible`, #144), sin montar el diálogo real. Se guarda cada
 // cliente creado para poder disparar sus callbacks como los haría la librería.
-const clientesFalsos = vi.hoisted(() => {
-	const creados: Array<{
+const fakeClients = vi.hoisted(() => {
+	const created: Array<{
 		activeStep: number;
 		isVisible: boolean;
 		dialog: null;
@@ -51,29 +51,29 @@ const clientesFalsos = vi.hoisted(() => {
 		onBeforeExit: ReturnType<typeof vi.fn>;
 		onFinish: ReturnType<typeof vi.fn>;
 	}> = [];
-	function crear() {
-		const cliente = {
+	function create() {
+		const fakeClient = {
 			activeStep: 0,
 			isVisible: false,
 			dialog: null,
 			backdrop: null,
 			setOptions: vi.fn(async () => {}),
 			start: vi.fn(async () => {
-				cliente.isVisible = true;
+				fakeClient.isVisible = true;
 			}),
 			onBeforeStepChange: vi.fn(),
 			onBeforeExit: vi.fn(),
 			onFinish: vi.fn()
 		};
-		creados.push(cliente);
-		return cliente;
+		created.push(fakeClient);
+		return fakeClient;
 	}
-	return { crear, creados };
+	return { create, created };
 });
 vi.mock('@sjmc11/tourguidejs', () => ({
 	TourGuideClient: class {
 		constructor() {
-			return clientesFalsos.crear();
+			return fakeClients.create();
 		}
 	}
 }));
@@ -105,15 +105,15 @@ afterEach(async () => {
 	// igual que lo dispararía la librería, y así la guardia
 	// `activeClient?.isVisible` de `continueOnboardingTour` no contamina al
 	// test siguiente. El flag compartido vuelve a su valor de reposo.
-	const ultimo = clientesFalsos.creados.at(-1);
-	const alSalir = ultimo?.onBeforeExit.mock.calls.at(-1)?.[0] as (() => Promise<void>) | undefined;
-	if (alSalir) await alSalir();
-	clientesFalsos.creados.length = 0;
+	const last = fakeClients.created.at(-1);
+	const onExit = last?.onBeforeExit.mock.calls.at(-1)?.[0] as (() => Promise<void>) | undefined;
+	if (onExit) await onExit();
+	fakeClients.created.length = 0;
 	tourUi.dialogVisible = false;
 });
 
 /** Usuario mínimo con el shape de `App.Locals['user']` (sólo para guardias). */
-const usuario = { id: 'u1' } as unknown as App.Locals['user'];
+const user = { id: 'u1' } as unknown as App.Locals['user'];
 
 describe('stepRouteMatches', () => {
 	it('un paso sin ruta encaja en cualquier página', () => {
@@ -151,21 +151,21 @@ describe('estado en localStorage', () => {
 });
 
 describe('buildTourContext', () => {
-	const filas: MinimalListRow[] = [
+	const rows: MinimalListRow[] = [
 		{ id: 'l1', itemCount: 5, pendingCount: 5 },
 		{ id: 'l2', itemCount: 4, pendingCount: 1 }
 	];
 
 	it('prefiere una lista con items comprados (el paso de finalizar podrá anclarse)', () => {
-		expect(buildTourContext(filas)).toEqual({ exampleListId: 'l2', hasPurchasedItems: true });
+		expect(buildTourContext(rows)).toEqual({ exampleListId: 'l2', hasPurchasedItems: true });
 	});
 
 	it('sin nada comprado toma la primera lista y lo dice sin comprados', () => {
-		const sinComprados: MinimalListRow[] = [
+		const withoutPurchased: MinimalListRow[] = [
 			{ id: 'l1', itemCount: 2, pendingCount: 2 },
 			{ id: 'l2', itemCount: 1, pendingCount: 1 }
 		];
-		expect(buildTourContext(sinComprados)).toEqual({
+		expect(buildTourContext(withoutPurchased)).toEqual({
 			exampleListId: 'l1',
 			hasPurchasedItems: false
 		});
@@ -178,65 +178,65 @@ describe('buildTourContext', () => {
 
 describe('buildTourSteps', () => {
 	it('con lista de ejemplo y comprados, los pasos de detalle van anclados a sus elementos', () => {
-		const pasos = buildTourSteps({ exampleListId: 'l1', hasPurchasedItems: true });
+		const steps = buildTourSteps({ exampleListId: 'l1', hasPurchasedItems: true });
 
-		expect(pasos).toHaveLength(6);
-		expect(pasos.map((paso) => paso.stepIndex)).toEqual([0, 1, 2, 3, 4, 5]);
-		expect(pasos[0].target).toBe('#tour-home-cta');
-		expect(pasos[1].target).toBe('#tour-lists-create');
-		expect(pasos[2].target).toBe('#add-name');
-		expect(pasos[3].target).toBe('#tour-finalize');
-		expect(pasos[5].target).toBe('#tour-families-create');
+		expect(steps).toHaveLength(6);
+		expect(steps.map((step) => step.stepIndex)).toEqual([0, 1, 2, 3, 4, 5]);
+		expect(steps[0].target).toBe('#tour-home-cta');
+		expect(steps[1].target).toBe('#tour-lists-create');
+		expect(steps[2].target).toBe('#add-name');
+		expect(steps[3].target).toBe('#tour-finalize');
+		expect(steps[5].target).toBe('#tour-families-create');
 		// Las rutas de los dos pasos de detalle quedan para la navegación.
-		expect(pasos[2].route).toBe('/lists/[listId]');
-		expect(pasos[3].route).toBe('/lists/[listId]');
+		expect(steps[2].route).toBe('/lists/[listId]');
+		expect(steps[3].route).toBe('/lists/[listId]');
 	});
 
 	it('sin listas, el paso de alta rápida se centra (document.body) con texto alternativo y sin ruta', () => {
-		const pasos = buildTourSteps({});
+		const steps = buildTourSteps({});
 
-		expect(pasos[2].target).toBe(document.body);
-		expect(pasos[2].content).toBe(m.tour_add_item_no_lists_description());
-		expect(pasos[2].route).toBeUndefined();
+		expect(steps[2].target).toBe(document.body);
+		expect(steps[2].content).toBe(m.tour_add_item_no_lists_description());
+		expect(steps[2].route).toBeUndefined();
 	});
 
 	it('sin comprados, el paso de finalizar se centra con texto alternativo', () => {
-		const pasos = buildTourSteps({ exampleListId: 'l1', hasPurchasedItems: false });
+		const steps = buildTourSteps({ exampleListId: 'l1', hasPurchasedItems: false });
 
-		expect(pasos[3].target).toBe(document.body);
-		expect(pasos[3].content).toBe(m.tour_finalize_no_purchased_description());
+		expect(steps[3].target).toBe(document.body);
+		expect(steps[3].content).toBe(m.tour_finalize_no_purchased_description());
 		// CON lista de ejemplo la ruta se conserva: el paso centrado se pinta
 		// sobre la propia página de detalle a la que llegó el paso anterior.
-		expect(pasos[3].route).toBe('/lists/[listId]');
+		expect(steps[3].route).toBe('/lists/[listId]');
 	});
 
 	it('sin listas ni comprados, ambos pasos pierden también la ruta', () => {
-		const pasos = buildTourSteps({});
+		const steps = buildTourSteps({});
 
-		expect(pasos[3].route).toBeUndefined();
+		expect(steps[3].route).toBeUndefined();
 	});
 
 	it('el paso de despensa se ancla a la lista de productos si está en el documento', () => {
-		const lista = document.createElement('div');
-		lista.id = 'tour-pantry-list';
-		document.body.append(lista);
+		const list = document.createElement('div');
+		list.id = 'tour-pantry-list';
+		document.body.append(list);
 
-		const pasos = buildTourSteps({});
-		expect(pasos[4].target).toBe(lista);
+		const steps = buildTourSteps({});
+		expect(steps[4].target).toBe(list);
 	});
 
 	it('el paso de despensa se ancla al estado vacío cuando no hay lista', () => {
-		const vacio = document.createElement('div');
-		vacio.id = 'tour-pantry-empty';
-		document.body.append(vacio);
+		const empty = document.createElement('div');
+		empty.id = 'tour-pantry-empty';
+		document.body.append(empty);
 
-		const pasos = buildTourSteps({});
-		expect(pasos[4].target).toBe(vacio);
+		const steps = buildTourSteps({});
+		expect(steps[4].target).toBe(empty);
 	});
 
 	it('el paso de despensa sin ninguna ancla visible se centra como última opción', () => {
-		const pasos = buildTourSteps({});
-		expect(pasos[4].target).toBe(document.body);
+		const steps = buildTourSteps({});
+		expect(steps[4].target).toBe(document.body);
 	});
 });
 
@@ -251,7 +251,7 @@ describe('continueOnboardingTour (guardias previas al cliente)', () => {
 	it('con el tour ya terminado no vuelve a arrancar (ni reescribe el estado)', async () => {
 		setTourState({ activeStep: 5, finished: true });
 
-		await continueOnboardingTour('/', usuario);
+		await continueOnboardingTour('/', user);
 
 		expect(getTourState()).toEqual({ activeStep: 5, finished: true });
 		expect(document.querySelectorAll('.tg-dialog, .tg-backdrop')).toHaveLength(0);
@@ -265,22 +265,22 @@ describe('continueOnboardingTour (arranca el tour: estado del diálogo, #144)', 
 		// (aquí, el stub). El layout lee este flag para cerrar el cajón.
 		setTourState({ activeStep: 0, finished: false });
 
-		await continueOnboardingTour('/', usuario);
+		await continueOnboardingTour('/', user);
 
-		expect(clientesFalsos.creados).toHaveLength(1);
-		expect(clientesFalsos.creados[0].start).toHaveBeenCalledTimes(1);
+		expect(fakeClients.created).toHaveLength(1);
+		expect(fakeClients.created[0].start).toHaveBeenCalledTimes(1);
 		expect(tourUi.dialogVisible).toBe(true);
 	});
 
 	it('al salir del tour, el estado deja de marcarlo visible', async () => {
 		setTourState({ activeStep: 0, finished: false });
-		await continueOnboardingTour('/', usuario);
+		await continueOnboardingTour('/', user);
 
 		// El cierre (Escape, botón o programático) dispara `onBeforeExit`: se
 		// invoca como lo haría la librería con el cliente activo.
-		const cliente = clientesFalsos.creados[0];
-		const alSalir = cliente.onBeforeExit.mock.calls[0][0] as () => Promise<void>;
-		await alSalir();
+		const fakeClient = fakeClients.created[0];
+		const onExit = fakeClient.onBeforeExit.mock.calls[0][0] as () => Promise<void>;
+		await onExit();
 
 		expect(tourUi.dialogVisible).toBe(false);
 		// `finishTour` fija el último paso: el tour queda visto para siempre.

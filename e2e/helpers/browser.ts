@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test';
  * `visibilitychange`. Es exactamente lo que escuchan los efectos de
  * revalidación al volver de `/lists` y `/lists/[listId]`.
  */
-export async function volverALaPestana(page: Page): Promise<void> {
+export async function switchBackToTab(page: Page): Promise<void> {
 	await page.evaluate(() => {
 		Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
 		document.dispatchEvent(new Event('visibilitychange'));

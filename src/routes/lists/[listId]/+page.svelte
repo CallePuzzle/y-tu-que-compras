@@ -28,34 +28,34 @@
 	// Icono de la lista para la cabecera (el cast recupera el literal del enum
 	// tras venir de Prisma como string, igual que en /lists). Fallback
 	// defensivo: un icono retirado del catálogo no rompe el render.
-	const Icono = $derived(ICONS[data.list.icon as ListIcon] ?? ICONS['shopping-basket']);
+	const Icon = $derived(ICONS[data.list.icon as ListIcon] ?? ICONS['shopping-basket']);
 
 	// Aviso de éxito FUERA de los modales (editar, borrar y finalizar); el
 	// error de crear se queda bajo su formulario.
-	let exito: string | null = $state(null);
+	let successMessage: string | null = $state(null);
 
-	let altaRapida: QuickAddForm | undefined = $state();
-	let editarModal: EditItemModal | undefined = $state();
-	let finalizarModal: FinalizeModal | undefined = $state();
+	let quickAdd: QuickAddForm | undefined = $state();
+	let editModal: EditItemModal | undefined = $state();
+	let finalizeModal: FinalizeModal | undefined = $state();
 
 	// ---- Borrar (checklist #68): confirmación en un `ConfirmModal` compartido,
 	// igual que en /lists: el fallo se queda dentro, el éxito lo cierra. ----
-	let itemBorrado: Item | undefined = $state();
-	let borrarModal: ConfirmModal | undefined = $state();
+	let deletedItem: Item | undefined = $state();
+	let deleteModal: ConfirmModal | undefined = $state();
 
 	function abrirEdicion(item: Item) {
-		exito = null;
-		editarModal?.open(item);
+		successMessage = null;
+		editModal?.open(item);
 	}
 
 	function abrirBorrado(item: Item) {
-		itemBorrado = item;
-		borrarModal?.showModal();
+		deletedItem = item;
+		deleteModal?.showModal();
 	}
 
-	function abrirFinalizacion() {
-		exito = null;
-		finalizarModal?.open();
+	function openFinalize() {
+		successMessage = null;
+		finalizeModal?.open();
 	}
 
 	// ---- Comprado (checklist #69): checkbox con actualización OPTIMISTA. ----
@@ -67,28 +67,28 @@
 	// SvelteMap y no `$state(new Map())`: el deep-proxy de `$state` no cubre
 	// los Map (ver pantry/+page.svelte), y sin él el checkbox no repintaba el
 	// optimista hasta que llegaba el servidor.
-	const compras = new SvelteMap<string, boolean>();
-	let falloCompra: string | null = $state(null);
+	const purchasedOverrides = new SvelteMap<string, boolean>();
+	let purchaseError: string | null = $state(null);
 
 	/** El comprado mostrado: el optimista si lo hay; si no, el del servidor. */
-	function valorComprado(item: Item): boolean {
-		return compras.get(item.id) ?? item.purchased;
+	function isPurchased(item: Item): boolean {
+		return purchasedOverrides.get(item.id) ?? item.purchased;
 	}
 
 	// Separación visual (checklist #69): pendientes arriba y comprados debajo,
 	// atenuados y tachados. El orden ya trae el servidor los pendientes
 	// primero (`listItems`), así que partir `data.items` conserva el `order`.
-	const pendientes = $derived(data.items.filter((item) => !valorComprado(item)));
-	const comprados = $derived(data.items.filter((item) => valorComprado(item)));
+	const pendingItems = $derived(data.items.filter((item) => !isPurchased(item)));
+	const purchasedItems = $derived(data.items.filter((item) => isPurchased(item)));
 
 	/** El toque en el checkbox: el optimista se pinta antes del envío. */
-	function alTocar(id: string, nuevo: boolean) {
-		compras.set(id, nuevo);
-		falloCompra = null;
+	function handleToggle(id: string, checked: boolean) {
+		purchasedOverrides.set(id, checked);
+		purchaseError = null;
 	}
 
 	/** Resultado del toggle: en fallo revierte y avisa; en éxito refresca. */
-	function alComprar(id: string): SubmitFunction {
+	function handlePurchasedResult(id: string): SubmitFunction {
 		return () =>
 			async ({ result, update }) => {
 				if (result.type === 'success') {
@@ -101,12 +101,12 @@
 					// reversión es retirar el optimista, y el checkbox vuelve al
 					// estado que traen los datos. Sin `update` en fallo: el error
 					// se avisa aquí y no se duplica en el alert de `actionData`.
-					falloCompra =
+					purchaseError =
 						result.type === 'failure'
 							? ((result.data as { error?: string } | undefined)?.error ?? m.items_error())
 							: m.items_error();
 				}
-				compras.delete(id);
+				purchasedOverrides.delete(id);
 			};
 	}
 
@@ -138,7 +138,7 @@
 		<span
 			class={`flex size-10 shrink-0 items-center justify-center rounded-full ${COLOR_CHIP[data.list.color as ListColor] ?? COLOR_CHIP.yellow}`}
 		>
-			<Icono aria-hidden="true" class="size-5" />
+			<Icon aria-hidden="true" class="size-5" />
 		</span>
 		<h1 class="min-w-0 truncate text-2xl font-bold">{data.list.name}</h1>
 	</div>
@@ -150,20 +150,20 @@
 		</div>
 	{/if}
 
-	{#if exito}
+	{#if successMessage}
 		<div class="alert alert-success mt-4 text-sm" role="status">
-			{exito}
+			{successMessage}
 		</div>
 	{/if}
 
-	{#if falloCompra}
+	{#if purchaseError}
 		<div class="alert alert-warning mt-4 text-sm" role="alert">
-			{falloCompra}
+			{purchaseError}
 		</div>
 	{/if}
 
 	<QuickAddForm
-		bind:this={altaRapida}
+		bind:this={quickAdd}
 		form={data.form}
 		categories={data.categories}
 		suggestions={data.categorySuggestions}
@@ -174,18 +174,18 @@
 		<div class="mt-8 flex flex-col items-center gap-3 text-center">
 			<ShoppingBasket aria-hidden="true" class="size-10 opacity-40" />
 			<p class="opacity-70">{m.items_empty()}</p>
-			<button type="button" class="btn btn-primary" onclick={() => altaRapida?.focus()}>
+			<button type="button" class="btn btn-primary" onclick={() => quickAdd?.focus()}>
 				<Plus aria-hidden="true" />
 				{m.items_add()}
 			</button>
 		</div>
 	{:else}
-		{#snippet filaItem(item: Item)}
+		{#snippet itemRow(item: Item)}
 			<ItemRow
 				{item}
-				comprado={valorComprado(item)}
-				onPurchasedResult={alComprar(item.id)}
-				onToggle={(nuevo) => alTocar(item.id, nuevo)}
+				purchased={isPurchased(item)}
+				onPurchasedResult={handlePurchasedResult(item.id)}
+				onToggle={(checked) => handleToggle(item.id, checked)}
 				onEdit={() => abrirEdicion(item)}
 				onDelete={() => abrirBorrado(item)}
 			/>
@@ -194,26 +194,26 @@
 		<!-- Separación visual (checklist #69): pendientes arriba; los
 		     comprados, debajo, atenuados y tachados. La cabecera de
 		     «Pendientes» solo cuando hay comprados (si no, sobra). -->
-		{#if pendientes.length > 0}
-			{#if comprados.length > 0}
+		{#if pendingItems.length > 0}
+			{#if purchasedItems.length > 0}
 				<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
 					{m.items_section_pending()}
 				</h2>
 			{/if}
 			<ol class="mt-4 flex list-none flex-col gap-2">
-				{#each pendientes as item (item.id)}
-					{@render filaItem(item)}
+				{#each pendingItems as item (item.id)}
+					{@render itemRow(item)}
 				{/each}
 			</ol>
 		{/if}
 
-		{#if comprados.length > 0}
+		{#if purchasedItems.length > 0}
 			<h2 class="mt-6 text-sm font-semibold tracking-wide uppercase opacity-60">
 				{m.items_section_purchased()}
 			</h2>
 			<ol class="mt-2 flex list-none flex-col gap-2">
-				{#each comprados as item (item.id)}
-					{@render filaItem(item)}
+				{#each purchasedItems as item (item.id)}
+					{@render itemRow(item)}
 				{/each}
 			</ol>
 
@@ -224,7 +224,7 @@
 				type="button"
 				id="tour-finalize"
 				class="btn btn-primary mt-6 w-full"
-				onclick={abrirFinalizacion}
+				onclick={openFinalize}
 			>
 				<ShoppingBasket aria-hidden="true" />
 				{m.purchases_finalize()}
@@ -234,29 +234,29 @@
 </section>
 
 <EditItemModal
-	bind:this={editarModal}
+	bind:this={editModal}
 	form={data.editForm}
 	categories={data.categories}
-	onSuccess={(texto) => (exito = texto)}
+	onSuccess={(message) => (successMessage = message)}
 />
 
 <!-- Borrar (checklist #68): una modal compartida; cada botón de la fila fija
      a qué item se borra antes de abrirla. -->
 <ConfirmModal
-	bind:this={borrarModal}
-	title={m.items_delete_title({ name: itemBorrado?.name ?? '' })}
+	bind:this={deleteModal}
+	title={m.items_delete_title({ name: deletedItem?.name ?? '' })}
 	description={m.items_delete_description()}
 	confirmLabel={m.items_delete_confirm()}
 	action="?/delete"
-	fields={{ item: itemBorrado?.id ?? '' }}
+	fields={{ item: deletedItem?.id ?? '' }}
 	errorFallback={m.items_error()}
-	onSuccess={() => (exito = m.items_deleted())}
+	onSuccess={() => (successMessage = m.items_deleted())}
 />
 
 <FinalizeModal
-	bind:this={finalizarModal}
+	bind:this={finalizeModal}
 	form={data.finalizeForm}
 	stores={data.stores}
-	{comprados}
-	onSuccess={(texto) => (exito = texto)}
+	{purchasedItems}
+	onSuccess={(message) => (successMessage = message)}
 />

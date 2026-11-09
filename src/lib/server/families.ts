@@ -662,7 +662,7 @@ export function familySlug(name: string, suffix: string = newSlugSuffix()): stri
 		.replace(/-+$/, '');
 
 	// Un nombre sin material slugueable («¿?¡!») no puede dejar el slug vacío.
-	const stem = base.length > 0 ? base : 'familia';
+	const stem = base.length > 0 ? base : 'family';
 	return `${stem}-${suffix}`;
 }
 

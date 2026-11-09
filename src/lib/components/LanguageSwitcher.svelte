@@ -21,12 +21,12 @@
 	// La locale activa en render (la de la request en SSR): marca el item con
 	// el check. No es reactiva a propósito: cambiar de idioma RECARGA la
 	// página, no hay estado que reaccionar en caliente.
-	const actual: Locale = getLocale();
+	const current: Locale = getLocale();
 
 	// Nombres nativos de cada idioma (no se traducen: así los reconoce quien
 	// aún no entiende la interfaz). Viajan por Paraglide igualmente, como el
 	// resto de texto visible.
-	const NOMBRE: Record<Locale, string> = {
+	const NATIVE_NAMES: Record<Locale, string> = {
 		es: m.ui_language_es(),
 		en: m.ui_language_en()
 	};
@@ -49,19 +49,19 @@
 				<button
 					type="button"
 					role="menuitemradio"
-					aria-checked={locale === actual}
+					aria-checked={locale === current}
 					onclick={() => {
 						close();
 						setLocale(locale);
 					}}
 				>
 					<!-- El hueco del check alinea los nombres cuando uno lo lleva. -->
-					{#if locale === actual}
+					{#if locale === current}
 						<Check aria-hidden="true" />
 					{:else}
 						<span class="size-4" aria-hidden="true"></span>
 					{/if}
-					{NOMBRE[locale]}
+					{NATIVE_NAMES[locale]}
 				</button>
 			</li>
 		{/each}

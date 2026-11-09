@@ -223,7 +223,7 @@ describe('tenancyConfig.actions.onEntityCreated', () => {
 });
 
 describe('tenancyConfig.endpoints (statements de admin)', () => {
-	const familiaResource = { contextType: 'organization', contextId: 'fam-1' };
+	const familyResource = { contextType: 'organization', contextId: 'fam-1' };
 
 	// Cada operación de admin con el hook que la guarda y la petición tal y
 	// como el plugin se la entregaría (body, o resource ya resuelto).
@@ -245,22 +245,22 @@ describe('tenancyConfig.endpoints (statements de admin)', () => {
 		{
 			statement: 'member:invite (crear invitación)',
 			hook: tenancyConfig.endpoints?.invitation?.create,
-			request: { body: { identifier: 'nueva@familia.es', ...familiaResource } }
+			request: { body: { identifier: 'nueva@familia.es', ...familyResource } }
 		},
 		{
 			statement: 'member:remove (expulsar)',
 			hook: tenancyConfig.endpoints?.member?.remove,
-			request: { body: { id: 'member-9' }, resource: familiaResource }
+			request: { body: { id: 'member-9' }, resource: familyResource }
 		},
 		{
 			statement: 'member:update (cambiar rol)',
 			hook: tenancyConfig.endpoints?.member?.updateRole,
-			request: { body: { id: 'member-9', roleId: 'role-admin' }, resource: familiaResource }
+			request: { body: { id: 'member-9', roleId: 'role-admin' }, resource: familyResource }
 		},
 		{
 			statement: 'invitation:cancel (cancelar invitación)',
 			hook: tenancyConfig.endpoints?.invitation?.revoke,
-			request: { body: { id: 'inv-1' }, resource: familiaResource }
+			request: { body: { id: 'inv-1' }, resource: familyResource }
 		}
 	];
 
@@ -573,7 +573,7 @@ describe('promover: hook de member/role/update (#62)', () => {
 				updateRole,
 				adapterWithAdmins(1),
 				{
-					body: { id: 'membership-1', metadata: { nota: 'cualquiera' } },
+					body: { id: 'membership-1', metadata: { note: 'cualquiera' } },
 					resource: {
 						contextType: 'organization',
 						contextId: 'fam-1',
@@ -728,14 +728,14 @@ describe('perímetro del plugin (surface real de endpoints)', () => {
 
 	it('cada endpoint del plugin está clasificado (hook, denegado o abierto a propósito)', () => {
 		const plugin = tenancy(tenancyConfig);
-		const actual = Object.values(plugin.endpoints)
+		const current = Object.values(plugin.endpoints)
 			.map((endpoint) => endpoint.path)
 			.sort();
 		const expected = SURFACE.map(([path]) => path).sort();
 
 		// Con este diff, si el plugin estrena un endpoint el fallo muestra
 		// directamente cuál falta por clasificar.
-		expect(actual).toEqual(expected);
+		expect(current).toEqual(expected);
 	});
 
 	it('el conteo cuadra (evita clasificaciones duplicadas que se anulen)', () => {
@@ -1103,7 +1103,7 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 
 	it('invitar a quien ya es miembro se deniega aunque sea admin', async () => {
 		const adapter = adapterWithEmails({ 'miembro@example.com': 'member-1' });
-		const pedido = {
+		const requestBody = {
 			body: {
 				identifier: 'miembro@example.com',
 				contextType: 'organization',
@@ -1112,7 +1112,12 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 		};
 
 		await expect(
-			callHook(tenancyConfig.endpoints?.invitation?.create, adapter, pedido, sessionOf('admin-1'))
+			callHook(
+				tenancyConfig.endpoints?.invitation?.create,
+				adapter,
+				requestBody,
+				sessionOf('admin-1')
+			)
 		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
 	});
 
@@ -1144,7 +1149,7 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 			findOne: adapter.findOne.bind(adapter),
 			findMany: fullAdapter.findMany.bind(fullAdapter)
 		};
-		const pedido = {
+		const requestBody = {
 			body: {
 				identifier: 'miembro@example.com',
 				contextType: 'organization',
@@ -1156,7 +1161,7 @@ describe('invitar: validación de duplicados y tope (#60)', () => {
 			callHook(
 				tenancyConfig.endpoints?.invitation?.create,
 				bothAdapter,
-				pedido,
+				requestBody,
 				sessionOf('admin-1')
 			)
 		).rejects.toThrow(ALREADY_FAMILY_MEMBER_MESSAGE);
@@ -1169,7 +1174,7 @@ describe('caducidad de las invitaciones (#102)', () => {
 	});
 
 	/** Lanza el hook completo de invitar (todas las validaciones en verde). */
-	async function crear(body: Record<string, unknown>) {
+	async function create(body: Record<string, unknown>) {
 		await expect(
 			callHook(
 				tenancyConfig.endpoints?.invitation?.create,
@@ -1182,7 +1187,7 @@ describe('caducidad de las invitaciones (#102)', () => {
 
 	it('sin expiresInHours el hook fija el tope de la app en el body', async () => {
 		const request = baseRequest();
-		await crear(request.body);
+		await create(request.body);
 
 		// El handler del plugin lee `expiresInHours` del mismo body DESPUÉS de
 		// los hooks: con él, `expiresAt` deja de ser null (antes no caducaban).
@@ -1192,7 +1197,7 @@ describe('caducidad de las invitaciones (#102)', () => {
 	it('recorta las llamadas directas a la API que piden más horas', async () => {
 		const request = baseRequest();
 		request.body.expiresInHours = 24 * 365;
-		await crear(request.body);
+		await create(request.body);
 
 		expect(request.body.expiresInHours).toBe(FAMILY_INVITATION_EXPIRY_HOURS);
 	});
@@ -1200,7 +1205,7 @@ describe('caducidad de las invitaciones (#102)', () => {
 	it('un tope menor pedido por el body se respeta', async () => {
 		const request = baseRequest();
 		request.body.expiresInHours = 1;
-		await crear(request.body);
+		await create(request.body);
 
 		expect(request.body.expiresInHours).toBe(1);
 	});

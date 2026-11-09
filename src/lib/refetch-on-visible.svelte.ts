@@ -15,12 +15,12 @@ import { refreshAll } from '$app/navigation';
  */
 export function useRefetchOnVisible(skip?: () => boolean): void {
 	$effect(() => {
-		function alVolver() {
+		function handleVisibilityChange() {
 			if (document.visibilityState !== 'visible') return;
 			if (document.querySelector('dialog[open]') || skip?.()) return;
 			void refreshAll();
 		}
-		document.addEventListener('visibilitychange', alVolver);
-		return () => document.removeEventListener('visibilitychange', alVolver);
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
 	});
 }

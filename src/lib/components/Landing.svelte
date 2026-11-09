@@ -19,14 +19,14 @@
 
 	// Pasos y funcionalidades en render: las etiquetas `m.*` se resuelven al
 	// pintar, con la locale de la petición (igual que en `src/lib/routes.ts`).
-	const pasos = [
+	const steps = [
 		{ title: m.landing_step_family_title(), text: m.landing_step_family_text() },
 		{ title: m.landing_step_invite_title(), text: m.landing_step_invite_text() },
 		{ title: m.landing_step_items_title(), text: m.landing_step_items_text() },
 		{ title: m.landing_step_finalize_title(), text: m.landing_step_finalize_text() }
 	];
 
-	const funcionalidades = [
+	const features = [
 		{
 			icon: ListChecks,
 			title: m.landing_feature_lists_title(),
@@ -96,14 +96,14 @@
 <section class="mt-12">
 	<h2 class="text-center text-2xl font-bold">{m.landing_how_title()}</h2>
 	<ol class="mt-6 grid list-none gap-3 sm:grid-cols-2">
-		{#each pasos as paso, indice (paso.title)}
+		{#each steps as step, index (step.title)}
 			<li class="bg-base-200 rounded-box flex items-start gap-3 p-4">
 				<span class="badge badge-primary shrink-0 font-bold" aria-hidden="true">
-					{indice + 1}
+					{index + 1}
 				</span>
 				<span class="min-w-0">
-					<span class="block font-medium">{paso.title}</span>
-					<span class="block text-sm opacity-70">{paso.text}</span>
+					<span class="block font-medium">{step.title}</span>
+					<span class="block text-sm opacity-70">{step.text}</span>
 				</span>
 			</li>
 		{/each}
@@ -114,12 +114,12 @@
 <section class="mt-12">
 	<h2 class="text-center text-2xl font-bold">{m.landing_features_title()}</h2>
 	<ul class="mt-6 grid list-none gap-3 sm:grid-cols-2 lg:grid-cols-3">
-		{#each funcionalidades as funcionalidad (funcionalidad.title)}
-			{@const Icon = funcionalidad.icon}
+		{#each features as feature (feature.title)}
+			{@const Icon = feature.icon}
 			<li class="bg-base-200 rounded-box p-4">
 				<Icon aria-hidden="true" class="text-primary size-6" />
-				<h3 class="mt-2 font-medium">{funcionalidad.title}</h3>
-				<p class="mt-1 text-sm opacity-70">{funcionalidad.text}</p>
+				<h3 class="mt-2 font-medium">{feature.title}</h3>
+				<p class="mt-1 text-sm opacity-70">{feature.text}</p>
 			</li>
 		{/each}
 	</ul>

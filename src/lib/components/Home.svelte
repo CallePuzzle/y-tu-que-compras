@@ -19,7 +19,7 @@
 	// Nombre del saludo: el real si lo hay; si no, el email. El alta por OTP
 	// crea usuarios con `name` vacío (mejor-auth lo deja en blanco), y el
 	// fallback es el mismo que usa el avatar de `NavBarEnd` en svelte-ui.
-	const nombreUsuario = $derived(user.name?.trim() || user.email);
+	const userName = $derived(user.name?.trim() || user.email);
 
 	// Los accesos del home: todo lo que el menú de sesión ofrece, menos el
 	// propio inicio. En orden de uso diario: navegar primero (listas,
@@ -30,7 +30,7 @@
 	// resolver las etiquetas aquí (como en `Landing`) no se queda congelado.
 	// El de listas lleva el ancla del paso 1 del tour de onboarding (#142),
 	// que sobrevive al rediseño.
-	const accesos = [
+	const quickLinks = [
 		{
 			href: resolve('/lists'),
 			icon: ListChecks,
@@ -75,21 +75,21 @@
      línea de descripción cada uno (#164 y #177 añaden los suyos), a la
      espera del contenido definitivo que definirá producto. -->
 <section class="mx-auto max-w-2xl">
-	<h1 class="text-2xl font-bold">{m.home_greeting({ name: nombreUsuario })}</h1>
+	<h1 class="text-2xl font-bold">{m.home_greeting({ name: userName })}</h1>
 
 	<ul class="mt-6 grid list-none gap-3 sm:grid-cols-2">
-		{#each accesos as acceso (acceso.href)}
-			{@const Icon = acceso.icon}
+		{#each quickLinks as quickLink (quickLink.href)}
+			{@const Icon = quickLink.icon}
 			<li>
 				<a
-					href={acceso.href}
-					id={acceso.tour ? TOUR_HOME_CTA_ID : undefined}
+					href={quickLink.href}
+					id={quickLink.tour ? TOUR_HOME_CTA_ID : undefined}
 					class="bg-base-200 hover:bg-base-300 rounded-box flex items-start gap-3 p-4 transition-colors"
 				>
 					<Icon aria-hidden="true" class="text-primary mt-0.5 size-6 shrink-0" />
 					<span class="min-w-0">
-						<span class="block font-medium">{acceso.label}</span>
-						<span class="block text-sm opacity-70">{acceso.text}</span>
+						<span class="block font-medium">{quickLink.label}</span>
+						<span class="block text-sm opacity-70">{quickLink.text}</span>
 					</span>
 				</a>
 			</li>

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { volverALaPestana } from '../../../e2e/helpers/browser';
+import { switchBackToTab } from '../../../e2e/helpers/browser';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
 import {
@@ -19,7 +19,7 @@ test.beforeEach(async () => {
 test('sin familia elegida manda a /families, y con una sola la elige sola', async ({ page }) => {
 	const user = await createUser();
 	// Dos familias: hay decisión que tomar, así que /pantry no entra.
-	const familiaA = await createFamily({ name: 'Familia A', owner: user });
+	const familyA = await createFamily({ name: 'Familia A', owner: user });
 	await createFamily({ name: 'Familia B', owner: user });
 
 	await seedSession(page, user);
@@ -30,8 +30,8 @@ test('sin familia elegida manda a /families, y con una sola la elige sola', asyn
 	// sin preguntar nada.
 	// Sin roles antes que sin miembros: el trigger de la BD no deja quitar al
 	// último admin de una familia que sigue viva (issue #104).
-	await prisma.role.deleteMany({ where: { contextId: familiaA.id } });
-	await prisma.member.deleteMany({ where: { contextId: familiaA.id } });
+	await prisma.role.deleteMany({ where: { contextId: familyA.id } });
+	await prisma.member.deleteMany({ where: { contextId: familyA.id } });
 	await page.goto('/pantry');
 	await waitForHydration(page);
 	await expect(page).toHaveURL(/\/pantry$/);
@@ -75,11 +75,16 @@ test('muestra los productos con nombre, cantidad y unidad', async ({ page }) => 
 
 test('los productos de otras familias no se ven', async ({ page }) => {
 	const user = await createUser();
-	const mia = await createFamily({ name: 'Familia Mía', owner: user });
-	await createPantryItem({ familyId: mia.id, name: 'Leche entera', quantity: 1, unit: 'liter' });
-	const otro = await createUser();
-	const ajena = await createFamily({ name: 'Familia Ajena', owner: otro });
-	await createPantryItem({ familyId: ajena.id, name: 'Caviar', quantity: 1, unit: 'unit' });
+	const ownFamily = await createFamily({ name: 'Familia Mía', owner: user });
+	await createPantryItem({
+		familyId: ownFamily.id,
+		name: 'Leche entera',
+		quantity: 1,
+		unit: 'liter'
+	});
+	const other = await createUser();
+	const otherFamily = await createFamily({ name: 'Familia Ajena', owner: other });
+	await createPantryItem({ familyId: otherFamily.id, name: 'Caviar', quantity: 1, unit: 'unit' });
 	await seedSession(page, user);
 
 	// La activa es la única familia del usuario (selección automática).
@@ -108,7 +113,7 @@ test('al volver a la pestaña se actualiza con lo comprado por otro miembro (#44
 	// en la despensa (lo que deja `finalizePurchase`)…
 	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 2, unit: 'unit' });
 	// …y al volver a la pestaña la despensa se repinta sin recargar.
-	await volverALaPestana(page);
+	await switchBackToTab(page);
 	await expect(page.locator('li', { hasText: 'Pan' })).toBeVisible();
 	await expect(page.locator('section li')).toHaveCount(2);
 });
@@ -289,8 +294,8 @@ test('re-añade a la lista que elijas y la despensa queda igual por defecto (#74
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const listaA = await createList({ familyId: family.id, name: 'Super' });
-	const listaB = await createList({ familyId: family.id, name: 'Mercado' });
+	const listA = await createList({ familyId: family.id, name: 'Super' });
+	const listB = await createList({ familyId: family.id, name: 'Mercado' });
 	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
 	await seedSession(page, user);
 
@@ -315,19 +320,19 @@ test('re-añade a la lista que elijas y la despensa queda igual por defecto (#74
 	await expect(leche.getByText('2 L')).toBeVisible();
 
 	// El item está en la lista elegida y no en la otra.
-	await page.goto(`/lists/${listaB.id}`);
+	await page.goto(`/lists/${listB.id}`);
 	await expect(
 		page.locator('section li', { hasText: 'Leche entera' }).getByText('2 L')
 	).toBeVisible();
-	await page.goto(`/lists/${listaA.id}`);
+	await page.goto(`/lists/${listA.id}`);
 	await expect(page.locator('section li', { hasText: 'Leche entera' })).toHaveCount(0);
 });
 
 test('re-añadir suma sobre el pendiente equivalente de la lista (#74)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'leche entera', quantity: 0.5, unit: 'liter' });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'leche entera', quantity: 0.5, unit: 'liter' });
 	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
 	await seedSession(page, user);
 
@@ -343,7 +348,7 @@ test('re-añadir suma sobre el pendiente equivalente de la lista (#74)', async (
 
 	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
 	// 0,5 + 1 = 1,5 sobre UNA fila (sin duplicado), conservando el nombre escrito.
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await expect(
 		page.locator('section li', { hasText: 'leche entera' }).getByText('1,5 L')
 	).toBeVisible();
@@ -374,7 +379,7 @@ test('un agotado se re-añade a la compra y se queda en la despensa a cero (#74)
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
+	const list = await createList({ familyId: family.id, name: 'Super' });
 	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 1, unit: 'unit' });
 	await seedSession(page, user);
 
@@ -397,7 +402,7 @@ test('un agotado se re-añade a la compra y se queda en la despensa a cero (#74)
 	// El agotado sigue en la despensa…
 	await expect(pan.getByText('0 ud')).toBeVisible();
 	// …y el item espera en la lista.
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await expect(page.locator('section li', { hasText: 'Pan' }).getByText('1 ud')).toBeVisible();
 });
 
@@ -444,8 +449,8 @@ test('consumir a cero de un tirón se guarda: al recargar sigue agotado (#148)',
 	await page.waitForLoadState('networkidle');
 	await expect
 		.poll(async () => {
-			const fila = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
-			return Number(fila?.quantity);
+			const row = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
+			return Number(row?.quantity);
 		})
 		.toBe(0);
 
@@ -502,8 +507,8 @@ test('al agotarse la fila no baila: se queda en Agotados mientras aterriza el re
 	await expect(leche.getByText('0 L')).toBeVisible();
 	await expect
 		.poll(async () => {
-			const fila = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
-			return Number(fila?.quantity);
+			const row = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
+			return Number(row?.quantity);
 		})
 		.toBe(0);
 });
@@ -547,21 +552,21 @@ test('el agotado se puede quitar de la despensa con confirmación (#148)', async
 test('agrupa por categorias en su orden y deja Sin categoria al final (#176)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
-	const frutas = await createCategory({ familyId: family.id, name: 'Frutas', position: 1 });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	const fruits = await createCategory({ familyId: family.id, name: 'Frutas', position: 1 });
 	await createPantryItem({
 		familyId: family.id,
 		name: 'Yogur',
 		quantity: 4,
 		unit: 'unit',
-		categoryId: lacteos.id
+		categoryId: dairy.id
 	});
 	await createPantryItem({
 		familyId: family.id,
 		name: 'Manzana',
 		quantity: 1,
 		unit: 'kilogram',
-		categoryId: frutas.id
+		categoryId: fruits.id
 	});
 	// Sin categoría: los dos últimos, que el orden de secciones los lleva al final.
 	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
@@ -583,9 +588,9 @@ test('agrupa por categorias en su orden y deja Sin categoria al final (#176)', a
 	await expect(
 		page.getByRole('region', { name: 'Frutas' }).locator('li', { hasText: 'Manzana' })
 	).toBeVisible();
-	const sinCategoria = page.getByRole('region', { name: 'Sin categoría' });
-	await expect(sinCategoria.locator('li', { hasText: 'Leche entera' })).toBeVisible();
-	await expect(sinCategoria.locator('li', { hasText: 'Pan' })).toBeVisible();
+	const uncategorized = page.getByRole('region', { name: 'Sin categoría' });
+	await expect(uncategorized.locator('li', { hasText: 'Leche entera' })).toBeVisible();
+	await expect(uncategorized.locator('li', { hasText: 'Pan' })).toBeVisible();
 
 	// El badge de cada fila muestra su categoría — o su sitio para darle una.
 	await expect(
@@ -603,13 +608,13 @@ test('recategoriza un producto desde la despensa y las secciones se reordenan (#
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
 	await createPantryItem({
 		familyId: family.id,
 		name: 'Yogur',
 		quantity: 4,
 		unit: 'unit',
-		categoryId: lacteos.id
+		categoryId: dairy.id
 	});
 	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 2, unit: 'liter' });
 	await seedSession(page, user);
@@ -639,16 +644,16 @@ test('recategoriza un producto desde la despensa y las secciones se reordenan (#
 	await expect(page.getByRole('region', { name: 'Sin categoría' })).toHaveCount(0);
 	await expect
 		.poll(async () => {
-			const fila = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
-			return fila?.categoryId;
+			const row = await prisma.pantryItem.findFirst({ where: { name: 'Leche entera' } });
+			return row?.categoryId;
 		})
-		.toBe(lacteos.id);
+		.toBe(dairy.id);
 
 	// Y al revés: devolver el yogur a «Sin categoría» lo baja de sección.
 	const yogur = page.locator('li', { hasText: 'Yogur' });
 	await yogur.getByRole('button', { name: 'Cambiar categoría' }).click();
 	await expect(dialog.getByRole('heading', { name: 'Categoría de «Yogur»' })).toBeVisible();
-	await expect(dialog.locator('#recat-category')).toHaveValue(lacteos.id);
+	await expect(dialog.locator('#recat-category')).toHaveValue(dairy.id);
 	await dialog.locator('#recat-category').selectOption({ label: 'Sin categoría' });
 	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
 

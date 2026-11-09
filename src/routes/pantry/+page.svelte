@@ -16,10 +16,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
 	import { unitLabels } from '#lib/units.js';
-	import { textoError } from '#lib/forms.js';
+	import { errorMessage } from '#lib/forms.js';
 	import { buildTourContext, continueOnboardingTour } from '#lib/utils/tour.js';
 	import { getLocale } from '#lib/paraglide/runtime.js';
-	import { UNIT_STEP, redondearCantidad } from '#lib/pantry-steps.js';
+	import { UNIT_STEP, roundQuantity } from '#lib/pantry-steps.js';
 	import { readdSchema } from '#lib/schemas/pantry.js';
 	import type { Unit } from '#lib/schemas/item.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
@@ -47,15 +47,15 @@
 	// `$state` solo cubre objetos y arrays PLANOS — un Map pasa sin proxyar y
 	// sus mutaciones no repintan nada (revisado en código y verificado con un
 	// test de componente: el badge seguía clavado al valor del servidor).
-	const ajustes = new SvelteMap<string, number>();
-	let falloAjuste: string | null = $state(null);
+	const adjustments = new SvelteMap<string, number>();
+	let adjustError: string | null = $state(null);
 
 	/** La cantidad mostrada: la del servidor más el ajuste en vuelo, sin negativos. */
-	function cantidadVisible(item: PantryRow): number {
-		const base = item.quantity + (ajustes.get(item.id) ?? 0);
+	function displayQuantity(item: PantryRow): number {
+		const base = item.quantity + (adjustments.get(item.id) ?? 0);
 		// El redondeo cierra el flotante a los 3 decimales de la columna (0,3
 		// − 0,25 pintaría 0,049999…): lo que se muestra es lo que guardará la base.
-		return Math.max(0, redondearCantidad(base));
+		return Math.max(0, roundQuantity(base));
 	}
 
 	/**
@@ -64,8 +64,8 @@
 	 * es la memoria de la compra habitual, con su botón de re-añadir a punto —
 	 * y solo se va de la despensa si se quita explícitamente (#74).
 	 */
-	const enCasa = $derived(data.items.filter((item) => cantidadVisible(item) > 0));
-	const agotados = $derived(data.items.filter((item) => cantidadVisible(item) === 0));
+	const enCasa = $derived(data.items.filter((item) => displayQuantity(item) > 0));
+	const depleted = $derived(data.items.filter((item) => displayQuantity(item) === 0));
 
 	// ---- Agrupado por categorías (#176): dentro de «En casa» y de
 	// «Agotados», los productos se reparten en secciones — una por categoría
@@ -74,12 +74,12 @@
 	// hay secciones que pintar: la lista queda plana, como siempre. ----
 
 	/** La clave de sección de los productos sin categoría (id `null` no vale de clave). */
-	const SIN_CATEGORIA = 'sin-categoria';
+	const UNCATEGORIZED_KEY = 'uncategorized';
 
 	/** Una sección de la vista: su título visible y los productos que la llenan. */
-	interface SeccionDespensa {
+	interface PantrySection {
 		key: string;
-		titulo: string;
+		title: string;
 		items: PantryRow[];
 	}
 
@@ -91,14 +91,14 @@
 	 * «En casa». Los productos van en el orden que trajeron, dentro de su
 	 * sección.
 	 */
-	function agrupar(items: PantryRow[]): SeccionDespensa[] {
-		const secciones: SeccionDespensa[] = [];
-		let restantes = items;
-		for (const categoria of data.categories) {
-			const suyas = restantes.filter((item) => item.categoryId === categoria.id);
-			if (suyas.length > 0) {
-				secciones.push({ key: categoria.id, titulo: categoria.name, items: suyas });
-				restantes = restantes.filter((item) => item.categoryId !== categoria.id);
+	function groupByCategory(items: PantryRow[]): PantrySection[] {
+		const sections: PantrySection[] = [];
+		let remainingList = items;
+		for (const category of data.categories) {
+			const categoryItems = remainingList.filter((item) => item.categoryId === category.id);
+			if (categoryItems.length > 0) {
+				sections.push({ key: category.id, title: category.name, items: categoryItems });
+				remainingList = remainingList.filter((item) => item.categoryId !== category.id);
 			}
 		}
 
@@ -106,31 +106,31 @@
 		// producto puede venir con la FK aún puesta y el nombre ya a null
 		// (SetNull en vuelo): no se pierde — sección extra al final, antes de
 		// «Sin categoría», con el título de sin categoría.
-		const huerfanas = restantes.filter((item) => item.categoryId !== null);
-		if (huerfanas.length > 0) {
-			secciones.push({
+		const orphans = remainingList.filter((item) => item.categoryId !== null);
+		if (orphans.length > 0) {
+			sections.push({
 				key: 'borradas',
-				titulo: m.pantry_section_uncategorized(),
-				items: huerfanas
+				title: m.pantry_section_uncategorized(),
+				items: orphans
 			});
 		}
 
 		// «Sin categoría» SIEMPRE al final (issue #176).
-		const sinCategoria = restantes.filter((item) => item.categoryId === null);
-		if (sinCategoria.length > 0) {
-			secciones.push({
-				key: SIN_CATEGORIA,
-				titulo: m.pantry_section_uncategorized(),
-				items: sinCategoria
+		const uncategorized = remainingList.filter((item) => item.categoryId === null);
+		if (uncategorized.length > 0) {
+			sections.push({
+				key: UNCATEGORIZED_KEY,
+				title: m.pantry_section_uncategorized(),
+				items: uncategorized
 			});
 		}
-		return secciones;
+		return sections;
 	}
 
 	/** ¿Hay categorías en la familia? Decide secciones frente a lista plana. */
-	const conCategorias = $derived(data.categories.length > 0);
-	const seccionesEnCasa = $derived(agrupar(enCasa));
-	const seccionesAgotados = $derived(agrupar(agotados));
+	const withCategories = $derived(data.categories.length > 0);
+	const homeSections = $derived(groupByCategory(enCasa));
+	const depletedSections = $derived(groupByCategory(depleted));
 
 	/**
 	 * Anota el delta del botón pulsado como ajuste en vuelo (optimista). El
@@ -148,9 +148,9 @@
 	 * todo optimista implica un POST en vuelo: si el badge llega a 0, la base
 	 * acaba en 0 (con el clamp del servidor, como mucho antes).
 	 */
-	function anotarAjuste(id: string, delta: number) {
-		ajustes.set(id, redondearCantidad((ajustes.get(id) ?? 0) + delta));
-		falloAjuste = null;
+	function applyAdjustment(id: string, delta: number) {
+		adjustments.set(id, roundQuantity((adjustments.get(id) ?? 0) + delta));
+		adjustError = null;
 	}
 
 	/**
@@ -159,12 +159,12 @@
 	 * fila y borrar al llegar la primera descartaría el delta de las demás:
 	 * el badge volvería al valor viejo para luego volver a subir (#113).
 	 */
-	function retirarAjuste(id: string, delta: number) {
-		const quedan = redondearCantidad((ajustes.get(id) ?? 0) - delta);
-		if (quedan === 0) {
-			ajustes.delete(id);
+	function undoAdjustment(id: string, delta: number) {
+		const remaining = roundQuantity((adjustments.get(id) ?? 0) - delta);
+		if (remaining === 0) {
+			adjustments.delete(id);
 		} else {
-			ajustes.set(id, quedan);
+			adjustments.set(id, remaining);
 		}
 	} /**
 	 * Ciclo de un ajuste: anota el optimista cuando el submit ARRANCA (ver
@@ -176,32 +176,32 @@
 	 * fila saltaba de «Agotados» a «En casa» y de vuelta al llegar el
 	 * refresco. Retirado después, el badge no se mueve en todo el camino:
 	 * mientras vuela el refresco sigue el optimista (dato viejo + delta, que
-	 * `cantidadVisible` clampea a 0) y al aterrizar la verdad el delta sobra
+	 * `displayQuantity` clamps to 0) y al aterrizar la verdad el delta sobra
 	 * exactamente. Con clics rápidos hay varias peticiones en vuelo sobre la
 	 * misma fila y cada una retira SOLO su delta (#113).
 	 */
-	function alAjustar(id: string, unit: Unit): SubmitFunction {
+	function handleAdjust(id: string, unit: Unit): SubmitFunction {
 		return ({ formData }) => {
 			// El delta de ESTA petición viaja en el formulario (el value del
 			// botón pulsado, ±1) y aquí se convierte al paso de la unidad:
 			// la misma cuenta que aplica el servidor.
 			const delta = Number(formData.get('delta')) * UNIT_STEP[unit];
-			anotarAjuste(id, delta);
+			applyAdjustment(id, delta);
 			return async ({ result, update }) => {
 				if (result.type === 'success') {
 					await update();
-					retirarAjuste(id, delta);
+					undoAdjustment(id, delta);
 				} else {
 					// Fallo (el servidor rechazó) o error (sin respuesta): la
 					// reversión es retirar SOLO el optimista de esta petición, y
 					// el badge vuelve hacia el estado que traen los datos. Sin
 					// `update` en fallo, como el toggle de comprado: el aviso
 					// vive aquí y no se duplica.
-					falloAjuste =
+					adjustError =
 						result.type === 'failure'
 							? ((result.data as { error?: string } | undefined)?.error ?? m.pantry_error())
 							: m.pantry_error();
-					retirarAjuste(id, delta);
+					undoAdjustment(id, delta);
 				}
 			};
 		};
@@ -218,22 +218,22 @@
 	});
 
 	// Aviso de éxito del re-añadido, fuera del modal (como editar en la lista).
-	let exito: string | null = $state(null);
+	let successMessage: string | null = $state(null);
 
 	/** El producto que se quiere re-añadir: fija título, id y cantidad por defecto. */
-	let itemReAnadir: PantryRow | undefined = $state();
+	let readdItem: PantryRow | undefined = $state();
 	let readdModal: { showModal(): void; close(): void } | undefined = $state();
 
 	// ---- Quitar de la despensa (#148): solo se ofrece en el agotado; el
 	// ConfirmModal compartido confirma y su acción `?/remove` borra la fila. ----
-	let itemBorrado: PantryRow | undefined = $state();
-	let borrarModal: ConfirmModal | undefined = $state();
+	let deletedItem: PantryRow | undefined = $state();
+	let deleteModal: ConfirmModal | undefined = $state();
 
 	/** Fija el producto a quitar y abre la confirmación. */
-	function abrirBorrado(item: PantryRow) {
-		exito = null;
-		itemBorrado = item;
-		borrarModal?.showModal();
+	function openDelete(item: PantryRow) {
+		successMessage = null;
+		deletedItem = item;
+		deleteModal?.showModal();
 	}
 
 	// ---- Recategorizar un producto (#176): el badge de categoría de cada
@@ -241,19 +241,19 @@
 	// la familia (el load las trae en su orden) — y su acción `?/recategorize`
 	// guarda. Como el re-añadido: modal compartido, el botón de la fila fija a
 	// qué producto se refiere antes de abrirlo, y el fallo se cuenta dentro. ----
-	let itemRecategorizar: PantryRow | undefined = $state();
+	let recategorizeItem: PantryRow | undefined = $state();
 	let recatModal: { showModal(): void; close(): void } | undefined = $state();
 	/** La categoría elegida en el select ('' = «Sin categoría»). */
-	let categoriaElegida: string | undefined = $state();
-	let falloRecat: string | null = $state(null);
-	let enviandoRecat = $state(false);
+	let selectedCategory: string | undefined = $state();
+	let recategorizeError: string | null = $state(null);
+	let submittingRecategorize = $state(false);
 
 	/** Fija el producto y su categoría actual, y abre el modal. */
-	function abrirRecategorizar(item: PantryRow) {
-		exito = null;
-		itemRecategorizar = item;
-		categoriaElegida = item.categoryId ?? '';
-		falloRecat = null;
+	function openRecategorize(item: PantryRow) {
+		successMessage = null;
+		recategorizeItem = item;
+		selectedCategory = item.categoryId ?? '';
+		recategorizeError = null;
 		recatModal?.showModal();
 	}
 
@@ -263,22 +263,22 @@
 	 * pantalla), cierra el modal y avisa a la página; el fallo se queda
 	 * DENTRO del modal, que sigue abierto sobre el select para corregir.
 	 */
-	function alRecategorizar(): SubmitFunction {
+	function handleRecategorize(): SubmitFunction {
 		return () => {
-			enviandoRecat = true;
+			submittingRecategorize = true;
 			return async ({ result, update }) => {
-				enviandoRecat = false;
+				submittingRecategorize = false;
 				if (result.type === 'success') {
 					await update();
-					exito = m.pantry_recategorize_success();
+					successMessage = m.pantry_recategorize_success();
 					recatModal?.close();
 				} else if (result.type === 'failure') {
 					// El texto concreto lo decide la acción (producto o categoría
 					// ya no están, error de servidor) y viaja en el resultado.
-					falloRecat =
+					recategorizeError =
 						(result.data as { error?: string } | undefined)?.error ?? m.pantry_recategorize_error();
 				} else {
-					falloRecat = m.pantry_recategorize_error();
+					recategorizeError = m.pantry_recategorize_error();
 				}
 			};
 		};
@@ -295,7 +295,7 @@
 				// El texto concreto lo decide la acción y viaja en el resultado
 				// (`message()`), como en los modales de la lista.
 				const data = result.data as { form?: { message?: string } } | undefined;
-				exito = data?.form?.message ?? m.pantry_readd_success();
+				successMessage = data?.form?.message ?? m.pantry_readd_success();
 				readdModal?.close();
 			}
 		}
@@ -309,9 +309,9 @@
 	} = readdForm;
 
 	/** Abre el modal con el producto cargado y la primera lista por defecto. */
-	function abrirReAnadir(item: PantryRow) {
-		exito = null;
-		itemReAnadir = item;
+	function openReadd(item: PantryRow) {
+		successMessage = null;
+		readdItem = item;
 		readdMessage.set(undefined);
 		readdErrors.clear();
 		readdFormData.set({
@@ -332,11 +332,8 @@
 	useRefetchOnVisible(() => readdForm.isTainted());
 
 	/** La etiqueta del botón lleva el paso exacto: «Consumir 0,25 kg». */
-	function etiquetaPaso(
-		item: PantryRow,
-		verbo: (params: { step: string; unit: string }) => string
-	) {
-		return verbo({
+	function stepLabel(item: PantryRow, verb: (params: { step: string; unit: string }) => string) {
+		return verb({
 			step: formatQuantity(UNIT_STEP[item.unit], getLocale()),
 			unit: UNIT_LABEL[item.unit]
 		});
@@ -365,15 +362,15 @@
 		</div>
 	{/if}
 
-	{#if falloAjuste}
+	{#if adjustError}
 		<div class="alert alert-warning mt-4 text-sm" role="alert">
-			{falloAjuste}
+			{adjustError}
 		</div>
 	{/if}
 
-	{#if exito}
+	{#if successMessage}
 		<div class="alert alert-success mt-4 text-sm" role="status">
-			{exito}
+			{successMessage}
 		</div>
 	{/if}
 
@@ -394,10 +391,10 @@
 		     re-añadir (checklist #74). El snippet lo comparten las dos
 		     secciones («En casa» y «Agotados»); un agotado no pinta el −: de
 		     cero no se puede consumir más, solo reponer o re-añadir. -->
-		{#snippet filaProducto(item: PantryRow)}
-			{@const cantidad = cantidadVisible(item)}
+		{#snippet productRow(item: PantryRow)}
+			{@const quantity = displayQuantity(item)}
 			<li
-				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${cantidad === 0 ? 'opacity-60' : ''}`}
+				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${quantity === 0 ? 'opacity-60' : ''}`}
 			>
 				<!-- Sin `truncate` (issue #152): el nombre largo salta a varias
 				     líneas y la fila crece con él. Debajo, el badge de categoría
@@ -406,13 +403,13 @@
 				     sin ellas, un «Sin categoría» repetido en cada fila sería ruido. -->
 				<div class="min-w-0 flex-1">
 					<p class="font-medium break-words">{item.name}</p>
-					{#if conCategorias}
+					{#if withCategories}
 						<button
 							type="button"
 							class="badge badge-ghost badge-sm mt-0.5 max-w-full cursor-pointer hover:opacity-80"
 							title={m.pantry_change_category()}
 							aria-label={m.pantry_change_category()}
-							onclick={() => abrirRecategorizar(item)}
+							onclick={() => openRecategorize(item)}
 						>
 							<Tag aria-hidden="true" class="size-3 shrink-0" />
 							<span class="truncate">
@@ -424,24 +421,24 @@
 				<form
 					method="POST"
 					action="?/adjust"
-					use:kitEnhance={alAjustar(item.id, item.unit)}
+					use:kitEnhance={handleAdjust(item.id, item.unit)}
 					class="flex shrink-0 items-center gap-1"
 				>
 					<input type="hidden" name="item" value={item.id} />
-					{#if cantidad > 0}
+					{#if quantity > 0}
 						<button
 							type="submit"
 							name="delta"
 							value="-1"
 							class="btn btn-ghost btn-sm"
-							aria-label={etiquetaPaso(item, m.pantry_consume)}
-							title={etiquetaPaso(item, m.pantry_consume)}
+							aria-label={stepLabel(item, m.pantry_consume)}
+							title={stepLabel(item, m.pantry_consume)}
 						>
 							<Minus aria-hidden="true" />
 						</button>
 					{/if}
 					<span class="badge badge-ghost tabular-nums">
-						{formatQuantity(cantidad, getLocale())}
+						{formatQuantity(quantity, getLocale())}
 						{UNIT_LABEL[item.unit]}
 					</span>
 					<button
@@ -449,8 +446,8 @@
 						name="delta"
 						value="1"
 						class="btn btn-ghost btn-sm"
-						aria-label={etiquetaPaso(item, m.pantry_restock)}
-						title={etiquetaPaso(item, m.pantry_restock)}
+						aria-label={stepLabel(item, m.pantry_restock)}
+						title={stepLabel(item, m.pantry_restock)}
 					>
 						<Plus aria-hidden="true" />
 					</button>
@@ -463,20 +460,20 @@
 					class="btn btn-ghost btn-sm"
 					title={m.pantry_readd()}
 					aria-label={m.pantry_readd()}
-					onclick={() => abrirReAnadir(item)}
+					onclick={() => openReadd(item)}
 				>
 					<ShoppingCart aria-hidden="true" />
 				</button>
 				<!-- Quitar de la despensa (#148): solo el agotado lo ofrece — un
 				     producto con existencias se consume o se re-añade; quitarlo
 				     del todo es la decisión explícita del ConfirmModal. -->
-				{#if cantidad === 0}
+				{#if quantity === 0}
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm"
 						title={m.pantry_delete()}
 						aria-label={m.pantry_delete()}
-						onclick={() => abrirBorrado(item)}
+						onclick={() => openDelete(item)}
 					>
 						<Trash2 aria-hidden="true" />
 					</button>
@@ -488,19 +485,19 @@
 		     nombre accesible de la sección) y sus productos, en el orden de la
 		     familia. Sin categorías en la familia, la sección única no lleva
 		     cabecera: la lista queda plana, como siempre. -->
-		{#snippet seccionCategoria(seccion: SeccionDespensa, prefijo: string)}
-			<section aria-labelledby={conCategorias ? `${prefijo}-${seccion.key}` : undefined}>
-				{#if conCategorias}
+		{#snippet categorySection(section: PantrySection, prefix: string)}
+			<section aria-labelledby={withCategories ? `${prefix}-${section.key}` : undefined}>
+				{#if withCategories}
 					<h3
-						id={`${prefijo}-${seccion.key}`}
+						id={`${prefix}-${section.key}`}
 						class="text-xs font-semibold tracking-wide uppercase opacity-50"
 					>
-						{seccion.titulo}
+						{section.title}
 					</h3>
 				{/if}
-				<ul class={`flex list-none flex-col gap-2 ${conCategorias ? 'mt-2' : ''}`}>
-					{#each seccion.items as item (item.id)}
-						{@render filaProducto(item)}
+				<ul class={`flex list-none flex-col gap-2 ${withCategories ? 'mt-2' : ''}`}>
+					{#each section.items as item (item.id)}
+						{@render productRow(item)}
 					{/each}
 				</ul>
 			</section>
@@ -513,21 +510,21 @@
 			<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
 			     debajo (si no, sobra), como pendientes/comprados en la lista. -->
 			{#if enCasa.length > 0}
-				{#if agotados.length > 0}
+				{#if depleted.length > 0}
 					<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
 						{m.pantry_section_home()}
 					</h2>
 				{/if}
-				<div class={`flex flex-col gap-4 ${agotados.length > 0 ? 'mt-2' : 'mt-4'}`}>
-					{#each seccionesEnCasa as seccion (seccion.key)}
-						{@render seccionCategoria(seccion, 'casa')}
+				<div class={`flex flex-col gap-4 ${depleted.length > 0 ? 'mt-2' : 'mt-4'}`}>
+					{#each homeSections as section (section.key)}
+						{@render categorySection(section, 'casa')}
 					{/each}
 				</div>
 			{/if}
 
 			<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
 			     servidor NO los borra) para poder re-añadirlos a la compra. -->
-			{#if agotados.length > 0}
+			{#if depleted.length > 0}
 				<h2
 					class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
 				>
@@ -535,8 +532,8 @@
 				</h2>
 
 				<div class={`flex flex-col gap-4 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
-					{#each seccionesAgotados as seccion (seccion.key)}
-						{@render seccionCategoria(seccion, 'fuera')}
+					{#each depletedSections as section (section.key)}
+						{@render categorySection(section, 'fuera')}
 					{/each}
 				</div>
 			{/if}
@@ -556,7 +553,7 @@
 	boxClass="modal-box max-w-md"
 	strings={{ close: m.ui_close() }}
 >
-	<h2 class="text-lg font-bold">{m.pantry_readd_title({ name: itemReAnadir?.name ?? '' })}</h2>
+	<h2 class="text-lg font-bold">{m.pantry_readd_title({ name: readdItem?.name ?? '' })}</h2>
 	<p class="mt-1 text-sm opacity-70">{m.pantry_readd_description()}</p>
 
 	{#if data.lists.length === 0}
@@ -568,24 +565,24 @@
 	{:else}
 		<form method="POST" action="?/readd" use:readdEnhance class="mt-4 flex flex-col gap-4">
 			<!-- El id del producto de despensa viaja con el formulario. -->
-			<input type="hidden" name="pantry" value={itemReAnadir?.id ?? ''} />
+			<input type="hidden" name="pantry" value={readdItem?.id ?? ''} />
 
 			<div class="flex flex-col gap-1">
 				<label class="fieldset-label" for="readd-list">{m.schema_readd_list_label()}</label>
 				<select
 					bind:value={$readdFormData.listId}
-					aria-invalid={textoError($readdErrors.listId) ? 'true' : undefined}
+					aria-invalid={errorMessage($readdErrors.listId) ? 'true' : undefined}
 					id="readd-list"
 					name="listId"
 					class="select w-full"
 					required
 				>
-					{#each data.lists as lista (lista.id)}
-						<option value={lista.id}>{lista.name}</option>
+					{#each data.lists as list (list.id)}
+						<option value={list.id}>{list.name}</option>
 					{/each}
 				</select>
-				{#if textoError($readdErrors.listId)}
-					<p class="fieldset-label text-error" role="alert">{textoError($readdErrors.listId)}</p>
+				{#if errorMessage($readdErrors.listId)}
+					<p class="fieldset-label text-error" role="alert">{errorMessage($readdErrors.listId)}</p>
 				{/if}
 			</div>
 
@@ -596,7 +593,7 @@
 				     con el error del schema (igual que el alta de items). -->
 				<input
 					bind:value={$readdFormData.quantity}
-					aria-invalid={textoError($readdErrors.quantity) ? 'true' : undefined}
+					aria-invalid={errorMessage($readdErrors.quantity) ? 'true' : undefined}
 					id="readd-quantity"
 					name="quantity"
 					type="number"
@@ -605,9 +602,9 @@
 					inputmode="decimal"
 					required
 				/>
-				{#if textoError($readdErrors.quantity)}
+				{#if errorMessage($readdErrors.quantity)}
 					<p class="fieldset-label text-error" role="alert">
-						{textoError($readdErrors.quantity)}
+						{errorMessage($readdErrors.quantity)}
 					</p>
 				{/if}
 			</div>
@@ -646,7 +643,7 @@
 	strings={{ close: m.ui_close() }}
 >
 	<h2 class="text-lg font-bold">
-		{m.pantry_recategorize_title({ name: itemRecategorizar?.name ?? '' })}
+		{m.pantry_recategorize_title({ name: recategorizeItem?.name ?? '' })}
 	</h2>
 
 	{#if data.categories.length === 0}
@@ -659,32 +656,32 @@
 		<form
 			method="POST"
 			action="?/recategorize"
-			use:kitEnhance={alRecategorizar()}
+			use:kitEnhance={handleRecategorize()}
 			class="mt-4 flex flex-col gap-4"
 		>
 			<!-- El id del producto viaja con el formulario; la categoría, en el
 			     select ('' = «Sin categoría»). El load trae las categorías en su
 			     orden: el select las ofrece igual, con «Sin categoría» primero. -->
-			<input type="hidden" name="item" value={itemRecategorizar?.id ?? ''} />
+			<input type="hidden" name="item" value={recategorizeItem?.id ?? ''} />
 
 			<div class="flex flex-col gap-1">
 				<label class="fieldset-label" for="recat-category">{m.pantry_change_category()}</label>
 				<select
-					bind:value={categoriaElegida}
+					bind:value={selectedCategory}
 					id="recat-category"
 					name="categoryId"
 					class="select w-full"
 				>
 					<option value="">{m.pantry_section_uncategorized()}</option>
-					{#each data.categories as categoria (categoria.id)}
-						<option value={categoria.id}>{categoria.name}</option>
+					{#each data.categories as category (category.id)}
+						<option value={category.id}>{category.name}</option>
 					{/each}
 				</select>
 			</div>
 
-			{#if falloRecat}
+			{#if recategorizeError}
 				<div class="alert alert-error text-sm" role="alert">
-					{falloRecat}
+					{recategorizeError}
 				</div>
 			{/if}
 
@@ -692,8 +689,8 @@
 				<button type="button" class="btn btn-ghost" onclick={() => recatModal?.close()}>
 					{m.ui_cancel()}
 				</button>
-				<button type="submit" class="btn btn-primary" disabled={enviandoRecat}>
-					{#if enviandoRecat}
+				<button type="submit" class="btn btn-primary" disabled={submittingRecategorize}>
+					{#if submittingRecategorize}
 						<span class="loading loading-spinner"></span>
 					{/if}
 					{m.categories_save()}
@@ -708,12 +705,12 @@
      la acción vive dentro del modal (lo gestiona el ConfirmModal) y el éxito
      avisa a la página como el resto de acciones. -->
 <ConfirmModal
-	bind:this={borrarModal}
-	title={m.pantry_delete_title({ name: itemBorrado?.name ?? '' })}
+	bind:this={deleteModal}
+	title={m.pantry_delete_title({ name: deletedItem?.name ?? '' })}
 	description={m.pantry_delete_description()}
 	confirmLabel={m.pantry_delete_confirm()}
 	action="?/remove"
-	fields={{ item: itemBorrado?.id ?? '' }}
+	fields={{ item: deletedItem?.id ?? '' }}
 	errorFallback={m.pantry_error()}
-	onSuccess={() => (exito = m.pantry_deleted())}
+	onSuccess={() => (successMessage = m.pantry_deleted())}
 />
