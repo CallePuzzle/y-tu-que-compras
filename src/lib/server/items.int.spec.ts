@@ -30,7 +30,7 @@ async function familyRow(prefix: string): Promise<string> {
 }
 
 /** Datos válidos según `listSchema`, para crear las listas de prueba. */
-const LISTA = { name: 'Compra semanal', color: 'yellow', icon: 'shopping-basket' } as const;
+const LIST = { name: 'Compra semanal', color: 'yellow', icon: 'shopping-basket' } as const;
 
 /** Datos válidos según `itemSchema`, para mutar campo a campo en cada spec. */
 const ITEM: ItemData = { name: 'Leche entera', quantity: 2, unit: 'liter' };
@@ -50,7 +50,7 @@ async function createItemOrFail(familyId: string, listId: string, data: ItemData
 describe('CRUD de items por familia y lista (#68)', () => {
 	it('createItem guarda nombre, cantidad y unidad, y calcula el orden en el servidor', async () => {
 		const familyId = await familyRow('Familia Compradora');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 
 		const first = await createItemOrFail(familyId, list.id, ITEM);
 		expect(first).toMatchObject({ name: ITEM.name, quantity: 2, unit: 'liter' });
@@ -72,7 +72,7 @@ describe('CRUD de items por familia y lista (#68)', () => {
 
 	it('createItem respeta los decimales de la cantidad', async () => {
 		const familyId = await familyRow('Familia Exacta');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 
 		const created = await createItemOrFail(familyId, list.id, {
 			...ITEM,
@@ -84,97 +84,102 @@ describe('CRUD de items por familia y lista (#68)', () => {
 	});
 
 	it('createItem devuelve null para una lista ajena a la familia y no crea nada', async () => {
-		const mia = await familyRow('Familia Propia');
-		const ajena = await familyRow('Familia Ajena');
-		const externa = await createList(ajena, LISTA);
+		const ownFamily = await familyRow('Familia Propia');
+		const otherFamily = await familyRow('Familia Ajena');
+		const externalFamily = await createList(otherFamily, LIST);
 
-		expect(await createItem(mia, externa.id, ITEM)).toBeNull();
-		expect(await prisma.item.findMany({ where: { listId: externa.id } })).toHaveLength(0);
+		expect(await createItem(ownFamily, externalFamily.id, ITEM)).toBeNull();
+		expect(await prisma.item.findMany({ where: { listId: externalFamily.id } })).toHaveLength(0);
 	});
 
 	it('listItems devuelve los items de la lista en su orden, y solo los de la familia', async () => {
-		const mia = await familyRow('Familia Listera');
-		const ajena = await familyRow('Familia Ajena');
-		const propia = await createList(mia, LISTA);
-		const externa = await createList(ajena, LISTA);
+		const ownFamily = await familyRow('Familia Listera');
+		const otherFamily = await familyRow('Familia Ajena');
+		const ownList = await createList(ownFamily, LIST);
+		const externalFamily = await createList(otherFamily, LIST);
 
-		await createItemOrFail(mia, propia.id, { ...ITEM, name: 'Pan', unit: 'unit' });
-		await createItemOrFail(mia, propia.id, { ...ITEM, name: 'Leche' });
-		await createItemOrFail(ajena, externa.id, { ...ITEM, name: 'Secreto' });
+		await createItemOrFail(ownFamily, ownList.id, { ...ITEM, name: 'Pan', unit: 'unit' });
+		await createItemOrFail(ownFamily, ownList.id, { ...ITEM, name: 'Leche' });
+		await createItemOrFail(otherFamily, externalFamily.id, { ...ITEM, name: 'Secreto' });
 
-		const items = await listItems(mia, propia.id);
+		const items = await listItems(ownFamily, ownList.id);
 		expect(items.map((item) => item.name)).toEqual(['Pan', 'Leche']);
 		// El Decimal de la base se lee como number para la vista.
 		expect(items[1].quantity).toBe(2);
 	});
 
 	it('listItems devuelve vacío para una lista que no es de la familia', async () => {
-		const mia = await familyRow('Familia Sola');
-		const ajena = await familyRow('Familia Ajena');
-		const externa = await createList(ajena, LISTA);
-		await createItem(ajena, externa.id, ITEM);
+		const ownFamily = await familyRow('Familia Sola');
+		const otherFamily = await familyRow('Familia Ajena');
+		const externalFamily = await createList(otherFamily, LIST);
+		await createItem(otherFamily, externalFamily.id, ITEM);
 
-		expect(await listItems(mia, externa.id)).toEqual([]);
+		expect(await listItems(ownFamily, externalFamily.id)).toEqual([]);
 	});
 
 	it('updateItem cambia un item propio; uno ajeno devuelve false y no se toca', async () => {
-		const mia = await familyRow('Familia Editora');
-		const ajena = await familyRow('Familia Intacta');
-		const propia = await createList(mia, LISTA);
-		const externa = await createList(ajena, LISTA);
-		const propio = await createItemOrFail(mia, propia.id, ITEM);
-		const ajeno = await createItemOrFail(ajena, externa.id, ITEM);
+		const ownFamily = await familyRow('Familia Editora');
+		const otherFamily = await familyRow('Familia Intacta');
+		const ownList = await createList(ownFamily, LIST);
+		const externalFamily = await createList(otherFamily, LIST);
+		const ownItem = await createItemOrFail(ownFamily, ownList.id, ITEM);
+		const foreignItem = await createItemOrFail(otherFamily, externalFamily.id, ITEM);
 
-		const changed = await updateItem(mia, propia.id, propio.id, {
+		const changed = await updateItem(ownFamily, ownList.id, ownItem.id, {
 			name: 'Leche desnatada',
 			quantity: 6,
 			unit: 'unit'
 		});
 		expect(changed).toBe(true);
-		expect(await prisma.item.findUniqueOrThrow({ where: { id: propio.id } })).toMatchObject({
+		expect(await prisma.item.findUniqueOrThrow({ where: { id: ownItem.id } })).toMatchObject({
 			name: 'Leche desnatada',
 			unit: 'unit'
 		});
 
 		// El id de un item de OTRA familia no se puede actualizar aunque se
 		// conozca: el filtro de familia activa lo hace inalcanzable.
-		const foreign = await updateItem(mia, propia.id, ajeno.id, { ...ITEM, name: 'Vándalo' });
+		const foreign = await updateItem(ownFamily, ownList.id, foreignItem.id, {
+			...ITEM,
+			name: 'Vándalo'
+		});
 		expect(foreign).toBe(false);
-		expect((await prisma.item.findUniqueOrThrow({ where: { id: ajeno.id } })).name).toBe(ITEM.name);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: foreignItem.id } })).name).toBe(
+			ITEM.name
+		);
 
 		// Igual con un id inexistente.
-		expect(await updateItem(mia, propia.id, randomUUID(), ITEM)).toBe(false);
+		expect(await updateItem(ownFamily, ownList.id, randomUUID(), ITEM)).toBe(false);
 	});
 
 	it('updateItem devuelve false para un item de otra lista de la misma familia', async () => {
-		const mia = await familyRow('Familia de Dos Listas');
-		const mercado = await createList(mia, LISTA);
-		const parafarmacia = await createList(mia, { ...LISTA, name: 'Parafarmacia' });
-		const ajeno = await createItemOrFail(mia, parafarmacia.id, ITEM);
+		const ownFamily = await familyRow('Familia de Dos Listas');
+		const mercado = await createList(ownFamily, LIST);
+		const parafarmacia = await createList(ownFamily, { ...LIST, name: 'Parafarmacia' });
+		const foreignItem = await createItemOrFail(ownFamily, parafarmacia.id, ITEM);
 
 		// Mismo id de familia pero la lista del `where` no es la suya: el item
 		// no está ahí y no se toca (el filtro de lista acota el alcance).
-		expect(await updateItem(mia, mercado.id, ajeno.id, ITEM)).toBe(false);
+		expect(await updateItem(ownFamily, mercado.id, foreignItem.id, ITEM)).toBe(false);
 	});
 
 	it('deleteItem borra solo de su lista; uno ajeno devuelve false y queda', async () => {
-		const mia = await familyRow('Familia Borradora');
-		const ajena = await familyRow('Familia Superviviente');
-		const propia = await createList(mia, LISTA);
-		const externa = await createList(ajena, LISTA);
-		const propio = await createItemOrFail(mia, propia.id, ITEM);
-		const ajeno = await createItemOrFail(ajena, externa.id, ITEM);
+		const ownFamily = await familyRow('Familia Borradora');
+		const otherFamily = await familyRow('Familia Superviviente');
+		const ownList = await createList(ownFamily, LIST);
+		const externalFamily = await createList(otherFamily, LIST);
+		const ownItem = await createItemOrFail(ownFamily, ownList.id, ITEM);
+		const foreignItem = await createItemOrFail(otherFamily, externalFamily.id, ITEM);
 
-		expect(await deleteItem(mia, propia.id, ajeno.id)).toBe(false);
-		expect(await prisma.item.findUnique({ where: { id: ajeno.id } })).not.toBeNull();
+		expect(await deleteItem(ownFamily, ownList.id, foreignItem.id)).toBe(false);
+		expect(await prisma.item.findUnique({ where: { id: foreignItem.id } })).not.toBeNull();
 
-		expect(await deleteItem(mia, propia.id, propio.id)).toBe(true);
-		expect(await prisma.item.findUnique({ where: { id: propio.id } })).toBeNull();
+		expect(await deleteItem(ownFamily, ownList.id, ownItem.id)).toBe(true);
+		expect(await prisma.item.findUnique({ where: { id: ownItem.id } })).toBeNull();
 	});
 
 	it('borrar la lista se lleva sus items (FK en cascada)', async () => {
 		const familyId = await familyRow('Familia Evanescente');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 		const a = await createItemOrFail(familyId, list.id, ITEM);
 		const b = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Pan', unit: 'unit' });
 
@@ -187,69 +192,69 @@ describe('CRUD de items por familia y lista (#68)', () => {
 describe('Categoría de los items (#172)', () => {
 	it('createItem guarda la categoría de la familia y listItems la devuelve con su nombre', async () => {
 		const familyId = await familyRow('Familia Clasificadora');
-		const list = await createList(familyId, LISTA);
-		const lacteos = await createCategory(familyId, { name: 'Lácteos' });
+		const list = await createList(familyId, LIST);
+		const dairy = await createCategory(familyId, { name: 'Lácteos' });
 
-		const created = await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: lacteos.id });
+		const created = await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: dairy.id });
 		// La vista trae id y nombre para que el chip pinte sin otra consulta.
-		expect(created).toMatchObject({ categoryId: lacteos.id, categoryName: 'Lácteos' });
+		expect(created).toMatchObject({ categoryId: dairy.id, categoryName: 'Lácteos' });
 
 		const row = await prisma.item.findUniqueOrThrow({ where: { id: created.id } });
-		expect(row.categoryId).toBe(lacteos.id);
+		expect(row.categoryId).toBe(dairy.id);
 
 		const items = await listItems(familyId, list.id);
 		expect(items[0]).toMatchObject({
 			name: ITEM.name,
-			categoryId: lacteos.id,
+			categoryId: dairy.id,
 			categoryName: 'Lácteos'
 		});
 	});
 
 	it('createItem guarda sin categoría un id ajeno, rancio o vacío: sin 500 por FK', async () => {
-		const mia = await familyRow('Familia Sin Chip');
-		const ajena = await familyRow('Familia Categorizada');
-		const list = await createList(mia, LISTA);
-		const deAjena = await createCategory(ajena, { name: 'Lácteos' });
+		const ownFamily = await familyRow('Familia Sin Chip');
+		const otherFamily = await familyRow('Familia Categorizada');
+		const list = await createList(ownFamily, LIST);
+		const fromOtherFamily = await createCategory(otherFamily, { name: 'Lácteos' });
 
 		// Categoría de OTRA familia: se guarda como «sin categoría», sin
 		// filtrar información ni romper la FK.
-		const conAjena = await createItemOrFail(mia, list.id, {
+		const withForeignCategory = await createItemOrFail(ownFamily, list.id, {
 			...ITEM,
-			categoryId: deAjena.id
+			categoryId: fromOtherFamily.id
 		});
-		expect(conAjena.categoryId).toBeNull();
+		expect(withForeignCategory.categoryId).toBeNull();
 
 		// Id ya borrado: la UI lo ofreció y otro miembro eliminó la categoría
 		// mientras se rellenaba el formulario — el efecto del `SetNull`.
-		const conFantasma = await createItemOrFail(mia, list.id, {
+		const withStaleCategory = await createItemOrFail(ownFamily, list.id, {
 			...ITEM,
 			name: 'Fantasma',
 			categoryId: randomUUID()
 		});
-		expect(conFantasma.categoryId).toBeNull();
+		expect(withStaleCategory.categoryId).toBeNull();
 
 		// El option vacío del select («Sin categoría») viaja como ''.
-		const conVacio = await createItemOrFail(mia, list.id, {
+		const withEmptyCategory = await createItemOrFail(ownFamily, list.id, {
 			...ITEM,
 			name: 'Sin clasificar',
 			categoryId: ''
 		});
-		expect(conVacio.categoryId).toBeNull();
-		expect(await listItems(mia, list.id)).toHaveLength(3);
+		expect(withEmptyCategory.categoryId).toBeNull();
+		expect(await listItems(ownFamily, list.id)).toHaveLength(3);
 	});
 
 	it('updateItem cambia la categoría y la quita con «Sin categoría»', async () => {
 		const familyId = await familyRow('Familia Reclasificadora');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 		const antes = await createCategory(familyId, { name: 'Lácteos' });
-		const despues = await createCategory(familyId, { name: 'Despensa' });
+		const after = await createCategory(familyId, { name: 'Despensa' });
 		const item = await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: antes.id });
 
-		expect(await updateItem(familyId, list.id, item.id, { ...ITEM, categoryId: despues.id })).toBe(
+		expect(await updateItem(familyId, list.id, item.id, { ...ITEM, categoryId: after.id })).toBe(
 			true
 		);
 		expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
-			categoryId: despues.id
+			categoryId: after.id
 		});
 
 		// «Sin categoría» (el '' del select) borra la que tuviera: la edición
@@ -264,7 +269,7 @@ describe('Categoría de los items (#172)', () => {
 describe('Marcar item como comprado (#69)', () => {
 	it('setItemPurchased marca y desmarca un item propio, y persiste', async () => {
 		const familyId = await familyRow('Familia Compradora');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 		const item = await createItemOrFail(familyId, list.id, ITEM);
 
 		expect(await setItemPurchased(familyId, list.id, item.id, true)).toBe(true);
@@ -277,32 +282,32 @@ describe('Marcar item como comprado (#69)', () => {
 	});
 
 	it('setItemPurchased no toca items ajenos: otra familia, otra lista o id inexistente', async () => {
-		const mia = await familyRow('Familia Compradora');
-		const ajena = await familyRow('Familia Intacta');
-		const propia = await createList(mia, LISTA);
-		const externa = await createList(ajena, LISTA);
-		const ajeno = await createItemOrFail(ajena, externa.id, ITEM);
-		const parafarmacia = await createList(mia, { ...LISTA, name: 'Parafarmacia' });
-		const deOtraLista = await createItemOrFail(mia, parafarmacia.id, ITEM);
+		const ownFamily = await familyRow('Familia Compradora');
+		const otherFamily = await familyRow('Familia Intacta');
+		const ownList = await createList(ownFamily, LIST);
+		const externalFamily = await createList(otherFamily, LIST);
+		const foreignItem = await createItemOrFail(otherFamily, externalFamily.id, ITEM);
+		const parafarmacia = await createList(ownFamily, { ...LIST, name: 'Parafarmacia' });
+		const fromOtherList = await createItemOrFail(ownFamily, parafarmacia.id, ITEM);
 
 		// El id de un item de OTRA familia no se puede marcar aunque se conozca.
-		expect(await setItemPurchased(mia, propia.id, ajeno.id, true)).toBe(false);
-		expect((await prisma.item.findUniqueOrThrow({ where: { id: ajeno.id } })).purchased).toBe(
+		expect(await setItemPurchased(ownFamily, ownList.id, foreignItem.id, true)).toBe(false);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: foreignItem.id } })).purchased).toBe(
 			false
 		);
 
 		// El filtro de lista acota también dentro de la misma familia.
-		expect(await setItemPurchased(mia, propia.id, deOtraLista.id, true)).toBe(false);
-		expect((await prisma.item.findUniqueOrThrow({ where: { id: deOtraLista.id } })).purchased).toBe(
-			false
-		);
+		expect(await setItemPurchased(ownFamily, ownList.id, fromOtherList.id, true)).toBe(false);
+		expect(
+			(await prisma.item.findUniqueOrThrow({ where: { id: fromOtherList.id } })).purchased
+		).toBe(false);
 
-		expect(await setItemPurchased(mia, propia.id, randomUUID(), true)).toBe(false);
+		expect(await setItemPurchased(ownFamily, ownList.id, randomUUID(), true)).toBe(false);
 	});
 
 	it('listItems trae el comprado y ordena pendientes antes que comprados', async () => {
 		const familyId = await familyRow('Familia con Carrito');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 		const a = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Pan', unit: 'unit' });
 		const b = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Leche' });
 		const c = await createItemOrFail(familyId, list.id, { ...ITEM, name: 'Huevos', unit: 'dozen' });
@@ -324,7 +329,7 @@ describe('Marcar item como comprado (#69)', () => {
 describe('CHECK quantity > 0 en la base (#107)', () => {
 	it('la base rechaza una cantidad 0 en item, aunque nadie valide antes', async () => {
 		const familyId = await familyRow('Familia Check Cero');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 
 		await expect(
 			prisma.item.create({
@@ -356,15 +361,15 @@ describe('CHECK quantity > 0 en la base (#107)', () => {
 
 	it('cantidades legales siguen entrando: la milésima justa y el techo de la columna', async () => {
 		const familyId = await familyRow('Familia Check Legal');
-		const list = await createList(familyId, LISTA);
+		const list = await createList(familyId, LIST);
 
-		const minimo = await prisma.item.create({
+		const minimum = await prisma.item.create({
 			data: { listId: list.id, name: 'Azafrán', quantity: 0.001, unit: 'gram', order: 0 }
 		});
 		const techo = await prisma.item.create({
 			data: { listId: list.id, name: 'Harina', quantity: 9_999_999.999, unit: 'gram', order: 1 }
 		});
-		expect(Number(minimo.quantity)).toBe(0.001);
+		expect(Number(minimum.quantity)).toBe(0.001);
 		expect(Number(techo.quantity)).toBe(9_999_999.999);
 	});
 });

@@ -19,7 +19,7 @@
 	type FamilyRow = PageProps['data']['families'][number];
 
 	/** Familia elegida para invitar: título del modal compartido y query de la acción. */
-	let familiaInvitada: FamilyRow | undefined = $state();
+	let invitedFamily: FamilyRow | undefined = $state();
 
 	// Referencia al `Modal` para cerrarlo cuando la operación sale bien (el
 	// componente exporta `showModal` y `close`).
@@ -28,7 +28,7 @@
 
 	// Resultado de la última operación que se cuenta FUERA de la modal (el de
 	// éxito; el de error se enseña dentro, junto al formulario, con `$message`).
-	let exito: string | null = $state(null);
+	let successMessage: string | null = $state(null);
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
 	// la librería). Ojo: `superForm` no soporta cambiar el schema, así que se lee
@@ -52,10 +52,10 @@
 				// La familia ya existe: el load que revalida superforms (por
 				// defecto, sin `invalidateAll()` a mano) la trae a la lista y el
 				// aviso de éxito queda en la página, no dentro del modal cerrado.
-				exito = m.families_success();
+				successMessage = m.families_success();
 				modal?.close();
 			} else if (result.type === 'failure') {
-				exito = null;
+				successMessage = null;
 			}
 		}
 	});
@@ -63,8 +63,8 @@
 
 	// Al (re)abrir el modal se limpia el rastro del intento anterior: ni el
 	// mensaje de error antiguo ni el aviso de éxito de la familia ya creada.
-	function abrirModal(showModal: () => void) {
-		exito = null;
+	function openModal(showModal: () => void) {
+		successMessage = null;
 		message.set(undefined);
 		showModal();
 	}
@@ -99,10 +99,11 @@
 				// después de `onResult` superforms no aplica el resultado ni
 				// resetea el formulario, y el aviso no debe depender de ese orden.
 				const data = result.data as { form?: { message?: string } } | undefined;
-				exito = data?.form?.message ?? m.families_invite_success({ email: $inviteData.email });
+				successMessage =
+					data?.form?.message ?? m.families_invite_success({ email: $inviteData.email });
 				inviteModal?.close();
 			} else if (result.type === 'failure') {
-				exito = null;
+				successMessage = null;
 			}
 		}
 	});
@@ -114,11 +115,11 @@
 		reset: resetInvite
 	} = inviteForm;
 
-	function abrirInvitacion(familia: FamilyRow) {
-		exito = null;
+	function openInvite(family: FamilyRow) {
+		successMessage = null;
 		inviteMessage.set(undefined);
 		resetInvite();
-		familiaInvitada = familia;
+		invitedFamily = family;
 		inviteModal?.showModal();
 	}
 
@@ -150,7 +151,7 @@
 					type="button"
 					id="tour-families-create"
 					class="btn btn-primary"
-					onclick={() => abrirModal(showModal)}
+					onclick={() => openModal(showModal)}
 				>
 					<Plus aria-hidden="true" />
 					{m.families_create()}
@@ -191,7 +192,7 @@
 			strings={{ close: m.ui_close() }}
 		>
 			<h2 class="text-lg font-bold">
-				{m.families_invite_title({ family: familiaInvitada?.name ?? '' })}
+				{m.families_invite_title({ family: invitedFamily?.name ?? '' })}
 			</h2>
 			<p class="mt-1 text-sm opacity-70">{m.families_invite_role_hint()}</p>
 			<!-- Toda invitación caduca (#102): que el admin lo sepa antes de enviar. -->
@@ -201,7 +202,7 @@
 
 			<form
 				method="POST"
-				action={`?/invite&familyId=${familiaInvitada?.id ?? ''}`}
+				action={`?/invite&familyId=${invitedFamily?.id ?? ''}`}
 				use:enhanceInvite
 				class="mt-4 flex flex-col gap-4"
 			>
@@ -228,9 +229,9 @@
 		</Modal>
 	</div>
 
-	{#if exito}
+	{#if successMessage}
 		<div class="alert alert-success mt-4 text-sm" role="status">
-			{exito}
+			{successMessage}
 		</div>
 	{/if}
 
@@ -238,32 +239,28 @@
 		<p class="mt-4 opacity-70">{m.families_empty()}</p>
 	{:else}
 		<ul class="mt-4 flex flex-col gap-2">
-			{#each data.families as familia (familia.id)}
+			{#each data.families as family (family.id)}
 				<li
 					class="bg-base-200 rounded-box flex flex-wrap items-center justify-between gap-2 px-4 py-3"
 				>
 					<!-- La gestión de miembros (issue #62) vive en su página: el
 					     nombre enlaza a ella y hay botón propio por descubribilidad. -->
 					<a
-						href={resolve('/families/[familyId]', { familyId: familia.id })}
+						href={resolve('/families/[familyId]', { familyId: family.id })}
 						class="min-w-0 flex-1 truncate font-medium hover:underline"
 					>
-						{familia.name}
+						{family.name}
 					</a>
 					<span class="flex items-center gap-1">
 						<a
-							href={resolve('/families/[familyId]', { familyId: familia.id })}
+							href={resolve('/families/[familyId]', { familyId: family.id })}
 							class="btn btn-ghost btn-sm"
 						>
 							<Users aria-hidden="true" />
 							{m.families_members()}
 						</a>
-						{#if familia.canInvite}
-							<button
-								type="button"
-								class="btn btn-ghost btn-sm"
-								onclick={() => abrirInvitacion(familia)}
-							>
+						{#if family.canInvite}
+							<button type="button" class="btn btn-ghost btn-sm" onclick={() => openInvite(family)}>
 								<UserPlus aria-hidden="true" />
 								{m.families_invite()}
 							</button>

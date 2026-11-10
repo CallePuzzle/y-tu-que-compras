@@ -18,22 +18,22 @@
 	type Props = {
 		item: PageData['items'][number];
 		/** El comprado mostrado (el optimista si lo hay). */
-		comprado: boolean;
+		purchased: boolean;
 		/** El resultado del envío de `?/purchased` (revierte en fallo). */
 		onPurchasedResult: SubmitFunction;
 		/** El toque en el checkbox, con el valor NUEVO, antes del envío. */
-		onToggle: (nuevo: boolean) => void;
+		onToggle: (checked: boolean) => void;
 		onEdit: () => void;
 		onDelete: () => void;
 	};
 
-	let { item, comprado, onPurchasedResult, onToggle, onEdit, onDelete }: Props = $props();
+	let { item, purchased, onPurchasedResult, onToggle, onEdit, onDelete }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 </script>
 
 <li
-	class={`bg-base-200 rounded-box flex items-center gap-3 px-4 py-3 ${comprado ? 'opacity-60' : ''}`}
+	class={`bg-base-200 rounded-box flex items-center gap-3 px-4 py-3 ${purchased ? 'opacity-60' : ''}`}
 >
 	<!-- Checkbox de comprado (checklist #69): envía `?/purchased` con
 	     el id y el NUEVO valor. El hidden «false» + el checkbox
@@ -46,8 +46,8 @@
 			name="purchased"
 			value="true"
 			class="checkbox checkbox-primary"
-			checked={comprado}
-			aria-label={comprado ? m.items_mark_pending() : m.items_mark_purchased()}
+			checked={purchased}
+			aria-label={purchased ? m.items_mark_pending() : m.items_mark_purchased()}
 			onchange={(event) => {
 				// Optimista ANTES del envío: la UI responde al toque; si
 				// la acción falla, la página lo revierte.
@@ -71,14 +71,14 @@
 				// nativo conserva el par hidden+checkbox intacto y el
 				// servidor sigue leyéndolo bien.
 				const input = event.currentTarget;
-				const nuevo = input.checked;
-				input.checked = comprado;
+				const checked = input.checked;
+				input.checked = purchased;
 				input.removeAttribute('name');
 				const hidden = input.form?.querySelector<HTMLInputElement>(
 					'input[name="purchased"][type="hidden"]'
 				);
-				if (hidden) hidden.value = String(nuevo);
-				onToggle(nuevo);
+				if (hidden) hidden.value = String(checked);
+				onToggle(checked);
 				input.form?.requestSubmit();
 			}}
 		/>
@@ -88,7 +88,7 @@
 	     espacios para que no desborde la caja. Debajo, el chip de categoría
 	     (#172): clasifica el item sin robarle sitio a la fila. -->
 	<div class="min-w-0 flex-1">
-		<p class={`font-medium break-words ${comprado ? 'line-through' : ''}`}>{item.name}</p>
+		<p class={`font-medium break-words ${purchased ? 'line-through' : ''}`}>{item.name}</p>
 		{#if item.categoryName}
 			<span class="badge badge-ghost badge-sm mt-0.5 max-w-full">
 				<span class="truncate">{item.categoryName}</span>

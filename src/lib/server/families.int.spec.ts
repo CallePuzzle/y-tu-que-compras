@@ -804,8 +804,8 @@ describe('perímetro de miembros entre familias (#101)', () => {
 	});
 
 	it('GET member/:id de otra familia con el contextId falseado responde denegado', async () => {
-		const adminAjeno = await sessionCookieFor('Admin Atacante');
-		const attackerFamilyId = await createFamilyFor(adminAjeno.cookie);
+		const otherAdmin = await sessionCookieFor('Admin Atacante');
+		const attackerFamilyId = await createFamilyFor(otherAdmin.cookie);
 
 		const victimFamilyAdmin = await sessionCookieFor('Admin Victima');
 		const victimFamilyId = await createFamilyFor(victimFamilyAdmin.cookie);
@@ -817,14 +817,14 @@ describe('perímetro de miembros entre familias (#101)', () => {
 		const smugled = await auth.handler(
 			tenancyRequest(
 				`member/${memberId}?contextType=organization&contextId=${attackerFamilyId}`,
-				adminAjeno.cookie
+				otherAdmin.cookie
 			)
 		);
 		expect(smugled.status).toBe(403);
 		expect(await smugled.text()).not.toContain('@integration.test');
 
 		// Sin query falseado, también denegado: el miembro pertenece a otra familia.
-		const plain = await auth.handler(tenancyRequest(`member/${memberId}`, adminAjeno.cookie));
+		const plain = await auth.handler(tenancyRequest(`member/${memberId}`, otherAdmin.cookie));
 		expect(plain.status).toBe(403);
 
 		// El miembro de la familia sí se ve a sí mismo por id (lectura legítima).

@@ -38,13 +38,13 @@ async function familyRow(prefix: string): Promise<string> {
 }
 
 /** Datos válidos según `categorySchema`, para mutar campo a campo en cada spec. */
-const CATEGORIA: CategoryData = { name: 'Lácteos' };
+const CATEGORY: CategoryData = { name: 'Lácteos' };
 
 describe('CRUD de categorías por familia (#169)', () => {
 	it('createCategory guarda nombre, canónico y posición al final del orden', async () => {
 		const familyId = await familyRow('Familia Categorizadora');
 
-		const first = await createCategory(familyId, CATEGORIA);
+		const first = await createCategory(familyId, CATEGORY);
 		expect(first).toMatchObject({ name: 'Lácteos', position: 0 });
 
 		// El canónico del duplicado lo calcula el SERVIDOR con el mismo
@@ -59,78 +59,82 @@ describe('CRUD de categorías por familia (#169)', () => {
 	});
 
 	it('createCategory rechaza el duplicado normalizado; otra familia sí puede tenerlo', async () => {
-		const mia = await familyRow('Familia Primera');
-		const ajena = await familyRow('Familia Segunda');
-		await createCategory(mia, CATEGORIA);
+		const ownFamily = await familyRow('Familia Primera');
+		const otherFamily = await familyRow('Familia Segunda');
+		await createCategory(ownFamily, CATEGORY);
 
 		// «lacteos» es el mismo canónico que «Lácteos»: el único
 		// (familia, normalizedName) lo rechaza y sale como el error de dominio
 		// que la acción traduce al mensaje de la UI (checklist #169).
-		await expect(createCategory(mia, { name: 'lacteos' })).rejects.toBeInstanceOf(
+		await expect(createCategory(ownFamily, { name: 'lacteos' })).rejects.toBeInstanceOf(
 			CategoryExistsError
 		);
-		await expect(createCategory(mia, { name: ' LÁCTEOS ' })).rejects.toBeInstanceOf(
+		await expect(createCategory(ownFamily, { name: ' LÁCTEOS ' })).rejects.toBeInstanceOf(
 			CategoryExistsError
 		);
 
 		// Sin fugas entre familias: el mismo nombre en OTRA familia es válido.
-		const ajenaCat = await createCategory(ajena, { name: 'LACTEOS' });
-		expect(ajenaCat.name).toBe('LACTEOS');
+		const otherFamilyCategory = await createCategory(otherFamily, { name: 'LACTEOS' });
+		expect(otherFamilyCategory.name).toBe('LACTEOS');
 	});
 
 	it('listCategories devuelve solo las de la familia, en su orden', async () => {
-		const mia = await familyRow('Familia Ordenada');
-		const ajena = await familyRow('Familia Ajena');
+		const ownFamily = await familyRow('Familia Ordenada');
+		const otherFamily = await familyRow('Familia Ajena');
 
-		const lacteos = await createCategory(mia, CATEGORIA);
-		const congelados = await createCategory(mia, { name: 'Congelados' });
-		await createCategory(ajena, { name: 'Categoría secreta' });
+		const dairy = await createCategory(ownFamily, CATEGORY);
+		const frozen = await createCategory(ownFamily, { name: 'Congelados' });
+		await createCategory(otherFamily, { name: 'Categoría secreta' });
 
-		await reorderCategories(mia, [congelados.id, lacteos.id]);
+		await reorderCategories(ownFamily, [frozen.id, dairy.id]);
 
-		const categories = await listCategories(mia);
-		expect(categories.map((categoria) => categoria.id)).toEqual([congelados.id, lacteos.id]);
+		const categories = await listCategories(ownFamily);
+		expect(categories.map((category) => category.id)).toEqual([frozen.id, dairy.id]);
 		expect(categories[0]).toMatchObject({ name: 'Congelados', position: 0 });
 		expect(categories[1]).toMatchObject({ name: 'Lácteos', position: 1 });
 	});
 
 	it('updateCategory renombra la propia; una ajena o inexistente devuelve false', async () => {
-		const mia = await familyRow('Familia Editora');
-		const ajena = await familyRow('Familia Intacta');
-		const propia = await createCategory(mia, CATEGORIA);
-		const externa = await createCategory(ajena, CATEGORIA);
+		const ownFamily = await familyRow('Familia Editora');
+		const otherFamily = await familyRow('Familia Intacta');
+		const ownCategory = await createCategory(ownFamily, CATEGORY);
+		const externalFamily = await createCategory(otherFamily, CATEGORY);
 
-		expect(await updateCategory(mia, propia.id, { name: 'Lácteos y derivados' })).toBe(true);
-		expect(await prisma.category.findUniqueOrThrow({ where: { id: propia.id } })).toMatchObject({
+		expect(await updateCategory(ownFamily, ownCategory.id, { name: 'Lácteos y derivados' })).toBe(
+			true
+		);
+		expect(
+			await prisma.category.findUniqueOrThrow({ where: { id: ownCategory.id } })
+		).toMatchObject({
 			name: 'Lácteos y derivados',
 			normalizedName: 'lacteos y derivados'
 		});
 
 		// El id de una categoría de OTRA familia no se puede actualizar aunque
 		// se conozca: el filtro de familia activa lo hace inalcanzable.
-		expect(await updateCategory(mia, externa.id, { name: 'Vándalo' })).toBe(false);
-		expect((await prisma.category.findUniqueOrThrow({ where: { id: externa.id } })).name).toBe(
-			'Lácteos'
-		);
-		expect(await updateCategory(mia, randomUUID(), CATEGORIA)).toBe(false);
+		expect(await updateCategory(ownFamily, externalFamily.id, { name: 'Vándalo' })).toBe(false);
+		expect(
+			(await prisma.category.findUniqueOrThrow({ where: { id: externalFamily.id } })).name
+		).toBe('Lácteos');
+		expect(await updateCategory(ownFamily, randomUUID(), CATEGORY)).toBe(false);
 	});
 
 	it('updateCategory rechaza el renombrado a un duplicado; renombrar al mismo nombre no choca', async () => {
 		const familyId = await familyRow('Familia Renombradora');
-		const lacteos = await createCategory(familyId, CATEGORIA);
-		const congelados = await createCategory(familyId, { name: 'Congelados' });
+		const dairy = await createCategory(familyId, CATEGORY);
+		const frozen = await createCategory(familyId, { name: 'Congelados' });
 
-		await expect(
-			updateCategory(familyId, congelados.id, { name: 'lacteos' })
-		).rejects.toBeInstanceOf(CategoryExistsError);
-		// El rechazo no dejó una categoría a medias: congelados sigue intacta.
-		expect(await prisma.category.findUniqueOrThrow({ where: { id: congelados.id } })).toMatchObject(
-			{ name: 'Congelados' }
+		await expect(updateCategory(familyId, frozen.id, { name: 'lacteos' })).rejects.toBeInstanceOf(
+			CategoryExistsError
 		);
+		// El rechazo no dejó una categoría a medias: congelados sigue intacta.
+		expect(await prisma.category.findUniqueOrThrow({ where: { id: frozen.id } })).toMatchObject({
+			name: 'Congelados'
+		});
 
 		// Renombrar al MISMO nombre (con espacios que el trim quita) pasa por el
 		// único sin chocar consigo misma: Postgres ignora el update sin cambios.
-		expect(await updateCategory(familyId, lacteos.id, { name: ' Lácteos ' })).toBe(true);
+		expect(await updateCategory(familyId, dairy.id, { name: ' Lácteos ' })).toBe(true);
 	});
 
 	it('reorderCategories reescribe las posiciones según el orden pedido', async () => {
@@ -142,41 +146,41 @@ describe('CRUD de categorías por familia (#169)', () => {
 		await reorderCategories(familyId, [c.id, a.id, b.id]);
 
 		const categories = await listCategories(familyId);
-		expect(categories.map((categoria) => categoria.id)).toEqual([c.id, a.id, b.id]);
-		expect(categories.map((categoria) => categoria.position)).toEqual([0, 1, 2]);
+		expect(categories.map((category) => category.id)).toEqual([c.id, a.id, b.id]);
+		expect(categories.map((category) => category.position)).toEqual([0, 1, 2]);
 	});
 
 	it('reorderCategories ignora ids ajenos y conserva la posición de las que no vienen', async () => {
-		const mia = await familyRow('Familia Cautelosa');
-		const ajena = await familyRow('Familia Imperturbable');
-		const a = await createCategory(mia, { name: 'Lácteos' });
-		const b = await createCategory(mia, { name: 'Congelados' });
-		const externa = await createCategory(ajena, { name: 'Ajena' });
+		const ownFamily = await familyRow('Familia Cautelosa');
+		const otherFamily = await familyRow('Familia Imperturbable');
+		const a = await createCategory(ownFamily, { name: 'Lácteos' });
+		const b = await createCategory(ownFamily, { name: 'Congelados' });
+		const externalFamily = await createCategory(otherFamily, { name: 'Ajena' });
 
 		// Orden parcial: solo menciono «a» y un id AJENO. «b» no viene: conserva
 		// su posición; la ajena no se toca aunque su id viaje en el array.
-		await reorderCategories(mia, [b.id, externa.id, a.id, externa.id]);
+		await reorderCategories(ownFamily, [b.id, externalFamily.id, a.id, externalFamily.id]);
 
-		expect(await listCategories(mia)).toEqual([
+		expect(await listCategories(ownFamily)).toEqual([
 			{ id: b.id, name: 'Congelados', position: 0 },
 			{ id: a.id, name: 'Lácteos', position: 1 }
 		]);
-		expect((await prisma.category.findUniqueOrThrow({ where: { id: externa.id } })).position).toBe(
-			0
-		);
+		expect(
+			(await prisma.category.findUniqueOrThrow({ where: { id: externalFamily.id } })).position
+		).toBe(0);
 	});
 
 	it('deleteCategory borra solo la propia; items y productos quedan sin categoría (SetNull)', async () => {
-		const mia = await familyRow('Familia Destructora');
-		const ajena = await familyRow('Familia Superviviente');
-		const propia = await createCategory(mia, CATEGORIA);
-		const externa = await createCategory(ajena, CATEGORIA);
+		const ownFamily = await familyRow('Familia Destructora');
+		const otherFamily = await familyRow('Familia Superviviente');
+		const ownCategory = await createCategory(ownFamily, CATEGORY);
+		const externalFamily = await createCategory(otherFamily, CATEGORY);
 
 		// Escenario con las tres FKs de la épica #164 apuntando a la categoría:
 		// item de lista, producto de despensa y snapshot del historial.
 		const list = await prisma.list.create({
 			data: {
-				organizationId: mia,
+				organizationId: ownFamily,
 				name: 'Compra semanal',
 				color: 'yellow',
 				icon: 'shopping-basket'
@@ -189,22 +193,22 @@ describe('CRUD de categorías por familia (#169)', () => {
 				quantity: 4,
 				unit: 'unit',
 				order: 0,
-				categoryId: propia.id
+				categoryId: ownCategory.id
 			}
 		});
-		const producto = await prisma.pantryItem.create({
+		const product = await prisma.pantryItem.create({
 			data: {
-				organizationId: mia,
+				organizationId: ownFamily,
 				name: 'Yogur',
 				normalizedName: 'yogur',
 				quantity: 4,
 				unit: 'unit',
-				categoryId: propia.id
+				categoryId: ownCategory.id
 			}
 		});
-		const compra = await prisma.purchaseRecord.create({
+		const purchase = await prisma.purchaseRecord.create({
 			data: {
-				organizationId: mia,
+				organizationId: ownFamily,
 				listName: 'Compra semanal',
 				total: 10.5,
 				items: {
@@ -213,7 +217,7 @@ describe('CRUD de categorías por familia (#169)', () => {
 						name: 'Yogur',
 						quantity: 4,
 						unit: 'unit',
-						categoryId: propia.id,
+						categoryId: ownCategory.id,
 						categoryName: 'Lácteos'
 					}
 				}
@@ -221,24 +225,22 @@ describe('CRUD de categorías por familia (#169)', () => {
 		});
 
 		// La ajena no se puede borrar aunque se conozca su id…
-		expect(await deleteCategory(mia, externa.id)).toBe(false);
-		expect(await prisma.category.findUnique({ where: { id: externa.id } })).not.toBeNull();
-		expect(await deleteCategory(mia, randomUUID())).toBe(false);
+		expect(await deleteCategory(ownFamily, externalFamily.id)).toBe(false);
+		expect(await prisma.category.findUnique({ where: { id: externalFamily.id } })).not.toBeNull();
+		expect(await deleteCategory(ownFamily, randomUUID())).toBe(false);
 
 		// …y la propia sí: los rows sobreviven SIN categoría y el historial
 		// conserva el nombre snapshot (el detalle nunca muestra un hueco).
-		expect(await deleteCategory(mia, propia.id)).toBe(true);
-		expect(await prisma.category.findUnique({ where: { id: propia.id } })).toBeNull();
+		expect(await deleteCategory(ownFamily, ownCategory.id)).toBe(true);
+		expect(await prisma.category.findUnique({ where: { id: ownCategory.id } })).toBeNull();
 		expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
 			categoryId: null
 		});
-		expect(await prisma.pantryItem.findUniqueOrThrow({ where: { id: producto.id } })).toMatchObject(
-			{
-				categoryId: null
-			}
-		);
+		expect(await prisma.pantryItem.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
+			categoryId: null
+		});
 		const snapshot = await prisma.purchaseItem.findFirstOrThrow({
-			where: { purchaseRecordId: compra.id }
+			where: { purchaseRecordId: purchase.id }
 		});
 		expect(snapshot.categoryId).toBeNull();
 		expect(snapshot.categoryName).toBe('Lácteos');
@@ -246,7 +248,7 @@ describe('CRUD de categorías por familia (#169)', () => {
 
 	it('borrar la familia se lleva sus categorías (FK en cascada)', async () => {
 		const familyId = await familyRow('Familia Evanescente');
-		await createCategory(familyId, CATEGORIA);
+		await createCategory(familyId, CATEGORY);
 		await createCategory(familyId, { name: 'Congelados' });
 
 		await prisma.organization.delete({ where: { id: familyId } });

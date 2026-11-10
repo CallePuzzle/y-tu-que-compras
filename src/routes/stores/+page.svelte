@@ -20,20 +20,20 @@
 
 	// Modal compartida de crear/editar (un solo formulario, como en /categories):
 	// `undefined` = crear, una fila = editar.
-	let establecimientoEditado: StoreRow | undefined = $state();
+	let editedStore: StoreRow | undefined = $state();
 	// Modal de borrado: el establecimiento elegido por su botón.
-	let establecimientoBorrado: StoreRow | undefined = $state();
+	let deletedStore: StoreRow | undefined = $state();
 
 	// Referencia al `Modal` para abrirlo por código (showButton={false}) y
 	// cerrarlo cuando la operación sale bien (el componente exporta `showModal`
 	// y `close`).
-	let establecimientosModal: { showModal(): void; close(): void } | undefined = $state();
+	let storesModal: { showModal(): void; close(): void } | undefined = $state();
 
 	// Aviso de éxito FUERA de los modales; el de error se enseña dentro, junto
 	// al formulario, con `$message` (crear/editar) o en el `ConfirmModal`
 	// (borrar). El de la acción sin formulario propio (borrar sin JS) llega
 	// como `actionData.error`.
-	let exito: string | null = $state(null);
+	let successMessage: string | null = $state(null);
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
 	// la librería). Ojo: `superForm` no soporta cambiar el schema, así que se lee
@@ -57,45 +57,45 @@
 				// El texto concreto (creado vs. actualizado) lo decide la acción y
 				// viaja en el resultado (`message()`), como en /categories.
 				const data = result.data as { form?: { message?: string } } | undefined;
-				exito = data?.form?.message ?? null;
+				successMessage = data?.form?.message ?? null;
 				// Sin `invalidateAll()` a mano: superforms ya revalida el load
 				// (`invalidateAll: true` por defecto) y otro más era un 2.º load.
-				establecimientosModal?.close();
+				storesModal?.close();
 			} else if (result.type === 'failure') {
-				exito = null;
+				successMessage = null;
 			}
 		}
 	});
 	const { form: formData, enhance, delayed, message, errors } = form;
 
 	/** Abre el modal en modo edición, con el nombre del establecimiento cargado. */
-	function abrirEdicion(establecimiento: StoreRow) {
-		establecimientoEditado = establecimiento;
-		exito = null;
+	function openEdit(store: StoreRow) {
+		editedStore = store;
+		successMessage = null;
 		message.set(undefined);
 		errors.clear();
 		// El schema es el mismo para crear y editar: los campos coinciden.
-		formData.set({ name: establecimiento.name } as StoreData);
-		establecimientosModal?.showModal();
+		formData.set({ name: store.name } as StoreData);
+		storesModal?.showModal();
 	}
 
 	/** Abre el modal en modo creación: vacío, sin rastro de la edición anterior. */
-	function abrirCreacion() {
-		establecimientoEditado = undefined;
-		exito = null;
+	function openCreate() {
+		editedStore = undefined;
+		successMessage = null;
 		message.set(undefined);
 		errors.clear();
 		form.reset();
-		establecimientosModal?.showModal();
+		storesModal?.showModal();
 	}
 
 	// Borrar con confirmación: un `ConfirmModal` compartido; cada botón de la
 	// fila fija qué establecimiento se borra antes de abrirlo.
-	let borrarModal: ConfirmModal | undefined = $state();
+	let deleteModal: ConfirmModal | undefined = $state();
 
-	function abrirBorrado(establecimiento: StoreRow) {
-		establecimientoBorrado = establecimiento;
-		borrarModal?.showModal();
+	function openDelete(store: StoreRow) {
+		deletedStore = store;
+		deleteModal?.showModal();
 	}
 
 	// Refresco al volver a la pestaña: nombres los mueven las gestiones de
@@ -110,7 +110,7 @@
 <section class="mx-auto max-w-md">
 	<div class="flex items-center justify-between gap-2">
 		<h1 class="text-2xl font-bold">{m.stores_title()}</h1>
-		<button type="button" class="btn btn-primary btn-sm" onclick={() => abrirCreacion()}>
+		<button type="button" class="btn btn-primary btn-sm" onclick={() => openCreate()}>
 			<Plus aria-hidden="true" />
 			{m.stores_create()}
 		</button>
@@ -123,9 +123,9 @@
 		</div>
 	{/if}
 
-	{#if exito}
+	{#if successMessage}
 		<div class="alert alert-success mt-4 text-sm" role="status">
-			{exito}
+			{successMessage}
 		</div>
 	{/if}
 
@@ -134,7 +134,7 @@
 		<div class="mt-8 flex flex-col items-center gap-3 text-center">
 			<Store aria-hidden="true" class="size-10 opacity-40" />
 			<p class="opacity-70">{m.stores_empty()}</p>
-			<button type="button" class="btn btn-primary" onclick={() => abrirCreacion()}>
+			<button type="button" class="btn btn-primary" onclick={() => openCreate()}>
 				<Plus aria-hidden="true" />
 				{m.stores_create()}
 			</button>
@@ -143,15 +143,15 @@
 		<!-- Sin orden manual: la vista los muestra por orden de creación, como
 		     las listas (capa #182). -->
 		<ul class="mt-4 flex flex-col gap-2">
-			{#each data.stores as establecimiento (establecimiento.id)}
+			{#each data.stores as store (store.id)}
 				<li class="bg-base-200 rounded-box flex items-center gap-1 px-3 py-2">
-					<span class="min-w-0 flex-1 truncate font-medium">{establecimiento.name}</span>
+					<span class="min-w-0 flex-1 truncate font-medium">{store.name}</span>
 					<span class="flex items-center gap-1">
 						<button
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.stores_edit()}
-							onclick={() => abrirEdicion(establecimiento)}
+							onclick={() => openEdit(store)}
 						>
 							<Pencil aria-hidden="true" />
 							<span class="sr-only">{m.stores_edit()}</span>
@@ -160,7 +160,7 @@
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.stores_delete()}
-							onclick={() => abrirBorrado(establecimiento)}
+							onclick={() => openDelete(store)}
 						>
 							<Trash2 aria-hidden="true" />
 							<span class="sr-only">{m.stores_delete()}</span>
@@ -175,25 +175,25 @@
 <!-- Crear/editar: una modal compartida; el título, la acción del formulario
      y los datos cargados dependen del modo. -->
 <Modal
-	bind:this={establecimientosModal}
+	bind:this={storesModal}
 	type="X"
 	showButton={false}
 	boxClass="modal-box max-w-md"
 	strings={{ close: m.ui_close() }}
 >
 	<h2 class="text-lg font-bold">
-		{establecimientoEditado ? m.stores_edit() : m.stores_create()}
+		{editedStore ? m.stores_edit() : m.stores_create()}
 	</h2>
 
 	<form
 		method="POST"
-		action={establecimientoEditado ? '?/update' : '?/create'}
+		action={editedStore ? '?/update' : '?/create'}
 		use:enhance
 		class="mt-4 flex flex-col gap-4"
 	>
 		<!-- El id del establecimiento editado viaja con el formulario; crear no lo lleva. -->
-		{#if establecimientoEditado}
-			<input type="hidden" name="storeId" value={establecimientoEditado.id} />
+		{#if editedStore}
+			<input type="hidden" name="storeId" value={editedStore.id} />
 		{/if}
 
 		<FormFields
@@ -213,7 +213,7 @@
 			{#if $delayed}
 				<span class="loading loading-spinner"></span>
 			{/if}
-			{establecimientoEditado ? m.stores_save() : m.stores_create()}
+			{editedStore ? m.stores_save() : m.stores_create()}
 		</button>
 	</form>
 </Modal>
@@ -221,12 +221,12 @@
 <!-- Borrar: una modal compartida; cada botón de la fila fija a qué establecimiento
      se borra antes de abrirla. -->
 <ConfirmModal
-	bind:this={borrarModal}
-	title={m.stores_delete_title({ name: establecimientoBorrado?.name ?? '' })}
+	bind:this={deleteModal}
+	title={m.stores_delete_title({ name: deletedStore?.name ?? '' })}
 	description={m.stores_delete_description()}
 	confirmLabel={m.stores_delete_confirm()}
 	action="?/delete"
-	fields={{ storeId: establecimientoBorrado?.id ?? '' }}
+	fields={{ storeId: deletedStore?.id ?? '' }}
 	errorFallback={m.stores_error()}
-	onSuccess={() => (exito = m.stores_deleted())}
+	onSuccess={() => (successMessage = m.stores_deleted())}
 />

@@ -19,15 +19,15 @@ test.beforeEach(async () => {
 });
 
 /** Nada desborda el ancho del viewport: sin scroll horizontal en ninguna vista. */
-async function expectSinDesborde(page: Page): Promise<void> {
-	const ancho = await page.evaluate(() => ({
+async function expectNoOverflow(page: Page): Promise<void> {
+	const width = await page.evaluate(() => ({
 		scroll: document.documentElement.scrollWidth,
 		client: document.documentElement.clientWidth
 	}));
 	expect(
-		ancho.scroll,
-		`scrollWidth (${ancho.scroll}px) supera el viewport (${ancho.client}px)`
-	).toBeLessThanOrEqual(ancho.client);
+		width.scroll,
+		`scrollWidth (${width.scroll}px) supera el viewport (${width.client}px)`
+	).toBeLessThanOrEqual(width.client);
 }
 
 test('el dock navega las rutas principales y ninguna vista desborda el ancho', async ({ page }) => {
@@ -35,8 +35,8 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 	// necesita determinista.
 	const user = await createUser({ name: 'Navegante' });
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', quantity: 2, unit: 'liter' });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', quantity: 2, unit: 'liter' });
 	await seedSession(page, user);
 
 	await page.goto('/');
@@ -52,16 +52,16 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 	// Con sesión el dock se queda con cuatro rutas (#162): se llega por él, la
 	// cabecera pinta la vista y nada desborda el ancho del teléfono. La del
 	// home es el saludo (#161), en inglés por la locale del dispositivo.
-	const rutas = [
-		{ enlace: 'Home', cabecera: 'Hi, Navegante' },
-		{ enlace: 'Lists', cabecera: 'Your lists' },
-		{ enlace: 'Pantry', cabecera: 'Your pantry' },
-		{ enlace: 'Families', cabecera: 'Your families' }
+	const routes = [
+		{ link: 'Home', header: 'Hi, Navegante' },
+		{ link: 'Lists', header: 'Your lists' },
+		{ link: 'Pantry', header: 'Your pantry' },
+		{ link: 'Families', header: 'Your families' }
 	];
-	for (const ruta of rutas) {
-		await dock.getByRole('link', { name: ruta.enlace }).click();
-		await expect(page.getByRole('heading', { name: ruta.cabecera })).toBeVisible();
-		await expectSinDesborde(page);
+	for (const route of routes) {
+		await dock.getByRole('link', { name: route.link }).click();
+		await expect(page.getByRole('heading', { name: route.header })).toBeVisible();
+		await expectNoOverflow(page);
 	}
 
 	// El historial sale del dock (#162): ningún enlace en la barra inferior;
@@ -69,11 +69,11 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 	// menú de escritorio, que no filtra por `showInMobile`).
 	await expect(dock.getByRole('link', { name: 'History' })).toHaveCount(0);
 	await page.locator('.navbar label[for]').click();
-	const cajon = page.locator('.drawer-side');
-	await expect(cajon).toBeVisible();
-	await cajon.getByRole('link', { name: 'History' }).click();
+	const drawer = page.locator('.drawer-side');
+	await expect(drawer).toBeVisible();
+	await drawer.getByRole('link', { name: 'History' }).click();
 	await expect(page.getByRole('heading', { name: 'Purchase history' })).toBeVisible();
-	await expectSinDesborde(page);
+	await expectNoOverflow(page);
 });
 
 test('el cajón lateral abre con la hamburguesa y cierra tocando fuera', async ({ page }) => {
@@ -137,18 +137,18 @@ test('el tour esconde el cajón lateral mientras su diálogo está en pantalla (
 	// la carrera hidratación vs. import dinámico. La respuesta se descarga YA
 	// (fetch) y se entrega luego (fulfill): mientras se retiene, el import del
 	// tour queda en pausa sin mantener la red ocupada.
-	let chunkSolicitado = false;
+	let requestedChunk = false;
 	// El executor corre síncrono: al salir de `new Promise` el resolver está
 	// asignado (el `!` se lo dice al compilador, que no sigue closures).
-	let liberarChunk!: () => void;
-	const chunkRetenido = new Promise<void>((resolve) => {
-		liberarChunk = resolve;
+	let releaseChunk!: () => void;
+	const heldChunk = new Promise<void>((resolve) => {
+		releaseChunk = resolve;
 	});
 	await page.route('**/*tourguide*', async (route) => {
-		const respuesta = await route.fetch();
-		chunkSolicitado = true;
-		await chunkRetenido;
-		await route.fulfill({ response: respuesta });
+		const response = await route.fetch();
+		requestedChunk = true;
+		await heldChunk;
+		await route.fulfill({ response: response });
 	});
 
 	await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -156,7 +156,7 @@ test('el tour esconde el cajón lateral mientras su diálogo está en pantalla (
 	// Hidratación confirmada POR la petición retenida: el efecto de la portada
 	// ya pidió el chunk del tour —sin hydration no hay `$effect`— y el chunk
 	// sigue retenido, así que el diálogo no ha podido aparecer.
-	await expect.poll(() => chunkSolicitado, { timeout: 10_000 }).toBe(true);
+	await expect.poll(() => requestedChunk, { timeout: 10_000 }).toBe(true);
 
 	// El cajón abre sin prisa: nada lo tapa porque el chunk sigue retenido
 	// (el toggle es el label del checkbox del Drawer; ver el test de la
@@ -169,7 +169,7 @@ test('el tour esconde el cajón lateral mientras su diálogo está en pantalla (
 	// lo cierra por estado (`bind:open`) en cuanto el tour se ve, y el
 	// checkbox —con su CSS— esconde el panel. Sin el cierre por estado, el
 	// panel se quedaría encima del tour.
-	liberarChunk();
+	releaseChunk();
 	const tour = page.locator('.tg-dialog');
 	await expect(tour).toBeVisible();
 	await expect(page.locator('input.drawer-toggle')).not.toBeChecked();
@@ -185,21 +185,21 @@ test('los modales caben en la pantalla: crear lista desde el móvil', async ({ p
 	await waitForHydration(page);
 
 	await page.getByRole('button', { name: 'New list' }).first().click();
-	const dialogo = page.locator('dialog[open]');
-	await expect(dialogo).toBeVisible();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog).toBeVisible();
 
 	// El modal-box (max-w-md con los márgenes de daisyUI) entra entero en el
 	// viewport del teléfono: es el «adaptado a pantalla pequeña» de la checklist.
-	const caja = await dialogo.locator('.modal-box').boundingBox();
-	expect(caja).not.toBeNull();
-	expect(caja!.x).toBeGreaterThanOrEqual(0);
-	expect(caja!.x + caja!.width).toBeLessThanOrEqual(
+	const box = await dialog.locator('.modal-box').boundingBox();
+	expect(box).not.toBeNull();
+	expect(box!.x).toBeGreaterThanOrEqual(0);
+	expect(box!.x + box!.width).toBeLessThanOrEqual(
 		(await page.evaluate(() => document.documentElement.clientWidth)) + 1
 	);
 
 	// Y el flujo completo funciona con el teclado táctil: crear y ver el toast.
-	await dialogo.locator('input[name="name"]').fill('Frutería');
-	await dialogo.getByRole('button', { name: 'New list' }).click();
+	await dialog.locator('input[name="name"]').fill('Frutería');
+	await dialog.getByRole('button', { name: 'New list' }).click();
 	await expect(page.getByRole('status')).toContainText('List created: it now shows in the view.');
 });
 
@@ -228,7 +228,7 @@ test('el idioma inicial sale de Accept-Language, el selector lo cambia y persist
 	await expect(page.getByRole('heading', { name: 'Hola, Navegante' })).toBeVisible();
 	const dock = page.getByRole('navigation', { name: 'Navegación inferior' });
 	await expect(dock).toBeVisible();
-	await expectSinDesborde(page);
+	await expectNoOverflow(page);
 
 	// La cookie persiste: otra recarga sigue en español.
 	await page.reload();

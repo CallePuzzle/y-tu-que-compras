@@ -52,23 +52,23 @@ export const load: PageServerLoad = async (event) => {
 	const locale = getLocale();
 
 	return {
-		groups: groups.map((grupo) => ({
-			key: grupo.key,
-			storeName: grupo.storeName,
-			purchases: grupo.purchases.map((compra) => ({
-				id: compra.id,
-				listName: compra.listName,
-				date: formatDateTime(compra.createdAt, locale),
-				total: formatPrice(compra.total, locale)
+		groups: groups.map((group) => ({
+			key: group.key,
+			storeName: group.storeName,
+			purchases: group.purchases.map((purchase) => ({
+				id: purchase.id,
+				listName: purchase.listName,
+				date: formatDateTime(purchase.createdAt, locale),
+				total: formatPrice(purchase.total, locale)
 			})),
 			// El offset servido vuelve al cliente: alimenta los inputs ocultos
 			// de los «Cargar más» de las OTRAS secciones, para que cargar una
 			// no reinicie las páginas de las demás (#187).
-			offset: grupo.offset,
-			hasMore: grupo.hasMore,
+			offset: group.offset,
+			hasMore: group.hasMore,
 			// El próximo «Cargar más» de la sección pide todo hasta aquí + una
 			// página más (#76).
-			nextOffset: grupo.hasMore ? grupo.offset + PURCHASES_PAGE_SIZE : null
+			nextOffset: group.hasMore ? group.offset + PURCHASES_PAGE_SIZE : null
 		}))
 	};
 };

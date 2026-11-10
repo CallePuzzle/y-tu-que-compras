@@ -73,10 +73,10 @@ export type TourContext = {
  * `exampleListId` queda undefined y esos pasos se muestran centrados.
  */
 export function buildTourContext(lists: MinimalListRow[]): TourContext {
-	const ejemplo = lists.find((lista) => lista.pendingCount < lista.itemCount) ?? lists[0];
+	const example = lists.find((list) => list.pendingCount < list.itemCount) ?? lists[0];
 	return {
-		exampleListId: ejemplo?.id,
-		hasPurchasedItems: ejemplo ? ejemplo.pendingCount < ejemplo.itemCount : false
+		exampleListId: example?.id,
+		hasPurchasedItems: example ? example.pendingCount < example.itemCount : false
 	};
 }
 

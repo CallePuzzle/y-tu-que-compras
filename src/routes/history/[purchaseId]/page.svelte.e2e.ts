@@ -18,7 +18,7 @@ test('muestra el detalle con lista de origen, establecimiento, fecha, total e it
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
-	const compra = await createPurchaseRecord({
+	const purchase = await createPurchaseRecord({
 		familyId: family.id,
 		listName: 'Compra semanal',
 		storeId: mercadona.id,
@@ -33,7 +33,7 @@ test('muestra el detalle con lista de origen, establecimiento, fecha, total e it
 	});
 	await seedSession(page, user);
 
-	await page.goto(`/history/${compra.id}`);
+	await page.goto(`/history/${purchase.id}`);
 	await waitForHydration(page);
 
 	await expect(page.getByRole('heading', { name: 'Compra semanal', level: 1 })).toBeVisible();
@@ -66,7 +66,7 @@ test('el establecimiento del snapshot se muestra aunque el establecimiento esté
 	const family = await createFamily({ owner: user });
 	// Post-borrado: la FK quedó a null (SetNull) pero el nombre congelado
 	// sobrevive en el snapshot; el ticket lo muestra igual.
-	const compra = await createPurchaseRecord({
+	const purchase = await createPurchaseRecord({
 		familyId: family.id,
 		listName: 'Compra superviviente',
 		storeName: 'Mercadona',
@@ -74,7 +74,7 @@ test('el establecimiento del snapshot se muestra aunque el establecimiento esté
 	});
 	await seedSession(page, user);
 
-	await page.goto(`/history/${compra.id}`);
+	await page.goto(`/history/${purchase.id}`);
 	await waitForHydration(page);
 
 	await expect(page.getByRole('heading', { name: 'Compra superviviente', level: 1 })).toBeVisible();
@@ -84,14 +84,14 @@ test('el establecimiento del snapshot se muestra aunque el establecimiento esté
 test('el enlace de vuelta vuelve al listado', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const compra = await createPurchaseRecord({
+	const purchase = await createPurchaseRecord({
 		familyId: family.id,
 		listName: 'Compra semanal',
 		total: 5
 	});
 	await seedSession(page, user);
 
-	await page.goto(`/history/${compra.id}`);
+	await page.goto(`/history/${purchase.id}`);
 	await waitForHydration(page);
 	await page.getByRole('link', { name: 'Atrás' }).click();
 	await expect(page).toHaveURL(/\/history$/);
@@ -100,16 +100,16 @@ test('el enlace de vuelta vuelve al listado', async ({ page }) => {
 test('una compra ajena o inexistente manda de vuelta al listado', async ({ page }) => {
 	const user = await createUser();
 	await createFamily({ name: 'Familia Mía', owner: user });
-	const otro = await createUser();
-	const ajena = await createFamily({ name: 'Familia Ajena', owner: otro });
-	const compra = await createPurchaseRecord({
-		familyId: ajena.id,
+	const other = await createUser();
+	const otherFamily = await createFamily({ name: 'Familia Ajena', owner: other });
+	const purchase = await createPurchaseRecord({
+		familyId: otherFamily.id,
 		listName: 'Caviar ajeno',
 		total: 99
 	});
 	await seedSession(page, user);
 
-	await page.goto(`/history/${compra.id}`);
+	await page.goto(`/history/${purchase.id}`);
 	await expect(page).toHaveURL(/\/history$/);
 	await expect(page.getByText('Caviar ajeno')).toHaveCount(0);
 

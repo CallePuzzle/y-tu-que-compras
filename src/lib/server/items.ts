@@ -109,19 +109,18 @@ export async function createItem(
 		// borrado): sin revelar si vive en otra familia. El `order` lo
 		// calcula el SERVIDOR (el schema no trae default: «nadie inserta sin
 		// decir dónde»).
-		const list = await tx.$queryRaw<Array<{ id: string }>>`
+		const lockedList = await tx.$queryRaw<Array<{ id: string }>>`
 			SELECT "id"
 			FROM "list"
 			WHERE "id" = ${listId} AND "organizationId" = ${familyId}
 			FOR UPDATE
 		`;
-		if (list.length === 0) {
+		if (lockedList.length === 0) {
 			return null;
 		}
-		const listaId = list[0].id;
 
 		const { _max } = await tx.item.aggregate({
-			where: { listId: listaId },
+			where: { listId: lockedList[0].id },
 			_max: { order: true }
 		});
 
@@ -131,7 +130,7 @@ export async function createItem(
 
 		const row = await tx.item.create({
 			data: {
-				listId: listaId,
+				listId: lockedList[0].id,
 				name: data.name,
 				quantity: data.quantity,
 				unit: data.unit,

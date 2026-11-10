@@ -109,20 +109,20 @@ export async function adjustPantryItem(
 			// Devolver un paso (+): el botón que corrige un − equivocado, y el
 			// que reponer desde agotado. Los incrementos conmutan, aquí no hay
 			// carrera que temer.
-			const subida = await tx.pantryItem.updateMany({
+			const movedUp = await tx.pantryItem.updateMany({
 				where: { id, organizationId: familyId },
 				data: { quantity: { increment: step } }
 			});
-			return subida.count > 0;
+			return movedUp.count > 0;
 		}
 
 		// Consumir (−): `updateMany` no lanza si otro miembro borró la fila
 		// entre el `findFirst` y aquí — devuelve 0 y es el mismo «ya no está».
-		const bajada = await tx.pantryItem.updateMany({
+		const movedDown = await tx.pantryItem.updateMany({
 			where: { id, organizationId: familyId },
 			data: { quantity: { decrement: step } }
 		});
-		if (bajada.count === 0) {
+		if (movedDown.count === 0) {
 			return false;
 		}
 
@@ -147,10 +147,10 @@ export async function adjustPantryItem(
  * es «no existe») y `false` si no había nada que borrar.
  */
 export async function removePantryItem(familyId: string, id: string): Promise<boolean> {
-	const borrado = await prisma.pantryItem.deleteMany({
+	const deleted = await prisma.pantryItem.deleteMany({
 		where: { id, organizationId: familyId }
 	});
-	return borrado.count > 0;
+	return deleted.count > 0;
 }
 
 /** Cómo acabó un cambio de categoría de un producto de despensa (#176). */
@@ -182,20 +182,20 @@ export async function setPantryItemCategory(
 	categoryId: string | null
 ): Promise<SetCategoryOutcome> {
 	return prisma.$transaction(async (tx) => {
-		const producto = await tx.pantryItem.findFirst({
+		const product = await tx.pantryItem.findFirst({
 			where: { id, organizationId: familyId },
 			select: { id: true }
 		});
-		if (!producto) {
+		if (!product) {
 			return 'pantry-gone';
 		}
 
 		if (categoryId !== null) {
-			const categoria = await tx.category.findFirst({
+			const category = await tx.category.findFirst({
 				where: { id: categoryId, organizationId: familyId },
 				select: { id: true }
 			});
-			if (!categoria) {
+			if (!category) {
 				return 'category-gone';
 			}
 		}
@@ -242,61 +242,61 @@ export async function readdPantryItem(
 		// items — el segundo ve lo que el primero acaba de crear y suma.
 		// Lista inexistente o ajena: id rancio o de otra familia — «no existe»
 		// en ambos casos, como en `finalizePurchase`.
-		const lista = await tx.$queryRaw<Array<{ id: string }>>`
+		const list = await tx.$queryRaw<Array<{ id: string }>>`
 			SELECT "id"
 			FROM "list"
 			WHERE "id" = ${data.listId} AND "organizationId" = ${familyId}
 			FOR UPDATE
 		`;
-		if (lista.length === 0) {
+		if (list.length === 0) {
 			return 'list-gone';
 		}
-		const listaId = lista[0].id;
+		const listId = list[0].id;
 
 		// Producto ajeno o ya consumido por otro miembro mientras se abría el
 		// modal: «no existe», sin revelar si vive en otra familia.
-		const producto = await tx.pantryItem.findFirst({
+		const product = await tx.pantryItem.findFirst({
 			where: { id: pantryItemId, organizationId: familyId },
 			select: { id: true, name: true, normalizedName: true, unit: true }
 		});
-		if (!producto) {
+		if (!product) {
 			return 'pantry-gone';
 		}
 
 		// ¿Hay pendiente equivalente? Mismo nombre normalizado (los acentos y
 		// las mayúsculas no hacen al producto) y misma unidad — la unidad va
 		// en el `where` y el nombre se compara canónico a canónico.
-		const pendientes = await tx.item.findMany({
-			where: { listId: listaId, purchased: false, unit: producto.unit },
+		const pending = await tx.item.findMany({
+			where: { listId: listId, purchased: false, unit: product.unit },
 			select: { id: true, name: true }
 		});
-		const equivalente = pendientes.find(
-			(row) => normalizeItemName(row.name) === producto.normalizedName
+		const equivalentItem = pending.find(
+			(row) => normalizeItemName(row.name) === product.normalizedName
 		);
 
 		// La suma lleva `purchased: false` en el `where`: si otro miembro
 		// marcó el equivalente como comprado mientras tanto, no se toca y se
 		// crea un item nuevo (count 0).
-		const suma = equivalente
+		const total = equivalentItem
 			? await tx.item.updateMany({
-					where: { id: equivalente.id, purchased: false },
+					where: { id: equivalentItem.id, purchased: false },
 					data: { quantity: { increment: data.quantity } }
 				})
 			: { count: 0 };
 
-		if (suma.count === 0) {
+		if (total.count === 0) {
 			// El `order` lo calcula el SERVIDOR, como en `createItem`: al final
 			// de la lista.
 			const { _max } = await tx.item.aggregate({
-				where: { listId: listaId },
+				where: { listId: listId },
 				_max: { order: true }
 			});
 			await tx.item.create({
 				data: {
-					listId: listaId,
-					name: producto.name,
+					listId: listId,
+					name: product.name,
 					quantity: data.quantity,
-					unit: producto.unit,
+					unit: product.unit,
 					order: (_max.order ?? -1) + 1
 				}
 			});

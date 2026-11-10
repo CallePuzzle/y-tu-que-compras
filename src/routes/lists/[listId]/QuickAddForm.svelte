@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
 	import { normalizeItemName } from '#lib/normalize-name.js';
-	import { textoError } from '#lib/forms.js';
+	import { errorMessage } from '#lib/forms.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS } from '#lib/schemas/item.js';
 	import { unitLabels } from '#lib/units.js';
@@ -53,20 +53,20 @@
 	// SIN bloquear la edición manual, así que la sugerencia solo rellena un
 	// select vacío o sustituye a OTRA sugerencia (nunca lo elegido a mano),
 	// y el nombre dejando de casar retira la sugerencia anterior.
-	let sugerida = $state(false);
+	let suggested = $state(false);
 
 	/** Cada tecla en el nombre: aplica o retira la sugerencia, sin pisar lo manual. */
-	function alTeclearNombre() {
-		const sugerencia = suggestions[normalizeItemName($formData.name)];
-		if (sugerencia && (sugerida || !$formData.categoryId)) {
-			$formData.categoryId = sugerencia;
-			sugerida = true;
-		} else if (!sugerencia && sugerida) {
+	function onNameInput() {
+		const suggestion = suggestions[normalizeItemName($formData.name)];
+		if (suggestion && (suggested || !$formData.categoryId)) {
+			$formData.categoryId = suggestion;
+			suggested = true;
+		} else if (!suggestion && suggested) {
 			// El nombre dejó de casar (se vació o cambió a uno desconocido): la
 			// categoría sugerida ya no responde a lo escrito y se retira. La
 			// elegida a mano se queda: no la puso la sugerencia.
 			$formData.categoryId = '';
-			sugerida = false;
+			suggested = false;
 		}
 	}
 
@@ -80,7 +80,7 @@
 			// El alta en limpio resetea el formulario (resetForm): la marca de
 			// sugerencia tampoco sobrevive — el siguiente nombre empieza de cero.
 			if (result.type === 'success') {
-				sugerida = false;
+				suggested = false;
 			}
 		}
 	});
@@ -105,8 +105,8 @@
 		<input
 			bind:this={nameInput}
 			bind:value={$formData.name}
-			oninput={alTeclearNombre}
-			aria-invalid={textoError($errors.name) ? 'true' : undefined}
+			oninput={onNameInput}
+			aria-invalid={errorMessage($errors.name) ? 'true' : undefined}
 			id="add-name"
 			name="name"
 			type="text"
@@ -115,8 +115,8 @@
 			required
 			maxlength="100"
 		/>
-		{#if textoError($errors.name)}
-			<p class="fieldset-label text-error" role="alert">{textoError($errors.name)}</p>
+		{#if errorMessage($errors.name)}
+			<p class="fieldset-label text-error" role="alert">{errorMessage($errors.name)}</p>
 		{/if}
 	</div>
 
@@ -127,7 +127,7 @@
 			<label class="fieldset-label" for="add-quantity">{m.schema_items_quantity_label()}</label>
 			<input
 				bind:value={$formData.quantity}
-				aria-invalid={textoError($errors.quantity) ? 'true' : undefined}
+				aria-invalid={errorMessage($errors.quantity) ? 'true' : undefined}
 				id="add-quantity"
 				name="quantity"
 				type="number"
@@ -136,8 +136,8 @@
 				inputmode="decimal"
 				required
 			/>
-			{#if textoError($errors.quantity)}
-				<p class="fieldset-label text-error" role="alert">{textoError($errors.quantity)}</p>
+			{#if errorMessage($errors.quantity)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.quantity)}</p>
 			{/if}
 		</div>
 
@@ -147,7 +147,7 @@
 			     UNITS con sus etiquetas traducidas. -->
 			<select
 				bind:value={$formData.unit}
-				aria-invalid={textoError($errors.unit) ? 'true' : undefined}
+				aria-invalid={errorMessage($errors.unit) ? 'true' : undefined}
 				id="add-unit"
 				name="unit"
 				class="select w-28"
@@ -157,8 +157,8 @@
 					<option value={unit}>{UNIT_LABEL[unit]}</option>
 				{/each}
 			</select>
-			{#if textoError($errors.unit)}
-				<p class="fieldset-label text-error" role="alert">{textoError($errors.unit)}</p>
+			{#if errorMessage($errors.unit)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.unit)}</p>
 			{/if}
 		</div>
 
@@ -182,14 +182,14 @@
 		<label class="fieldset-label" for="add-category">{m.schema_items_category_label()}</label>
 		<select
 			bind:value={$formData.categoryId}
-			onchange={() => (sugerida = false)}
+			onchange={() => (suggested = false)}
 			id="add-category"
 			name="categoryId"
 			class="select w-full"
 		>
 			<option value="">{m.items_category_none()}</option>
-			{#each categories as categoria (categoria.id)}
-				<option value={categoria.id}>{categoria.name}</option>
+			{#each categories as category (category.id)}
+				<option value={category.id}>{category.name}</option>
 			{/each}
 		</select>
 	</div>

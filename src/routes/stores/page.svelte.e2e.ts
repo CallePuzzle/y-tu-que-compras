@@ -68,19 +68,19 @@ test('crear un establecimiento lo añade al final, por orden de creación', asyn
 	await waitForHydration(page);
 
 	await page.getByRole('button', { name: 'Nuevo establecimiento' }).first().click();
-	const dialogo = page.locator('dialog[open]');
-	await dialogo.locator('input[name="name"]').fill('Carrefour');
-	await dialogo.getByRole('button', { name: 'Nuevo establecimiento' }).click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.locator('input[name="name"]').fill('Carrefour');
+	await dialog.getByRole('button', { name: 'Nuevo establecimiento' }).click();
 
 	// El modal cierra, avisa y el establecimiento nuevo queda al final.
 	await expect(page.locator('dialog[open]')).toHaveCount(0);
 	await expect(page.getByRole('status')).toContainText(
 		'Establecimiento creado: ya aparece en la vista.'
 	);
-	const filas = page.locator('section ul > li');
-	await expect(filas).toHaveCount(2);
-	await expect(filas.nth(0)).toContainText('Mercadona');
-	await expect(filas.nth(1)).toContainText('Carrefour');
+	const rows = page.locator('section ul > li');
+	await expect(rows).toHaveCount(2);
+	await expect(rows.nth(0)).toContainText('Mercadona');
+	await expect(rows.nth(1)).toContainText('Carrefour');
 });
 
 test('el nombre duplicado (normalizado) se rechaza con error claro', async ({ page }) => {
@@ -93,16 +93,16 @@ test('el nombre duplicado (normalizado) se rechaza con error claro', async ({ pa
 	await waitForHydration(page);
 
 	await page.getByRole('button', { name: 'Nuevo establecimiento' }).first().click();
-	const dialogo = page.locator('dialog[open]');
+	const dialog = page.locator('dialog[open]');
 	// «mercadona» choca con «Mercadona» tras normalizar: el canónico es cosa de
 	// la base (único familia+nombre normalizado, capa #182), no del formulario.
-	await dialogo.locator('input[name="name"]').fill('mercadona');
-	await dialogo.getByRole('button', { name: 'Nuevo establecimiento' }).click();
+	await dialog.locator('input[name="name"]').fill('mercadona');
+	await dialog.getByRole('button', { name: 'Nuevo establecimiento' }).click();
 
 	// El fallo se queda DENTRO del modal, abierto, con su mensaje.
 	await expect(page.locator('dialog[open]')).toBeVisible();
 	await expect(
-		dialogo.getByText('Ya existe un establecimiento con ese nombre en esta familia.')
+		dialog.getByText('Ya existe un establecimiento con ese nombre en esta familia.')
 	).toBeVisible();
 	// Y nada se creó: la familia sigue con su único establecimiento.
 	const stores = await prisma.store.findMany({ where: { organizationId: family.id } });
@@ -119,12 +119,12 @@ test('editar renombra el establecimiento', async ({ page }) => {
 	await page.goto('/stores');
 	await waitForHydration(page);
 
-	const fila = page.locator('section ul > li', { hasText: 'Mercadona' });
-	await fila.getByRole('button', { name: 'Editar establecimiento' }).click();
-	const dialogo = page.locator('dialog[open]');
-	await expect(dialogo.getByRole('heading', { name: 'Editar establecimiento' })).toBeVisible();
-	await dialogo.locator('input[name="name"]').fill('Lidl');
-	await dialogo.getByRole('button', { name: 'Guardar cambios' }).click();
+	const row = page.locator('section ul > li', { hasText: 'Mercadona' });
+	await row.getByRole('button', { name: 'Editar establecimiento' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByRole('heading', { name: 'Editar establecimiento' })).toBeVisible();
+	await dialog.locator('input[name="name"]').fill('Lidl');
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
 
 	await expect(page.locator('dialog[open]')).toHaveCount(0);
 	await expect(page.getByRole('status')).toContainText('Establecimiento actualizado.');
@@ -144,23 +144,23 @@ test('borrar pide confirmación y luego desaparece de vista y base', async ({ pa
 	await page.goto('/stores');
 	await waitForHydration(page);
 
-	const fila = page.locator('section ul > li', { hasText: 'Mercadona' });
+	const row = page.locator('section ul > li', { hasText: 'Mercadona' });
 	// Primero la confirmación: escapar deja el establecimiento en su sitio.
-	await fila.getByRole('button', { name: 'Borrar', exact: true }).click();
-	const dialogo = page.locator('dialog[open]');
-	await expect(dialogo.getByText('¿Borrar «Mercadona»?')).toBeVisible();
+	await row.getByRole('button', { name: 'Borrar', exact: true }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByText('¿Borrar «Mercadona»?')).toBeVisible();
 	await page.keyboard.press('Escape');
-	await expect(dialogo).toHaveCount(0);
-	await expect(fila).toBeVisible();
+	await expect(dialog).toHaveCount(0);
+	await expect(row).toBeVisible();
 
 	// Confirmar borra: fuera de la vista y de la base.
-	await fila.getByRole('button', { name: 'Borrar', exact: true }).click();
+	await row.getByRole('button', { name: 'Borrar', exact: true }).click();
 	await page
 		.locator('dialog[open]')
 		.getByRole('button', { name: 'Borrar definitivamente' })
 		.click();
 	await expect(page.getByRole('status')).toContainText('Establecimiento borrado.');
-	await expect(fila).toHaveCount(0);
+	await expect(row).toHaveCount(0);
 	await expect(
 		prisma.store.findFirst({ where: { organizationId: family.id } })
 	).resolves.toBeNull();
@@ -183,27 +183,27 @@ test('borrar el establecimiento conserva las compras del historial', async ({ pa
 
 	// La FK es `SetNull` (tarea #179) y el nombre viaja congelado en `storeName`:
 	// borrar el establecimiento solo le quita la referencia a la compra.
-	const fila = page.locator('section ul > li', { hasText: 'Mercadona' });
-	await fila.getByRole('button', { name: 'Borrar', exact: true }).click();
+	const row = page.locator('section ul > li', { hasText: 'Mercadona' });
+	await row.getByRole('button', { name: 'Borrar', exact: true }).click();
 	await page
 		.locator('dialog[open]')
 		.getByRole('button', { name: 'Borrar definitivamente' })
 		.click();
 	await expect(page.getByRole('status')).toContainText('Establecimiento borrado.');
 
-	const compra = await prisma.purchaseRecord.findFirst({ where: { organizationId: family.id } });
-	expect(compra).toMatchObject({ storeId: null, storeName: 'Mercadona' });
+	const purchase = await prisma.purchaseRecord.findFirst({ where: { organizationId: family.id } });
+	expect(purchase).toMatchObject({ storeId: null, storeName: 'Mercadona' });
 	// El total viaja como Decimal de Prisma: comparación numérica.
-	expect(Number(compra?.total)).toBe(23.45);
+	expect(Number(purchase?.total)).toBe(23.45);
 });
 
 test('los establecimientos de otras familias no se ven', async ({ page }) => {
 	const user = await createUser();
-	const mia = await createFamily({ name: 'Familia Mía', owner: user });
-	await createStore({ familyId: mia.id, name: 'Mercadona' });
-	const otro = await createUser();
-	const ajena = await createFamily({ name: 'Familia Ajena', owner: otro });
-	await createStore({ familyId: ajena.id, name: 'Corte Inglés' });
+	const ownFamily = await createFamily({ name: 'Familia Mía', owner: user });
+	await createStore({ familyId: ownFamily.id, name: 'Mercadona' });
+	const other = await createUser();
+	const otherFamily = await createFamily({ name: 'Familia Ajena', owner: other });
+	await createStore({ familyId: otherFamily.id, name: 'Corte Inglés' });
 	await seedSession(page, user);
 
 	// La activa es la única familia del usuario (selección automática).

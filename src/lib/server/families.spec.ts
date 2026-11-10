@@ -45,9 +45,9 @@ describe('familySlug', () => {
 		expect(slug).toMatch(PLUGIN_SLUG);
 	});
 
-	it('un nombre sin material slugueable cae en el stem «familia»', () => {
+	it('un nombre sin material slugueable cae en el stem «family»', () => {
 		const slug = familySlug('¿?¡! ★');
-		expect(slug).toMatch(/^familia-[0-9a-f]{6}$/);
+		expect(slug).toMatch(/^family-[0-9a-f]{6}$/);
 	});
 
 	it('el sufijo por defecto es aleatorio: dos llamadas no colisionan', () => {

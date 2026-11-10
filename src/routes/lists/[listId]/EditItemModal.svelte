@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Modal } from '@callepuzzle/svelte-ui';
-	import { textoError } from '#lib/forms.js';
+	import { errorMessage } from '#lib/forms.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS, type ItemData } from '#lib/schemas/item.js';
 	import { unitLabels } from '#lib/units.js';
@@ -27,13 +27,13 @@
 	const UNIT_LABEL = unitLabels();
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
-	let itemEditado: PageData['items'][number] | undefined = $state();
+	let editedItem: PageData['items'][number] | undefined = $state();
 
 	// El aviso del modal es solo para FALLOS (400/404/500). En éxito el texto
 	// viaja a la página con `onSuccess`, pero superforms aún aplicará el
 	// resultado DESPUÉS de `onResult` y dejaría `$message` con el texto de
 	// éxito dentro del dialog cerrado: el flag decide sin depender de carreras.
-	let falloGuardado = $state(false);
+	let saveError = $state(false);
 
 	// svelte-ignore state_referenced_locally
 	const editForm = superForm(form, {
@@ -45,10 +45,10 @@
 				// (`message()`), como en /lists.
 				const data = result.data as { form?: { message?: string } } | undefined;
 				onSuccess(data?.form?.message ?? m.items_updated());
-				falloGuardado = false;
+				saveError = false;
 				modal?.close();
 			} else if (result.type === 'failure' || result.type === 'error') {
-				falloGuardado = true;
+				saveError = true;
 			}
 		}
 	});
@@ -56,10 +56,10 @@
 
 	/** Abre el modal en modo edición, con los datos del item cargados. */
 	export function open(item: PageData['items'][number]) {
-		itemEditado = item;
+		editedItem = item;
 		message.set(undefined);
 		errors.clear();
-		falloGuardado = false;
+		saveError = false;
 		// El cast recupera los literales del enum tras venir de Prisma (string).
 		// La categoría `null` va como `''`, el valor del option «Sin categoría».
 		formData.set({
@@ -83,13 +83,13 @@
 
 	<form method="POST" action="?/update" use:enhance class="mt-4 flex flex-col gap-4">
 		<!-- El id del item editado viaja con el formulario. -->
-		<input type="hidden" name="item" value={itemEditado?.id ?? ''} />
+		<input type="hidden" name="item" value={editedItem?.id ?? ''} />
 
 		<div class="flex flex-col gap-1">
 			<label class="fieldset-label" for="edit-name">{m.schema_items_name_label()}</label>
 			<input
 				bind:value={$formData.name}
-				aria-invalid={textoError($errors.name) ? 'true' : undefined}
+				aria-invalid={errorMessage($errors.name) ? 'true' : undefined}
 				id="edit-name"
 				name="name"
 				type="text"
@@ -98,8 +98,8 @@
 				required
 				maxlength="100"
 			/>
-			{#if textoError($errors.name)}
-				<p class="fieldset-label text-error" role="alert">{textoError($errors.name)}</p>
+			{#if errorMessage($errors.name)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.name)}</p>
 			{/if}
 		</div>
 
@@ -108,7 +108,7 @@
 				<label class="fieldset-label" for="edit-quantity">{m.schema_items_quantity_label()}</label>
 				<input
 					bind:value={$formData.quantity}
-					aria-invalid={textoError($errors.quantity) ? 'true' : undefined}
+					aria-invalid={errorMessage($errors.quantity) ? 'true' : undefined}
 					id="edit-quantity"
 					name="quantity"
 					type="number"
@@ -117,8 +117,8 @@
 					inputmode="decimal"
 					required
 				/>
-				{#if textoError($errors.quantity)}
-					<p class="fieldset-label text-error" role="alert">{textoError($errors.quantity)}</p>
+				{#if errorMessage($errors.quantity)}
+					<p class="fieldset-label text-error" role="alert">{errorMessage($errors.quantity)}</p>
 				{/if}
 			</div>
 
@@ -126,7 +126,7 @@
 				<label class="fieldset-label" for="edit-unit">{m.schema_items_unit_label()}</label>
 				<select
 					bind:value={$formData.unit}
-					aria-invalid={textoError($errors.unit) ? 'true' : undefined}
+					aria-invalid={errorMessage($errors.unit) ? 'true' : undefined}
 					id="edit-unit"
 					name="unit"
 					class="select w-full"
@@ -136,8 +136,8 @@
 						<option value={unit}>{UNIT_LABEL[unit]}</option>
 					{/each}
 				</select>
-				{#if textoError($errors.unit)}
-					<p class="fieldset-label text-error" role="alert">{textoError($errors.unit)}</p>
+				{#if errorMessage($errors.unit)}
+					<p class="fieldset-label text-error" role="alert">{errorMessage($errors.unit)}</p>
 				{/if}
 			</div>
 		</div>
@@ -153,13 +153,13 @@
 				class="select w-full"
 			>
 				<option value="">{m.items_category_none()}</option>
-				{#each categories as categoria (categoria.id)}
-					<option value={categoria.id}>{categoria.name}</option>
+				{#each categories as category (category.id)}
+					<option value={category.id}>{category.name}</option>
 				{/each}
 			</select>
 		</div>
 
-		{#if falloGuardado && $message}
+		{#if saveError && $message}
 			<div class="alert alert-error text-sm" role="alert">
 				{$message}
 			</div>

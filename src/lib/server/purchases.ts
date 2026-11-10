@@ -44,7 +44,7 @@ class ConcurrentFinalizeError extends Error {
  * para que ninguna pareja de transacciones bloquee las filas de despensa en
  * orden inverso.
  */
-function ordenCanonico(a: string, b: string): number {
+function canonicalOrder(a: string, b: string): number {
 	return a < b ? -1 : a > b ? 1 : 0;
 }
 
@@ -211,23 +211,23 @@ export async function finalizePurchase(
 			// mismo producto empatan en el orden canónico (mismo canónico y
 			// unidad), así que «la primera del orden canónico» es este
 			// primero de lista — determinista en compras y duplicados.
-			interface Aterrizaje {
+			interface PantryLanding {
 				name: string;
 				normalizedName: string;
 				unit: Unit;
 				quantity: number;
 				categoryId: string | null;
 			}
-			const aterrizajes = new Map<string, Aterrizaje>();
+			const landings = new Map<string, PantryLanding>();
 			for (const item of purchased) {
 				const normalizedName = normalizeItemName(item.name);
-				const clave = `${normalizedName}\n${item.unit}`;
-				const previo = aterrizajes.get(clave);
-				if (previo) {
-					previo.quantity += Number(item.quantity);
+				const key = `${normalizedName}\n${item.unit}`;
+				const previous = landings.get(key);
+				if (previous) {
+					previous.quantity += Number(item.quantity);
 					continue;
 				}
-				aterrizajes.set(clave, {
+				landings.set(key, {
 					name: item.name,
 					normalizedName,
 					unit: item.unit,
@@ -235,8 +235,9 @@ export async function finalizePurchase(
 					categoryId: item.categoryId
 				});
 			}
-			const enOrden = [...aterrizajes.values()].sort(
-				(a, b) => ordenCanonico(a.normalizedName, b.normalizedName) || ordenCanonico(a.unit, b.unit)
+			const inOrder = [...landings.values()].sort(
+				(a, b) =>
+					canonicalOrder(a.normalizedName, b.normalizedName) || canonicalOrder(a.unit, b.unit)
 			);
 
 			// El upsert es el INSERT ON CONFLICT nativo de Postgres, así que dos
@@ -251,37 +252,37 @@ export async function finalizePurchase(
 			// perder) y su rama update solo suma cantidad: nunca toca la
 			// categoría ya fijada. Ambas escrituras siguen el mismo orden
 			// canónico del bucle, así que no aparecen ciclos de locks nuevos.
-			for (const aterrizaje of enOrden) {
-				if (aterrizaje.categoryId) {
+			for (const landing of inOrder) {
+				if (landing.categoryId) {
 					await tx.pantryItem.updateMany({
 						where: {
 							organizationId: familyId,
-							normalizedName: aterrizaje.normalizedName,
-							unit: aterrizaje.unit,
+							normalizedName: landing.normalizedName,
+							unit: landing.unit,
 							categoryId: null
 						},
-						data: { categoryId: aterrizaje.categoryId }
+						data: { categoryId: landing.categoryId }
 					});
 				}
 				await tx.pantryItem.upsert({
 					where: {
 						organizationId_normalizedName_unit: {
 							organizationId: familyId,
-							normalizedName: aterrizaje.normalizedName,
-							unit: aterrizaje.unit
+							normalizedName: landing.normalizedName,
+							unit: landing.unit
 						}
 					},
 					// La primera vez manda el nombre tal y como se escribió en la
 					// lista: es el que la despensa mostrará de ahí en adelante.
 					create: {
 						organizationId: familyId,
-						name: aterrizaje.name,
-						normalizedName: aterrizaje.normalizedName,
-						quantity: aterrizaje.quantity,
-						unit: aterrizaje.unit,
-						categoryId: aterrizaje.categoryId
+						name: landing.name,
+						normalizedName: landing.normalizedName,
+						quantity: landing.quantity,
+						unit: landing.unit,
+						categoryId: landing.categoryId
 					},
-					update: { quantity: { increment: aterrizaje.quantity } }
+					update: { quantity: { increment: landing.quantity } }
 				});
 			}
 
@@ -312,10 +313,10 @@ export const PURCHASES_PAGE_SIZE = 20;
  * (un id de tienda es un cuid y un snapshot va con prefijo), para que el
  * `?offset-<clave>` de su «Cargar más» no pise al de las demás.
  */
-const SIN_ESTABLECIMIENTO = 'none';
+const NO_STORE_SECTION = 'none';
 
 /** El prefijo de la clave de sección de un establecimiento BORRADO (#187). */
-const ESTABLECIMIENTO_BORRADO = 'nombre:';
+const DELETED_STORE_PREFIX = 'name:';
 
 /**
  * El tope del offset de «Cargar más» (issue #109): sin él, un `?offset=1e21`
@@ -421,7 +422,7 @@ export async function listPurchasesByStore(
 	// congelado) de las que nunca llevaron tienda — y las de una tienda viva
 	// renombrada a medio camino viajan con dos snapshots distintos pero caen
 	// en la MISMA sección (ver abajo).
-	const grupos = await prisma.purchaseRecord.groupBy({
+	const groupedRows = await prisma.purchaseRecord.groupBy({
 		by: ['storeId', 'storeName'],
 		where: { organizationId: familyId },
 		_max: { createdAt: true }
@@ -430,87 +431,91 @@ export async function listPurchasesByStore(
 	// Los nombres ACTUALES de los establecimientos vivos con compras: la
 	// sección de una tienda viva se titula como la tienda de hoy, no como el
 	// snapshot de su compra más vieja.
-	const idsVivos = [...new Set(grupos.map((grupo) => grupo.storeId).filter((id) => id !== null))];
-	const vivos = await prisma.store.findMany({
-		where: { organizationId: familyId, id: { in: idsVivos } },
+	const liveStoreIds = [
+		...new Set(groupedRows.map((group) => group.storeId).filter((id) => id !== null))
+	];
+	const liveStores = await prisma.store.findMany({
+		where: { organizationId: familyId, id: { in: liveStoreIds } },
 		select: { id: true, name: true }
 	});
-	const nombreActual = new Map(vivos.map((store) => [store.id, store.name]));
+	const currentNameById = new Map(liveStores.map((store) => [store.id, store.name]));
 
 	/** Un bloque: su clave, su título, el filtro de sus compras y su tope de orden. */
-	interface Bloque {
+	interface HistorySection {
 		key: string;
 		storeName: string | null;
 		where: Prisma.PurchaseRecordWhereInput;
-		ultima: Date;
+		latest: Date;
 	}
-	const bloques = new Map<string, Bloque>();
-	for (const grupo of grupos) {
+	const sections = new Map<string, HistorySection>();
+	for (const group of groupedRows) {
 		// Imposible que un grupo exista sin fecha (alguna fila lo creó):
 		// guardia de tipos.
-		if (grupo._max.createdAt === null) continue;
+		if (group._max.createdAt === null) continue;
 
-		let bloque: Bloque;
-		if (grupo.storeId !== null) {
-			const nombre = nombreActual.get(grupo.storeId) ?? grupo.storeName;
+		let section: HistorySection;
+		if (group.storeId !== null) {
+			const name = currentNameById.get(group.storeId) ?? group.storeName;
 			// Sin nombre no hay sección que titular: no ocurre en la práctica
 			// (finalizar siempre congela uno), y una tienda que murió ENTRE la
 			// agrupación y esta consulta es «sin título» y se salta — sus
 			// compras reaparecen con el snapshot en la siguiente petición.
-			if (nombre === null) continue;
-			bloque = {
-				key: grupo.storeId,
-				storeName: nombre,
-				where: { storeId: grupo.storeId },
-				ultima: grupo._max.createdAt
+			if (name === null) continue;
+			section = {
+				key: group.storeId,
+				storeName: name,
+				where: { storeId: group.storeId },
+				latest: group._max.createdAt
 			};
-		} else if (grupo.storeName !== null) {
+		} else if (group.storeName !== null) {
 			// Establecimiento borrado (SetNull): sus compras quedan juntas bajo
 			// el nombre congelado, como lo dejó `finalizePurchase`.
-			bloque = {
-				key: `${ESTABLECIMIENTO_BORRADO}${grupo.storeName}`,
-				storeName: grupo.storeName,
-				where: { storeId: null, storeName: grupo.storeName },
-				ultima: grupo._max.createdAt
+			section = {
+				key: `${DELETED_STORE_PREFIX}${group.storeName}`,
+				storeName: group.storeName,
+				where: { storeId: null, storeName: group.storeName },
+				latest: group._max.createdAt
 			};
 		} else {
 			// Sin establecimiento: el bloque final.
-			bloque = {
-				key: SIN_ESTABLECIMIENTO,
+			section = {
+				key: NO_STORE_SECTION,
 				storeName: null,
 				where: { storeId: null, storeName: null },
-				ultima: grupo._max.createdAt
+				latest: group._max.createdAt
 			};
 		}
 
 		// Dos grupos con la misma clave (tienda viva renombrada a medio
 		// camino): un solo bloque, ordenado por la más nueva de las dos.
-		const previo = bloques.get(bloque.key);
-		if (previo && previo.ultima >= bloque.ultima) continue;
-		bloques.set(bloque.key, bloque);
+		const previous = sections.get(section.key);
+		if (previous && previous.latest >= section.latest) continue;
+		sections.set(section.key, section);
 	}
 
 	// Secciones por su compra más reciente (el desempate por clave, canónico
 	// como en todo el módulo: dos con el mismo instante no bailan), con «Sin
 	// establecimiento» SIEMPRE al final.
-	const ordenados = [...bloques.values()].sort((a, b) => {
-		if (a.key === SIN_ESTABLECIMIENTO) return 1;
-		if (b.key === SIN_ESTABLECIMIENTO) return -1;
-		if (a.ultima.getTime() !== b.ultima.getTime()) {
-			return b.ultima.getTime() - a.ultima.getTime();
+	const ordered = [...sections.values()].sort((a, b) => {
+		if (a.key === NO_STORE_SECTION) return 1;
+		if (b.key === NO_STORE_SECTION) return -1;
+		if (a.latest.getTime() !== b.latest.getTime()) {
+			return b.latest.getTime() - a.latest.getTime();
 		}
-		return ordenCanonico(a.key, b.key);
+		return canonicalOrder(a.key, b.key);
 	});
 
 	// La página de CADA bloque, acumulativa y acotada por su cuenta (#109).
 	const groups: PurchaseGroupView[] = [];
-	for (const bloque of ordenados) {
-		const pedido = offsets[bloque.key];
+	for (const section of ordered) {
+		const requestedOffset = offsets[section.key];
 		const from =
-			Number.isInteger(pedido) && pedido > 0 ? Math.min(pedido, MAX_PURCHASES_OFFSET) : 0;
+			Number.isInteger(requestedOffset) && requestedOffset > 0
+				? Math.min(requestedOffset, MAX_PURCHASES_OFFSET)
+				: 0;
 
 		const rows = await prisma.purchaseRecord.findMany({
-			where: { organizationId: familyId, ...bloque.where },
+			where: { organizationId: familyId, ...section.where },
 			orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
 			select: { id: true, listName: true, total: true, createdAt: true },
 			// Una compra de más para saber si queda historia detrás (#76).
@@ -522,8 +527,8 @@ export async function listPurchasesByStore(
 
 		const hasMore = rows.length > from + PURCHASES_PAGE_SIZE;
 		groups.push({
-			key: bloque.key,
-			storeName: bloque.storeName,
+			key: section.key,
+			storeName: section.storeName,
 			offset: from,
 			hasMore,
 			purchases: rows.slice(0, from + PURCHASES_PAGE_SIZE).map(toSummary)

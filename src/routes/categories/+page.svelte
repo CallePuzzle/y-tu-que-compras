@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance as enhanceAccion } from '$app/forms';
+	import { enhance as enhanceAction } from '$app/forms';
 	import { zodToFieldsJsonSchema } from '@callepuzzle/core/schema';
 	import { FormFields, Modal } from '@callepuzzle/svelte-ui';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -23,20 +23,20 @@
 
 	// Modal compartida de crear/editar (un solo formulario, como en /lists):
 	// `undefined` = crear, una fila = editar.
-	let categoriaEditada: CategoryRow | undefined = $state();
+	let editedCategory: CategoryRow | undefined = $state();
 	// Modal de borrado: la categoría elegida por su botón.
-	let categoriaBorrada: CategoryRow | undefined = $state();
+	let deletedCategory: CategoryRow | undefined = $state();
 
 	// Referencia al `Modal` para abrirlo por código (showButton={false}) y
 	// cerrarlo cuando la operación sale bien (el componente exporta `showModal`
 	// y `close`).
-	let categoriasModal: { showModal(): void; close(): void } | undefined = $state();
+	let categoriesModal: { showModal(): void; close(): void } | undefined = $state();
 
 	// Aviso de éxito FUERA de los modales; el de error se enseña dentro, junto
 	// al formulario, con `$message` (crear/editar) o en el `ConfirmModal`
 	// (borrar). El de las acciones sin formulario propio (borrar/mover sin JS)
 	// llega como `actionData.error`.
-	let exito: string | null = $state(null);
+	let successMessage: string | null = $state(null);
 
 	// El schema se construye EN RENDER, nunca en scope de módulo (regla i18n de
 	// la librería). Ojo: `superForm` no soporta cambiar el schema, así que se lee
@@ -60,45 +60,45 @@
 				// El texto concreto (creada vs. actualizada) lo decide la acción y
 				// viaja en el resultado (`message()`), como en /lists.
 				const data = result.data as { form?: { message?: string } } | undefined;
-				exito = data?.form?.message ?? null;
+				successMessage = data?.form?.message ?? null;
 				// Sin `invalidateAll()` a mano: superforms ya revalida el load
 				// (`invalidateAll: true` por defecto) y otro más era un 2.º load.
-				categoriasModal?.close();
+				categoriesModal?.close();
 			} else if (result.type === 'failure') {
-				exito = null;
+				successMessage = null;
 			}
 		}
 	});
 	const { form: formData, enhance, delayed, message, errors } = form;
 
 	/** Abre el modal en modo edición, con el nombre de la categoría cargado. */
-	function abrirEdicion(categoria: CategoryRow) {
-		categoriaEditada = categoria;
-		exito = null;
+	function openEdit(category: CategoryRow) {
+		editedCategory = category;
+		successMessage = null;
 		message.set(undefined);
 		errors.clear();
 		// El schema es el mismo para crear y editar: los campos coinciden.
-		formData.set({ name: categoria.name } as CategoryData);
-		categoriasModal?.showModal();
+		formData.set({ name: category.name } as CategoryData);
+		categoriesModal?.showModal();
 	}
 
 	/** Abre el modal en modo creación: vacío, sin rastro de la edición anterior. */
-	function abrirCreacion() {
-		categoriaEditada = undefined;
-		exito = null;
+	function openCreate() {
+		editedCategory = undefined;
+		successMessage = null;
 		message.set(undefined);
 		errors.clear();
 		form.reset();
-		categoriasModal?.showModal();
+		categoriesModal?.showModal();
 	}
 
 	// Borrar con confirmación: un `ConfirmModal` compartido; cada fila fija qué
 	// categoría se borra antes de abrirlo.
-	let borrarModal: ConfirmModal | undefined = $state();
+	let deleteModal: ConfirmModal | undefined = $state();
 
-	function abrirBorrado(categoria: CategoryRow) {
-		categoriaBorrada = categoria;
-		borrarModal?.showModal();
+	function openDelete(category: CategoryRow) {
+		deletedCategory = category;
+		deleteModal?.showModal();
 	}
 
 	// Refresco al volver a la pestaña: nombres y orden los mueven las gestiones
@@ -113,7 +113,7 @@
 <section class="mx-auto max-w-md">
 	<div class="flex items-center justify-between gap-2">
 		<h1 class="text-2xl font-bold">{m.categories_title()}</h1>
-		<button type="button" class="btn btn-primary btn-sm" onclick={() => abrirCreacion()}>
+		<button type="button" class="btn btn-primary btn-sm" onclick={() => openCreate()}>
 			<Plus aria-hidden="true" />
 			{m.categories_create()}
 		</button>
@@ -127,9 +127,9 @@
 		</div>
 	{/if}
 
-	{#if exito}
+	{#if successMessage}
 		<div class="alert alert-success mt-4 text-sm" role="status">
-			{exito}
+			{successMessage}
 		</div>
 	{/if}
 
@@ -138,7 +138,7 @@
 		<div class="mt-8 flex flex-col items-center gap-3 text-center">
 			<Tags aria-hidden="true" class="size-10 opacity-40" />
 			<p class="opacity-70">{m.categories_empty()}</p>
-			<button type="button" class="btn btn-primary" onclick={() => abrirCreacion()}>
+			<button type="button" class="btn btn-primary" onclick={() => openCreate()}>
 				<Plus aria-hidden="true" />
 				{m.categories_create()}
 			</button>
@@ -146,15 +146,15 @@
 	{:else}
 		<!-- `ol`, no `ul`: la vista ES un orden, y lo cuenta la semántica. -->
 		<ol class="mt-4 flex flex-col gap-2">
-			{#each data.categories as categoria, i (categoria.id)}
+			{#each data.categories as category, i (category.id)}
 				<li class="bg-base-200 rounded-box flex items-center gap-1 px-3 py-2">
-					<span class="min-w-0 flex-1 truncate font-medium">{categoria.name}</span>
+					<span class="min-w-0 flex-1 truncate font-medium">{category.name}</span>
 					<span class="flex items-center gap-1">
 						<!-- Reordenar: el cliente solo dice qué fila y dirección; el
 						     orden nuevo lo calcula el servidor (`?/move`). En los
 						     bordes el botón queda deshabilitado. -->
-						<form method="POST" action="?/move" use:enhanceAccion class="contents">
-							<input type="hidden" name="categoryId" value={categoria.id} />
+						<form method="POST" action="?/move" use:enhanceAction class="contents">
+							<input type="hidden" name="categoryId" value={category.id} />
 							<input type="hidden" name="direction" value="up" />
 							<button
 								type="submit"
@@ -166,8 +166,8 @@
 								<span class="sr-only">{m.categories_move_up()}</span>
 							</button>
 						</form>
-						<form method="POST" action="?/move" use:enhanceAccion class="contents">
-							<input type="hidden" name="categoryId" value={categoria.id} />
+						<form method="POST" action="?/move" use:enhanceAction class="contents">
+							<input type="hidden" name="categoryId" value={category.id} />
 							<input type="hidden" name="direction" value="down" />
 							<button
 								type="submit"
@@ -183,7 +183,7 @@
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.categories_edit()}
-							onclick={() => abrirEdicion(categoria)}
+							onclick={() => openEdit(category)}
 						>
 							<Pencil aria-hidden="true" />
 							<span class="sr-only">{m.categories_edit()}</span>
@@ -192,7 +192,7 @@
 							type="button"
 							class="btn btn-ghost btn-sm"
 							title={m.categories_delete()}
-							onclick={() => abrirBorrado(categoria)}
+							onclick={() => openDelete(category)}
 						>
 							<Trash2 aria-hidden="true" />
 							<span class="sr-only">{m.categories_delete()}</span>
@@ -207,25 +207,25 @@
 <!-- Crear/editar: una modal compartida; el título, la acción del formulario
      y los datos cargados dependen del modo. -->
 <Modal
-	bind:this={categoriasModal}
+	bind:this={categoriesModal}
 	type="X"
 	showButton={false}
 	boxClass="modal-box max-w-md"
 	strings={{ close: m.ui_close() }}
 >
 	<h2 class="text-lg font-bold">
-		{categoriaEditada ? m.categories_edit() : m.categories_create()}
+		{editedCategory ? m.categories_edit() : m.categories_create()}
 	</h2>
 
 	<form
 		method="POST"
-		action={categoriaEditada ? '?/update' : '?/create'}
+		action={editedCategory ? '?/update' : '?/create'}
 		use:enhance
 		class="mt-4 flex flex-col gap-4"
 	>
 		<!-- El id de la categoría editada viaja con el formulario; crear no lo lleva. -->
-		{#if categoriaEditada}
-			<input type="hidden" name="categoryId" value={categoriaEditada.id} />
+		{#if editedCategory}
+			<input type="hidden" name="categoryId" value={editedCategory.id} />
 		{/if}
 
 		<FormFields
@@ -245,7 +245,7 @@
 			{#if $delayed}
 				<span class="loading loading-spinner"></span>
 			{/if}
-			{categoriaEditada ? m.categories_save() : m.categories_create()}
+			{editedCategory ? m.categories_save() : m.categories_create()}
 		</button>
 	</form>
 </Modal>
@@ -253,12 +253,12 @@
 <!-- Borrar: una modal compartida; cada botón de la fila fija a qué categoría
      se borra antes de abrirla. -->
 <ConfirmModal
-	bind:this={borrarModal}
-	title={m.categories_delete_title({ name: categoriaBorrada?.name ?? '' })}
+	bind:this={deleteModal}
+	title={m.categories_delete_title({ name: deletedCategory?.name ?? '' })}
 	description={m.categories_delete_description()}
 	confirmLabel={m.categories_delete_confirm()}
 	action="?/delete"
-	fields={{ categoryId: categoriaBorrada?.id ?? '' }}
+	fields={{ categoryId: deletedCategory?.id ?? '' }}
 	errorFallback={m.categories_error()}
-	onSuccess={() => (exito = m.categories_deleted())}
+	onSuccess={() => (successMessage = m.categories_deleted())}
 />

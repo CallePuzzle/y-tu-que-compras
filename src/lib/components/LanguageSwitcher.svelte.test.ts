@@ -29,14 +29,14 @@ describe('LanguageSwitcher', () => {
 		// El nombre accesible lo pone el `aria-label`; los items, los nombres
 		// nativos de cada idioma (no se traducen).
 		await getByRole('button', { name: 'Cambiar idioma' }).click();
-		const espanol = firstOf(getByRole('menuitemradio', { name: 'Español' }));
+		const spanish = firstOf(getByRole('menuitemradio', { name: 'Español' }));
 		const english = firstOf(getByRole('menuitemradio', { name: 'English' }));
-		expect(espanol).not.toBeNull();
+		expect(spanish).not.toBeNull();
 		expect(english).not.toBeNull();
 
 		// «es» es la locale activa del mock: su item lleva el check (svg) y
 		// «English» el hueco alineador, para que los nombres queden en columna.
-		expect(espanol?.querySelector('svg')).not.toBeNull();
+		expect(spanish?.querySelector('svg')).not.toBeNull();
 		expect(english?.querySelector('svg')).toBeNull();
 	});
 
@@ -68,12 +68,12 @@ describe('LanguageSwitcher', () => {
 	it('con teclado: ↓ abre en el primer item, las flechas recorren y Escape cierra (#116)', async () => {
 		const { getByRole } = await render(LanguageSwitcher);
 		const trigger = getByRole('button', { name: 'Cambiar idioma' });
-		const boton = firstOf(trigger) as HTMLButtonElement;
+		const button = firstOf(trigger) as HTMLButtonElement;
 
-		boton.focus();
+		button.focus();
 		await userEvent.keyboard('{ArrowDown}');
 		await expect.element(getByRole('menu')).toBeVisible();
-		expect(boton.getAttribute('aria-expanded')).toBe('true');
+		expect(button.getAttribute('aria-expanded')).toBe('true');
 		expect(document.activeElement?.textContent).toContain('Español');
 
 		await userEvent.keyboard('{ArrowDown}');
@@ -84,9 +84,9 @@ describe('LanguageSwitcher', () => {
 
 		await userEvent.keyboard('{Escape}');
 		await expect.poll(() => getByRole('menu').elements().length).toBe(0);
-		expect(boton.getAttribute('aria-expanded')).toBe('false');
+		expect(button.getAttribute('aria-expanded')).toBe('false');
 		// El foco vuelve al disparador.
-		expect(document.activeElement).toBe(boton);
+		expect(document.activeElement).toBe(button);
 	});
 
 	it('pulsar fuera cierra el menú (#116)', async () => {

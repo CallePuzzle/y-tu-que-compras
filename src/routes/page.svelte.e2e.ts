@@ -48,19 +48,18 @@ test('con sesion, la portada es el home con saludo y accesos (#161)', async ({ p
 	// ancla del tour), historial, categorías (#164) y establecimientos
 	// (#177) se suman ahora despensa y familias; cada tarjeta añade bajo la
 	// etiqueta su línea descriptiva (`home_*_text`).
-	const accesos = [
-		{ nombre: 'Listas', href: '/lists' },
-		{ nombre: 'Despensa', href: '/pantry' },
-		{ nombre: 'Historial', href: '/history' },
-		{ nombre: 'Categorías', href: '/categories' },
-		{ nombre: 'Establecimientos', href: '/stores' },
-		{ nombre: 'Familias', href: '/families' }
+	const quickLinks = [
+		{ name: 'Listas', href: '/lists' },
+		{ name: 'Despensa', href: '/pantry' },
+		{ name: 'Historial', href: '/history' },
+		{ name: 'Categorías', href: '/categories' },
+		{ name: 'Establecimientos', href: '/stores' },
+		{ name: 'Familias', href: '/families' }
 	];
-	for (const acceso of accesos) {
-		await expect(page.getByRole('main').getByRole('link', { name: acceso.nombre })).toHaveAttribute(
-			'href',
-			acceso.href
-		);
+	for (const quickLink of quickLinks) {
+		await expect(
+			page.getByRole('main').getByRole('link', { name: quickLink.name })
+		).toHaveAttribute('href', quickLink.href);
 	}
 	await expect(page.getByRole('main').getByRole('link', { name: 'Listas' })).toBeVisible();
 

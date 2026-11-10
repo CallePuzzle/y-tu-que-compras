@@ -29,69 +29,69 @@ async function familyRow(prefix: string): Promise<string> {
 }
 
 /** Datos válidos según `listSchema`, para mutar campo a campo en cada spec. */
-const LISTA: ListData = { name: 'Frutería del barrio', color: 'yellow', icon: 'shopping-basket' };
+const LIST: ListData = { name: 'Frutería del barrio', color: 'yellow', icon: 'shopping-basket' };
 
 describe('CRUD de listas por familia (#66)', () => {
 	it('createList guarda nombre, color e icono en la familia dada', async () => {
 		const familyId = await familyRow('Familia Creadora');
 
-		const created = await createList(familyId, LISTA);
-		expect(created).toMatchObject({ name: LISTA.name, color: LISTA.color, icon: LISTA.icon });
+		const created = await createList(familyId, LIST);
+		expect(created).toMatchObject({ name: LIST.name, color: LIST.color, icon: LIST.icon });
 
 		const row = await prisma.list.findUniqueOrThrow({ where: { id: created.id } });
 		expect(row.organizationId).toBe(familyId);
 	});
 
 	it('listLists devuelve las listas de la familia y no las de otras', async () => {
-		const mia = await familyRow('Familia Propia');
-		const ajena = await familyRow('Familia Ajena');
+		const ownFamily = await familyRow('Familia Propia');
+		const otherFamily = await familyRow('Familia Ajena');
 
-		const propia = await createList(mia, { ...LISTA, name: 'Compra semanal' });
-		await createList(ajena, { ...LISTA, name: 'Lista secreta' });
+		const ownList = await createList(ownFamily, { ...LIST, name: 'Compra semanal' });
+		await createList(otherFamily, { ...LIST, name: 'Lista secreta' });
 
-		const lists = await listLists(mia);
-		expect(lists.map((list) => list.id)).toEqual([propia.id]);
+		const lists = await listLists(ownFamily);
+		expect(lists.map((list) => list.id)).toEqual([ownList.id]);
 		expect(lists[0]).toMatchObject({ name: 'Compra semanal' });
 	});
 
 	it('listLists cuenta los items pendientes de comprar (#69)', async () => {
-		const mia = await familyRow('Familia Contadora');
-		const vacia = await createList(mia, { ...LISTA, name: 'Vacía' });
-		const llena = await createList(mia, { ...LISTA, name: 'Llena' });
+		const ownFamily = await familyRow('Familia Contadora');
+		const emptyList = await createList(ownFamily, { ...LIST, name: 'Vacía' });
+		const fullList = await createList(ownFamily, { ...LIST, name: 'Llena' });
 
 		// Items directamente en la base: el spec de listas no depende del CRUD
 		// de items (eso lo ejercita `items.int.spec.ts`).
 		await prisma.item.createMany({
 			data: [
-				{ listId: llena.id, name: 'Leche', quantity: 2, unit: 'liter', order: 0 },
-				{ listId: llena.id, name: 'Pan', quantity: 1, unit: 'unit', order: 1, purchased: true }
+				{ listId: fullList.id, name: 'Leche', quantity: 2, unit: 'liter', order: 0 },
+				{ listId: fullList.id, name: 'Pan', quantity: 1, unit: 'unit', order: 1, purchased: true }
 			]
 		});
 
-		const lists = await listLists(mia);
-		expect(lists.find((list) => list.id === vacia.id)).toMatchObject({
+		const lists = await listLists(ownFamily);
+		expect(lists.find((list) => list.id === emptyList.id)).toMatchObject({
 			itemCount: 0,
 			pendingCount: 0
 		});
-		expect(lists.find((list) => list.id === llena.id)).toMatchObject({
+		expect(lists.find((list) => list.id === fullList.id)).toMatchObject({
 			itemCount: 2,
 			pendingCount: 1
 		});
 	});
 
 	it('updateList cambia una lista propia; con una ajena devuelve false y no la toca', async () => {
-		const mia = await familyRow('Familia Editora');
-		const ajena = await familyRow('Familia Intacta');
-		const propia = await createList(mia, LISTA);
-		const externa = await createList(ajena, LISTA);
+		const ownFamily = await familyRow('Familia Editora');
+		const otherFamily = await familyRow('Familia Intacta');
+		const ownList = await createList(ownFamily, LIST);
+		const externalFamily = await createList(otherFamily, LIST);
 
-		const changed = await updateList(mia, propia.id, {
+		const changed = await updateList(ownFamily, ownList.id, {
 			name: 'Lidl',
 			color: 'green',
 			icon: 'croissant'
 		});
 		expect(changed).toBe(true);
-		expect(await prisma.list.findUniqueOrThrow({ where: { id: propia.id } })).toMatchObject({
+		expect(await prisma.list.findUniqueOrThrow({ where: { id: ownList.id } })).toMatchObject({
 			name: 'Lidl',
 			color: 'green',
 			icon: 'croissant'
@@ -99,35 +99,35 @@ describe('CRUD de listas por familia (#66)', () => {
 
 		// El id de una lista de OTRA familia no se puede actualizar aunque se
 		// conozca: el filtro de familia activa lo hace inalcanzable.
-		const foreign = await updateList(mia, externa.id, { ...LISTA, name: 'Vándalo' });
+		const foreign = await updateList(ownFamily, externalFamily.id, { ...LIST, name: 'Vándalo' });
 		expect(foreign).toBe(false);
-		expect((await prisma.list.findUniqueOrThrow({ where: { id: externa.id } })).name).toBe(
-			LISTA.name
+		expect((await prisma.list.findUniqueOrThrow({ where: { id: externalFamily.id } })).name).toBe(
+			LIST.name
 		);
 	});
 
 	it('updateList devuelve false para un id inexistente', async () => {
 		const familyId = await familyRow('Familia Fantasma');
-		expect(await updateList(familyId, randomUUID(), LISTA)).toBe(false);
+		expect(await updateList(familyId, randomUUID(), LIST)).toBe(false);
 	});
 
 	it('deleteList borra solo de su familia; una ajena devuelve false y queda', async () => {
-		const mia = await familyRow('Familia Borradora');
-		const ajena = await familyRow('Familia Superviviente');
-		const propia = await createList(mia, LISTA);
-		const externa = await createList(ajena, LISTA);
+		const ownFamily = await familyRow('Familia Borradora');
+		const otherFamily = await familyRow('Familia Superviviente');
+		const ownList = await createList(ownFamily, LIST);
+		const externalFamily = await createList(otherFamily, LIST);
 
-		expect(await deleteList(mia, externa.id)).toBe(false);
-		expect(await prisma.list.findUnique({ where: { id: externa.id } })).not.toBeNull();
+		expect(await deleteList(ownFamily, externalFamily.id)).toBe(false);
+		expect(await prisma.list.findUnique({ where: { id: externalFamily.id } })).not.toBeNull();
 
-		expect(await deleteList(mia, propia.id)).toBe(true);
-		expect(await prisma.list.findUnique({ where: { id: propia.id } })).toBeNull();
+		expect(await deleteList(ownFamily, ownList.id)).toBe(true);
+		expect(await prisma.list.findUnique({ where: { id: ownList.id } })).toBeNull();
 	});
 
 	it('borrar la familia se lleva sus listas (FK en cascada)', async () => {
 		const familyId = await familyRow('Familia Evanescente');
-		const a = await createList(familyId, LISTA);
-		const b = await createList(familyId, { ...LISTA, name: 'Parafarmacia' });
+		const a = await createList(familyId, LIST);
+		const b = await createList(familyId, { ...LIST, name: 'Parafarmacia' });
 
 		await prisma.organization.delete({ where: { id: familyId } });
 

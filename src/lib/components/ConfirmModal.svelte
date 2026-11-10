@@ -46,7 +46,7 @@
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
 	let error: string | null = $state(null);
-	let enviando = $state(false);
+	let submitting = $state(false);
 
 	/** Abre el modal sin el rastro del intento anterior. */
 	export function showModal() {
@@ -59,8 +59,8 @@
 	}
 
 	const onSubmit: SubmitFunction = ({ cancel }) => {
-		if (enviando) return cancel();
-		enviando = true;
+		if (submitting) return cancel();
+		submitting = true;
 		return async ({ result, update }) => {
 			if (result.type === 'failure') {
 				const failure = result.data as { error?: string } | undefined;
@@ -71,16 +71,16 @@
 				onSuccess?.();
 				await update();
 			}
-			enviando = false;
+			submitting = false;
 		};
 	};
 </script>
 
-{#snippet modalTrigger({ showModal: abrir }: { showModal: () => void })}
+{#snippet modalTrigger({ showModal: open }: { showModal: () => void })}
 	{@render trigger?.({
 		showModal: () => {
 			error = null;
-			abrir();
+			open();
 		}
 	})}
 {/snippet}
@@ -106,8 +106,8 @@
 		{#each Object.entries(fields) as [name, value] (name)}
 			<input type="hidden" {name} {value} />
 		{/each}
-		<button type="submit" class="btn btn-error" disabled={enviando}>
-			{#if enviando}
+		<button type="submit" class="btn btn-error" disabled={submitting}>
+			{#if submitting}
 				<span class="loading loading-spinner"></span>
 			{/if}
 			{confirmLabel}

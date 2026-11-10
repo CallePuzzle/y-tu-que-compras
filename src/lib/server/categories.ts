@@ -142,16 +142,16 @@ export async function deleteCategory(familyId: string, id: string): Promise<bool
  * lista completa que acaba de leer, así que en la práctica se reescribe todo.
  */
 export async function reorderCategories(familyId: string, orderedIds: string[]): Promise<void> {
-	const unicos = [...new Set(orderedIds)];
+	const uniqueIds = [...new Set(orderedIds)];
 	await prisma.$transaction(async (tx) => {
-		const propias = await tx.category.findMany({
-			where: { id: { in: unicos }, organizationId: familyId },
+		const ownCategories = await tx.category.findMany({
+			where: { id: { in: uniqueIds }, organizationId: familyId },
 			select: { id: true }
 		});
-		const propiasIds = new Set(propias.map((categoria) => categoria.id));
+		const ownCategoryIds = new Set(ownCategories.map((category) => category.id));
 
-		const ordenPropio = unicos.filter((id) => propiasIds.has(id));
-		for (const [position, id] of ordenPropio.entries()) {
+		const ownOrder = uniqueIds.filter((id) => ownCategoryIds.has(id));
+		for (const [position, id] of ownOrder.entries()) {
 			await tx.category.updateMany({
 				where: { id, organizationId: familyId },
 				data: { position }

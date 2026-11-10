@@ -11,24 +11,24 @@ import { formatDateTime, formatPrice, formatQuantity } from './format.js';
  * ancho exacto cambia con el runtime (V8 usa el fino U+202F, JSC el U+00A0):
  * se normaliza para poder comparar con un espacio normal.
  */
-function plano(texto: string): string {
-	return texto.replaceAll(/[\u{00a0}\u{202f}]/gu, ' ');
+function plain(text: string): string {
+	return text.replaceAll(/[\u{00a0}\u{202f}]/gu, ' ');
 }
 
 describe('formatPrice', () => {
 	it('formatea el precio con la convención española: coma decimal, punto de millar y símbolo al final', () => {
 		// Seis cifras para que se vea el agrupado (el español no agrupa a 4
 		// dígitos: `minimumGroupingDigits: 2` del CLDR).
-		expect(plano(formatPrice(123456.78, 'es'))).toBe('123.456,78 €');
+		expect(plain(formatPrice(123456.78, 'es'))).toBe('123.456,78 €');
 	});
 
 	it('formatea el precio con la convención inglesa: punto decimal, coma de millar y símbolo delante', () => {
-		expect(plano(formatPrice(123456.78, 'en'))).toBe('€123,456.78');
+		expect(plain(formatPrice(123456.78, 'en'))).toBe('€123,456.78');
 	});
 
 	it('siempre en euros: la divisa es del producto, solo la presentación es local', () => {
-		expect(plano(formatPrice(7.5, 'es'))).toBe('7,50 €');
-		expect(plano(formatPrice(7.5, 'en'))).toBe('€7.50');
+		expect(plain(formatPrice(7.5, 'es'))).toBe('7,50 €');
+		expect(plain(formatPrice(7.5, 'en'))).toBe('€7.50');
 	});
 });
 

@@ -25,17 +25,17 @@ describe('resolveCategorySuggestions (#173)', () => {
 		// El item guarda el nombre visible («Leche Entera»); quien teclea
 		// «leche entera» o «LECHE ENTERA» en el alta debe recibir la misma
 		// sugerencia: la clave del mapa es SIEMPRE el canónico.
-		const sugerencias = resolveCategorySuggestions([
+		const suggestions = resolveCategorySuggestions([
 			row({ name: 'Leche Entera', categoryId: 'cat-lacteos' })
 		]);
-		expect(sugerencias).toEqual({ [normalizeItemName('Leche Entera')]: 'cat-lacteos' });
-		expect(sugerencias[normalizeItemName('LECHE  entera')]).toBe('cat-lacteos');
+		expect(suggestions).toEqual({ [normalizeItemName('Leche Entera')]: 'cat-lacteos' });
+		expect(suggestions[normalizeItemName('LECHE  entera')]).toBe('cat-lacteos');
 	});
 
 	it('la despensa prefiere sobre los items de listas para el mismo nombre', () => {
 		// El producto está asentado en la despensa (con su canónico guardado)
 		// y además hay items con otra clasificación: manda la despensa.
-		const sugerencias = resolveCategorySuggestions([
+		const suggestions = resolveCategorySuggestions([
 			row({
 				name: 'Leche entera',
 				normalizedName: 'leche entera',
@@ -50,28 +50,28 @@ describe('resolveCategorySuggestions (#173)', () => {
 				updatedAt: new Date('2026-06-01T10:00:00Z') // más reciente, pero item
 			})
 		]);
-		expect(sugerencias['leche entera']).toBe('cat-despensa');
+		expect(suggestions['leche entera']).toBe('cat-despensa');
 	});
 
 	it('a igual fuente, la clasificación más reciente gana', () => {
 		// Dos items de la familia con el mismo nombre y categorías distintas:
 		// la última vez que la familia clasificó ese nombre es la que sugiere.
-		const sugerencias = resolveCategorySuggestions([
+		const suggestions = resolveCategorySuggestions([
 			row({ name: 'leche entera', categoryId: 'cat-antigua', updatedAt: new Date('2026-01-01') }),
 			row({ name: 'LECHE ENTERA', categoryId: 'cat-nueva', updatedAt: new Date('2026-03-01') })
 		]);
-		expect(sugerencias['leche entera']).toBe('cat-nueva');
+		expect(suggestions['leche entera']).toBe('cat-nueva');
 	});
 
 	it('los nombres sin categoría no sugieren nada', () => {
 		// El item conocido existe pero quedó sin categoría (la borraron, o
 		// nunca se la pusieron): sin sugerencia para ese nombre… y si otra
 		// fila del mismo nombre SÍ lleva categoría, esa entra.
-		const sugerencias = resolveCategorySuggestions([
+		const suggestions = resolveCategorySuggestions([
 			row({ name: 'Leche entera', categoryId: null }),
 			row({ name: 'leche entera', categoryId: 'cat-lacteos' })
 		]);
-		expect(sugerencias['leche entera']).toBe('cat-lacteos');
+		expect(suggestions['leche entera']).toBe('cat-lacteos');
 		expect(resolveCategorySuggestions([row({ categoryId: null })])).toEqual({});
 	});
 
@@ -80,12 +80,12 @@ describe('resolveCategorySuggestions (#173)', () => {
 	});
 
 	it('nombres distintos conviven en el mapa, cada uno con su categoría', () => {
-		const sugerencias = resolveCategorySuggestions([
+		const suggestions = resolveCategorySuggestions([
 			row({ name: 'Leche entera', categoryId: 'cat-lacteos' }),
 			row({ name: 'Pan de molde', categoryId: 'cat-panaderia' }),
 			row({ name: 'Lejía', categoryId: 'cat-limpieza' })
 		]);
-		expect(sugerencias).toEqual({
+		expect(suggestions).toEqual({
 			'leche entera': 'cat-lacteos',
 			'pan de molde': 'cat-panaderia',
 			lejia: 'cat-limpieza'

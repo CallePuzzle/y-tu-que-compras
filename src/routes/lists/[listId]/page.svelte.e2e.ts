@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { volverALaPestana } from '../../../../e2e/helpers/browser';
+import { switchBackToTab } from '../../../../e2e/helpers/browser';
 import { seedSession, waitForHydration } from '../../../../e2e/helpers/auth';
 import { prisma } from '../../../../e2e/helpers/db';
 import {
@@ -20,7 +20,7 @@ test.beforeEach(async () => {
 test('el detalle muestra la lista y su alta rápida; items en orden', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({
+	const list = await createList({
 		familyId: family.id,
 		name: 'Frutería',
 		color: 'teal',
@@ -28,7 +28,7 @@ test('el detalle muestra la lista y su alta rápida; items en orden', async ({ p
 	});
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await expect(page.getByRole('heading', { name: 'Frutería' })).toBeVisible();
@@ -67,12 +67,12 @@ test('alta con categoria (#172): el chip clasifica el item y la edicion la conse
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería' });
-	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos' });
 	const limpieza = await createCategory({ familyId: family.id, name: 'Limpieza' });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// El select del alta ofrece las categorías de la familia, en su orden,
@@ -94,10 +94,10 @@ test('alta con categoria (#172): el chip clasifica el item y la edicion la conse
 	await expect(page.locator('li .badge-sm')).toHaveCount(1);
 
 	// La verdad quedó en el servidor.
-	const guardado = await prisma.item.findFirstOrThrow({
-		where: { listId: lista.id, name: 'Leche entera' }
+	const saved = await prisma.item.findFirstOrThrow({
+		where: { listId: list.id, name: 'Leche entera' }
 	});
-	expect(guardado.categoryId).toBe(lacteos.id);
+	expect(saved.categoryId).toBe(dairy.id);
 
 	// El formulario queda vacío (y SIN categoría) para encadenar otra alta.
 	await expect(page.locator('#add-name')).toHaveValue('');
@@ -106,7 +106,7 @@ test('alta con categoria (#172): el chip clasifica el item y la edicion la conse
 	// La edición abre el modal con la categoría del item cargada…
 	await leche.getByRole('button', { name: 'Editar item' }).click();
 	const dialog = page.locator('dialog[open]');
-	await expect(dialog.locator('#edit-category')).toHaveValue(lacteos.id);
+	await expect(dialog.locator('#edit-category')).toHaveValue(dairy.id);
 
 	// …reclasificar guarda la nueva y el chip sigue…
 	await dialog.locator('#edit-category').selectOption({ label: 'Limpieza' });
@@ -115,7 +115,7 @@ test('alta con categoria (#172): el chip clasifica el item y la edicion la conse
 	// rápida («Item añadido…») sigue en su formulario hasta el próximo envío.
 	await expect(page.getByText('Item actualizado.')).toBeVisible();
 	await expect(page.locator('li', { hasText: 'Leche entera' }).getByText('Limpieza')).toBeVisible();
-	expect(await prisma.item.findUniqueOrThrow({ where: { id: guardado.id } })).toMatchObject({
+	expect(await prisma.item.findUniqueOrThrow({ where: { id: saved.id } })).toMatchObject({
 		categoryId: limpieza.id
 	});
 
@@ -130,7 +130,7 @@ test('alta con categoria (#172): el chip clasifica el item y la edicion la conse
 	await expect(page.locator('li', { hasText: 'Leche entera' }).getByText('Limpieza')).toHaveCount(
 		0
 	);
-	expect(await prisma.item.findUniqueOrThrow({ where: { id: guardado.id } })).toMatchObject({
+	expect(await prisma.item.findUniqueOrThrow({ where: { id: saved.id } })).toMatchObject({
 		categoryId: null
 	});
 });
@@ -140,34 +140,34 @@ test('la sugerencia autocompleta la categoria de nombres conocidos (#173): despe
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería' });
-	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
-	const desayuno = await createCategory({ familyId: family.id, name: 'Desayuno' });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const breakfast = await createCategory({ familyId: family.id, name: 'Desayuno' });
 	// Dos fuentes de conocimiento: la despensa (con su canónico guardado)…
 	await createPantryItem({
 		familyId: family.id,
 		name: 'Leche Entera',
 		normalizedName: 'leche entera',
-		categoryId: lacteos.id
+		categoryId: dairy.id
 	});
 	// …y un item en OTRA lista de la misma familia: lo conocido es de la
 	// familia, no de la lista abierta.
-	const otra = await createList({ familyId: family.id, name: 'Desayunos' });
-	await createItem({ listId: otra.id, name: 'Café molido', categoryId: desayuno.id });
+	const other = await createList({ familyId: family.id, name: 'Desayunos' });
+	await createItem({ listId: other.id, name: 'Café molido', categoryId: breakfast.id });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// Teclear un nombre conocido (aquí en MINÚSCULAS, distinto del visible
 	// «Leche Entera» de la despensa) rellena el select solo.
 	await page.locator('#add-name').fill('leche entera');
-	await expect(page.locator('#add-category')).toHaveValue(lacteos.id);
+	await expect(page.locator('#add-category')).toHaveValue(dairy.id);
 
 	// Otro nombre conocido (de item, con acento y mayúsculas): la sugerencia
 	// se SUSTITUYE — la anterior también la puso la sugerencia.
 	await page.locator('#add-name').fill('Café Molido');
-	await expect(page.locator('#add-category')).toHaveValue(desayuno.id);
+	await expect(page.locator('#add-category')).toHaveValue(breakfast.id);
 
 	// Un nombre que la familia no conoce: la sugerencia se retira y el
 	// select vuelve a «Sin categoría» (no se queda con la del café).
@@ -177,15 +177,15 @@ test('la sugerencia autocompleta la categoria de nombres conocidos (#173): despe
 	// Y el alta sale con la sugerencia aplicada: el canónico colapsa también
 	// los espacios («leche  entera» ≡ «leche entera») y el chip clasifica.
 	await page.locator('#add-name').fill('leche  entera');
-	await expect(page.locator('#add-category')).toHaveValue(lacteos.id);
+	await expect(page.locator('#add-category')).toHaveValue(dairy.id);
 	await page.getByRole('button', { name: 'Añadir' }).first().click();
 
 	const leche = page.locator('li', { hasText: 'Leche entera' });
 	await expect(leche).toBeVisible();
 	await expect(leche.getByText('Lácteos')).toBeVisible();
-	expect(await prisma.item.findFirstOrThrow({ where: { listId: lista.id } })).toMatchObject({
+	expect(await prisma.item.findFirstOrThrow({ where: { listId: list.id } })).toMatchObject({
 		name: 'leche  entera',
-		categoryId: lacteos.id
+		categoryId: dairy.id
 	});
 });
 
@@ -194,23 +194,23 @@ test('la sugerencia nunca impide elegir otra categoria (#173): lo manual manda',
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería' });
-	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos' });
 	const limpieza = await createCategory({ familyId: family.id, name: 'Limpieza' });
 	await createPantryItem({
 		familyId: family.id,
 		name: 'Leche Entera',
 		normalizedName: 'leche entera',
-		categoryId: lacteos.id
+		categoryId: dairy.id
 	});
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// Primero sugiere (nombre conocido, select vacío)…
 	await page.locator('#add-name').fill('Leche entera');
-	await expect(page.locator('#add-category')).toHaveValue(lacteos.id);
+	await expect(page.locator('#add-category')).toHaveValue(dairy.id);
 
 	// …pero elegir OTRA categoría a mano es sagrado: aunque el nombre siga
 	// siendo conocido (retipeado con otras mayúsculas), el select no se mueve.
@@ -228,10 +228,10 @@ test('la sugerencia nunca impide elegir otra categoria (#173): lo manual manda',
 	await page.locator('#add-name').fill('Leche entera');
 	await expect(page.locator('#add-category')).toHaveValue(limpieza.id);
 	await page.getByRole('button', { name: 'Añadir' }).first().click();
-	const fila = page.locator('li', { hasText: 'Leche entera' });
-	await expect(fila).toBeVisible();
-	await expect(fila.getByText('Limpieza')).toBeVisible();
-	expect(await prisma.item.findFirstOrThrow({ where: { listId: lista.id } })).toMatchObject({
+	const row = page.locator('li', { hasText: 'Leche entera' });
+	await expect(row).toBeVisible();
+	await expect(row.getByText('Limpieza')).toBeVisible();
+	expect(await prisma.item.findFirstOrThrow({ where: { listId: list.id } })).toMatchObject({
 		categoryId: limpieza.id
 	});
 });
@@ -239,10 +239,10 @@ test('la sugerencia nunca impide elegir otra categoria (#173): lo manual manda',
 test('la validacion de cantidad corta el alta en cliente', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería' });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page.locator('#add-name').fill('Nada');
@@ -259,11 +259,11 @@ test('la validacion de cantidad corta el alta en cliente', async ({ page }) => {
 test('editar item en el modal con sus datos cargados', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería' });
-	const item = await createItem({ listId: lista.id, name: 'Leche entera', quantity: 1 });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const item = await createItem({ listId: list.id, name: 'Leche entera', quantity: 1 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page
@@ -280,9 +280,9 @@ test('editar item en el modal con sus datos cargados', async ({ page }) => {
 	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
 
 	await expect(page.getByRole('status')).toContainText('Item actualizado.');
-	const fila = page.locator('li', { hasText: 'Leche desnatada' });
-	await expect(fila).toBeVisible();
-	await expect(fila.getByText('3 L')).toBeVisible();
+	const row = page.locator('li', { hasText: 'Leche desnatada' });
+	await expect(row).toBeVisible();
+	await expect(row.getByText('3 L')).toBeVisible();
 
 	const updated = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
 	expect(updated.name).toBe('Leche desnatada');
@@ -291,11 +291,11 @@ test('editar item en el modal con sus datos cargados', async ({ page }) => {
 test('borrar item con confirmacion', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Frutería' });
-	const item = await createItem({ listId: lista.id, name: 'Leche entera' });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const item = await createItem({ listId: list.id, name: 'Leche entera' });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page
@@ -314,12 +314,12 @@ test('borrar item con confirmacion', async ({ page }) => {
 test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	const itemLeche = await createItem({ listId: lista.id, name: 'Leche', order: 0 });
-	await createItem({ listId: lista.id, name: 'Pan', order: 1 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	const itemLeche = await createItem({ listId: list.id, name: 'Leche', order: 0 });
+	await createItem({ listId: list.id, name: 'Pan', order: 1 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// Sin comprados no hay cabecera de secciones todavía.
@@ -336,7 +336,7 @@ test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', asyn
 	await expect(page.getByRole('heading', { name: 'Pendientes' })).toBeVisible();
 
 	// La verdad quedó en el servidor (checklist #69): el toggle persiste.
-	const items = await prisma.item.findMany({ where: { listId: lista.id } });
+	const items = await prisma.item.findMany({ where: { listId: list.id } });
 	expect(items.find((row) => row.name === 'Leche')?.purchased).toBe(true);
 	expect(items.find((row) => row.name === 'Pan')?.purchased).toBe(false);
 
@@ -345,15 +345,13 @@ test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', asyn
 	await leche.getByRole('checkbox', { name: 'Marcar como pendiente' }).click();
 	await expect(leche).not.toHaveClass(/opacity-60/);
 	await expect(leche.locator('p').first()).not.toHaveClass(/line-through/);
-	const despuesDeDesmarcar = await prisma.item.findUniqueOrThrow({ where: { id: itemLeche.id } });
-	expect(despuesDeDesmarcar.purchased).toBe(false);
+	const afterUnchecking = await prisma.item.findUniqueOrThrow({ where: { id: itemLeche.id } });
+	expect(afterUnchecking.purchased).toBe(false);
 
 	// Y tras recargar el load confirma el estado del servidor: sigue pendiente.
 	await page.reload();
-	const lecheRecargada = page.locator('li', { hasText: 'Leche' });
-	await expect(
-		lecheRecargada.getByRole('checkbox', { name: 'Marcar como comprado' })
-	).toBeVisible();
+	const reloadedMilk = page.locator('li', { hasText: 'Leche' });
+	await expect(reloadedMilk.getByRole('checkbox', { name: 'Marcar como comprado' })).toBeVisible();
 	await expect(
 		prisma.item.findUniqueOrThrow({ where: { id: itemLeche.id } })
 	).resolves.toMatchObject({ purchased: false });
@@ -362,8 +360,8 @@ test('marcar comprado: se tacha, baja a Comprados y el servidor lo guarda', asyn
 test('con todo comprado, el listado lo celebra', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', purchased: true, order: 0 });
 	await seedSession(page, user);
 
 	await page.goto('/lists');
@@ -374,21 +372,21 @@ test('con todo comprado, el listado lo celebra', async ({ page }) => {
 test('al volver a la pestaña: el refresco llega y lo tecleado NO se machaca', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', order: 0 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// Alta rápida a medias (tainted para superforms).
 	await page.locator('#add-name').fill('Huevos');
 
 	// «Otro miembro» añade un item mientras estamos fuera…
-	await createItem({ listId: lista.id, name: 'Papel higiénico', order: 1 });
+	await createItem({ listId: list.id, name: 'Papel higiénico', order: 1 });
 	// …y volvemos a la pestaña: el refresco llega aunque el alta esté a
 	// medias, porque el load ya no rehace ese formulario (#114).
-	await volverALaPestana(page);
+	await switchBackToTab(page);
 	await expect(page.locator('li', { hasText: 'Papel higiénico' })).toBeVisible();
 	await expect(page.locator('#add-name')).toHaveValue('Huevos');
 });
@@ -396,12 +394,12 @@ test('al volver a la pestaña: el refresco llega y lo tecleado NO se machaca', a
 test('lo escrito en el alta rápida no se pierde al marcar un comprado (#114)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', order: 0 });
-	await createItem({ listId: lista.id, name: 'Pan', order: 1 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', order: 0 });
+	await createItem({ listId: list.id, name: 'Pan', order: 1 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// Alta rápida a medias y, mientras está en vuelo, una acción AJENA (el
@@ -418,11 +416,11 @@ test('lo escrito en el alta rápida no se pierde al marcar un comprado (#114)', 
 test('lo escrito en el alta rápida no se pierde al editar otro item (#114)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	const item = await createItem({ listId: lista.id, name: 'Leche', quantity: 1, order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	const item = await createItem({ listId: list.id, name: 'Leche', quantity: 1, order: 0 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page.locator('#add-name').fill('Huevos');
@@ -440,56 +438,56 @@ test('lo escrito en el alta rápida no se pierde al editar otro item (#114)', as
 	// …y lo escrito sigue.
 	await expect(page.locator('#add-name')).toHaveValue('Huevos');
 	// `quantity` es Decimal en la BD: se compara como número.
-	const guardado = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
-	expect(Number(guardado.quantity)).toBe(3);
+	const saved = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
+	expect(Number(saved.quantity)).toBe(3);
 });
 
 test('la fila del alta rápida no desborda a 360px (#114)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', order: 0 });
 	await seedSession(page, user);
 
 	await page.setViewportSize({ width: 360, height: 740 });
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// A 360px (móvil pequeño) la fila cabía «justa» y se apretaba: con
 	// flex-wrap el botón baja a su propia línea y sigue dentro del viewport.
-	const boton = page.getByRole('button', { name: 'Añadir' }).last();
-	const caja = await boton.boundingBox();
-	expect(caja).not.toBeNull();
-	expect(caja!.x + caja!.width).toBeLessThanOrEqual(360);
+	const button = page.getByRole('button', { name: 'Añadir' }).last();
+	const box = await button.boundingBox();
+	expect(box).not.toBeNull();
+	expect(box!.x + box!.width).toBeLessThanOrEqual(360);
 	// Y nada desborda la página.
-	const ancho = await page.evaluate(() => ({
+	const width = await page.evaluate(() => ({
 		scroll: document.documentElement.scrollWidth,
 		client: document.documentElement.clientWidth
 	}));
-	expect(ancho.scroll).toBeLessThanOrEqual(ancho.client);
+	expect(width.scroll).toBeLessThanOrEqual(width.client);
 });
 
 test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	const item = await createItem({ listId: lista.id, name: 'Leche', order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	const item = await createItem({ listId: list.id, name: 'Leche', order: 0 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// La lista desaparece «por debajo» (otro miembro la borró): el POST de
 	// comprado falla y el checkbox debe volver a su estado original.
-	await prisma.list.delete({ where: { id: lista.id } });
-	const respuesta = page.waitForResponse((r) => r.url().includes('?/purchased'));
+	await prisma.list.delete({ where: { id: list.id } });
+	const response = page.waitForResponse((r) => r.url().includes('?/purchased'));
 	await page.getByRole('checkbox', { name: 'Marcar como comprado' }).click();
 
 	// El recurso que ya no existe vuelve 404, no 400 (issue #110). Con
 	// use:enhance la respuesta HTTP de la acción es siempre 200: el status de
 	// fail() viaja en el cuerpo JSON ({ type: 'failure', status }).
-	const cuerpo = await (await respuesta).json();
-	expect(cuerpo).toMatchObject({ type: 'failure', status: 404 });
+	const body = await (await response).json();
+	expect(body).toMatchObject({ type: 'failure', status: 404 });
 
 	// El fallo se avisa, el optimista se retira y el item vuelve a pendiente
 	// con los datos que traía la página (no hay update en fallo).
@@ -505,11 +503,11 @@ test('el toggle optimista revierte si el servidor rechaza', async ({ page }) => 
 test('sin items comprados no se ofrece finalizar la compra', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Pan', order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Pan', order: 0 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// Sin comprados no hay compra que cerrar (#70): el CTA no aparece.
@@ -521,12 +519,12 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	const leche = await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
-	await createItem({ listId: lista.id, name: 'Pan', order: 1 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	const leche = await createItem({ listId: list.id, name: 'Leche', purchased: true, order: 0 });
+	await createItem({ listId: list.id, name: 'Pan', order: 1 });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	// El resumen del modal trae SOLO los comprados: la leche (con su
@@ -543,17 +541,13 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 	// Sin total no hay envío: el schema lo corta en cliente, sin historial.
 	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
 	await expect(dialog.getByText('Escribe un total válido (cero o más).')).toBeVisible();
-	await expect(
-		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
-	).resolves.toBeNull();
+	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
 
 	// Tampoco pasa un total negativo.
 	await dialog.locator('#finalize-total').fill('-1');
 	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
 	await expect(dialog.getByText('Escribe un total válido (cero o más).')).toBeVisible();
-	await expect(
-		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
-	).resolves.toBeNull();
+	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
 
 	// Total válido: cierra el modal, avisa y la lista queda con los
 	// pendientes — la leche desaparece y con ella el CTA de finalizar.
@@ -570,7 +564,7 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 	// establecimiento (#185), la compra tampoco lleva tienda (criterio de
 	// aceptación: sigue funcionando sin elegirlo).
 	const record = await prisma.purchaseRecord.findFirstOrThrow({
-		where: { listId: lista.id },
+		where: { listId: list.id },
 		include: { items: true }
 	});
 	expect(record.listName).toBe('Super');
@@ -587,15 +581,15 @@ test('finalizar con establecimiento (#185): el select ofrece la familia y el his
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', purchased: true, order: 0 });
 	// Dos tiendas sembradas en orden: el select las ofrece en el mismo orden
 	// de creación que trae el load (`listStores`).
 	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
 	await createStore({ familyId: family.id, name: 'Frapeluza' });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page.getByRole('button', { name: 'Finalizar compra' }).click();
@@ -618,7 +612,7 @@ test('finalizar con establecimiento (#185): el select ofrece la familia y el his
 	// La verdad quedó en la BD: la compra lleva la tienda elegida, con el
 	// nombre visible congelado en el momento de finalizar.
 	expect(
-		await prisma.purchaseRecord.findFirstOrThrow({ where: { listId: lista.id } })
+		await prisma.purchaseRecord.findFirstOrThrow({ where: { listId: list.id } })
 	).toMatchObject({
 		storeId: mercadona.id,
 		storeName: 'Mercadona'
@@ -630,12 +624,12 @@ test('un establecimiento borrado mientras se rellena el modal NO cierra la compr
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	await createItem({ listId: lista.id, name: 'Leche', purchased: true, order: 0 });
-	const tienda = await createStore({ familyId: family.id, name: 'Chino de antes' });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', purchased: true, order: 0 });
+	const store = await createStore({ familyId: family.id, name: 'Chino de antes' });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page.getByRole('button', { name: 'Finalizar compra' }).click();
@@ -643,7 +637,7 @@ test('un establecimiento borrado mientras se rellena el modal NO cierra la compr
 	await dialog.locator('#finalize-store').selectOption({ label: 'Chino de antes' });
 	// Otro miembro borra la tienda justo antes de confirmar: el id que viaja
 	// queda rancio y el servidor rechaza la compra CON mensaje, sin cerrarla.
-	await prisma.store.delete({ where: { id: tienda.id } });
+	await prisma.store.delete({ where: { id: store.id } });
 	await dialog.locator('#finalize-total').fill('5');
 	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
 
@@ -651,11 +645,9 @@ test('un establecimiento borrado mientras se rellena el modal NO cierra la compr
 		'El establecimiento elegido ya no existe en esta familia'
 	);
 	// Nada se cerró: el item sigue comprado y sin historial.
-	const row = await prisma.item.findFirstOrThrow({ where: { listId: lista.id } });
+	const row = await prisma.item.findFirstOrThrow({ where: { listId: list.id } });
 	expect(row.purchased).toBe(true);
-	await expect(
-		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
-	).resolves.toBeNull();
+	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
 });
 
 test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío', async ({
@@ -663,12 +655,12 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	const lista = await createList({ familyId: family.id, name: 'Super' });
-	const item = await createItem({ listId: lista.id, name: 'Leche', purchased: true });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	const item = await createItem({ listId: list.id, name: 'Leche', purchased: true });
 	await createStore({ familyId: family.id, name: 'Mercadona' });
 	await seedSession(page, user);
 
-	await page.goto(`/lists/${lista.id}`);
+	await page.goto(`/lists/${list.id}`);
 	await waitForHydration(page);
 
 	await page.getByRole('button', { name: 'Finalizar compra' }).click();
@@ -682,9 +674,7 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 	await expect(page.locator('li', { hasText: 'Leche' })).toBeVisible();
 	const row = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
 	expect(row.purchased).toBe(true);
-	await expect(
-		prisma.purchaseRecord.findFirst({ where: { listId: lista.id } })
-	).resolves.toBeNull();
+	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
 
 	// Al reabrir, el total empieza EN BLANCO (el 0 default del schema no se
 	// pinta, y lo tecleado antes no se arrastra).

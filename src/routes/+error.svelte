@@ -11,7 +11,7 @@
 	// - Otros 4xx: el mensaje del `error()` de la acción/endpoint, que la app
 	//   ya escribe traducido (p. ej. `families/active`).
 	// - 5xx: genérico; el mensaje de SvelteKit («Internal Error») no se enseña.
-	const mensaje = $derived(
+	const message = $derived(
 		page.status === 404
 			? m.error_not_found()
 			: page.status < 500 && page.error?.message
@@ -26,7 +26,7 @@
 
 <section class="mx-auto flex max-w-md flex-col items-center gap-4 py-8 text-center">
 	<h1 class="text-2xl font-bold">{m.error_title({ status: page.status })}</h1>
-	<p class="opacity-70">{mensaje}</p>
+	<p class="opacity-70">{message}</p>
 	<a href={resolve('/')} class="btn btn-primary">
 		<House aria-hidden="true" />
 		{m.error_home()}
