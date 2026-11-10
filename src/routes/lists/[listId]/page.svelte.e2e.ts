@@ -692,3 +692,73 @@ test('cancelar cierra el modal sin finalizar y el total vuelve a empezar vacío'
 	// El establecimiento elegido tampoco se arrastra (#185): vuelve a «Sin…».
 	await expect(page.locator('#finalize-store')).toHaveValue('');
 });
+
+test('el buscador filtra la lista en cliente (#208)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	await createItem({ listId: list.id, name: 'Teléfono fijo', order: 0 });
+	await createItem({ listId: list.id, name: 'Leche', categoryId: dairy.id, order: 1 });
+	await createItem({ listId: list.id, name: 'Pan', order: 2, purchased: true });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${list.id}`);
+	await waitForHydration(page);
+
+	// El buscador vive entre el alta rápida y la lista…
+	const search = page.getByRole('textbox', { name: 'Buscar artículos' });
+	await expect(search).toBeVisible();
+
+	// …y sin consulta están los tres: dos pendientes y un comprado.
+	await expect(page.locator('ol > li')).toHaveCount(3);
+
+	// Filtrar por nombre SIN acentos: «telefono» encuentra «Teléfono fijo»,
+	// que sale solo — ni leche ni el pan comprado casan.
+	await search.fill('telefono');
+	await expect(page.locator('li', { hasText: 'Teléfono fijo' })).toBeVisible();
+	await expect(page.locator('ol > li')).toHaveCount(1);
+
+	// La categoría casa igual que el nombre: «lacteos» encuentra la leche.
+	await search.fill('lacteos');
+	await expect(page.locator('li', { hasText: 'Leche' })).toBeVisible();
+	await expect(page.locator('ol > li')).toHaveCount(1);
+
+	// Consulta sin matches: mensaje propio (no el estado vacío de la lista),
+	// sin secciones que pintar.
+	await search.fill('zzz sin match');
+	await expect(page.getByText('Ningún artículo coincide con la búsqueda.')).toBeVisible();
+	await expect(page.getByText(/Esta lista está vacía/)).toHaveCount(0);
+	await expect(page.locator('ol')).toHaveCount(0);
+
+	// Finalizar compra se ancla a los comprados SIN filtrar (#208): es una
+	// acción de lista y sigue ahí aunque la búsqueda deje fuera al pan.
+	await expect(page.getByRole('button', { name: 'Finalizar compra' })).toBeVisible();
+
+	// Limpiar restaura la lista completa: los tres y el mensaje fuera.
+	await page.getByRole('button', { name: 'Limpiar la búsqueda' }).click();
+	await expect(page.locator('ol > li')).toHaveCount(3);
+	await expect(search).toHaveValue('');
+	await expect(page.getByText('Ningún artículo coincide con la búsqueda.')).toHaveCount(0);
+});
+
+test('finalizar compra con filtro activo resume TODOS los comprados (#208)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', purchased: true });
+	await createItem({ listId: list.id, name: 'Pan', purchased: true });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${list.id}`);
+	await waitForHydration(page);
+
+	// Con la búsqueda puesta, el modal sigue resumiendo la compra ENTERA:
+	// es una acción de lista, no de lo que deja ver el filtro.
+	await page.getByRole('textbox', { name: 'Buscar artículos' }).fill('leche');
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByText('Leche')).toBeVisible();
+	await expect(dialog.getByText('Pan')).toBeVisible();
+});
