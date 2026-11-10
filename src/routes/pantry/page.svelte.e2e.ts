@@ -683,3 +683,76 @@ test('sin categorias en la familia la despensa queda plana, sin secciones (#176)
 			.getByRole('button', { name: 'Cambiar categoría' })
 	).toHaveCount(0);
 });
+
+test('el buscador filtra la despensa y las secciones sin matches colapsan (#208)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	const fruits = await createCategory({ familyId: family.id, name: 'Frutas', position: 1 });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Yogur',
+		quantity: 4,
+		unit: 'unit',
+		categoryId: dairy.id
+	});
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Manzana',
+		quantity: 2,
+		unit: 'kilogram',
+		categoryId: fruits.id
+	});
+	// Un agotado (a 0): la búsqueda decide también su sección «Agotados».
+	await createPantryItem({ familyId: family.id, name: 'Pan de molde', quantity: 0 });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// El buscador, tras los alerts y antes de las secciones; sin consulta,
+	// las tres secciones completas (el filtro está desactivado).
+	const search = page.getByRole('textbox', { name: 'Buscar artículos' });
+	await expect(search).toBeVisible();
+	await expect(page.locator('#tour-pantry-list h3')).toHaveText([
+		'Lácteos',
+		'Frutas',
+		'Sin categoría'
+	]);
+
+	// Filtrar por nombre SIN acentos y con espacios: «pan de molde» deja
+	// solo su sección — Lácteos y Frutas colapsan (sin productos no abren).
+	await search.fill('pan de molde');
+	await expect(page.locator('li', { hasText: 'Pan de molde' })).toBeVisible();
+	await expect(page.locator('li', { hasText: 'Yogur' })).toHaveCount(0);
+	await expect(page.locator('#tour-pantry-list h3')).toHaveText(['Sin categoría']);
+
+	// La categoría casa igual que el nombre: «frutas» encuentra la manzana.
+	await search.fill('frutas');
+	await expect(page.locator('li', { hasText: 'Manzana' })).toBeVisible();
+	await expect(page.locator('#tour-pantry-list h3')).toHaveText(['Frutas']);
+
+	// «En casa» / «Agotados» se reparten DESPUÉS de filtrar: una consulta
+	// que solo trae un agotado quita la cabecera de «En casa» entera.
+	await search.fill('molde');
+	await expect(page.getByRole('heading', { name: 'Agotados' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'En casa' })).toHaveCount(0);
+
+	// Sin matches: mensaje propio, ninguna sección y NO el estado vacío
+	// de la despensa (ahí hay productos, es la búsqueda la que no casó).
+	await search.fill('zzz sin match');
+	await expect(page.getByText('Ningún artículo coincide con la búsqueda.')).toBeVisible();
+	await expect(page.getByText(/La despensa está vacía/)).toHaveCount(0);
+	await expect(page.locator('#tour-pantry-list h3')).toHaveCount(0);
+
+	// Limpiar restaura las tres secciones.
+	await page.getByRole('button', { name: 'Limpiar la búsqueda' }).click();
+	await expect(page.locator('#tour-pantry-list h3')).toHaveText([
+		'Lácteos',
+		'Frutas',
+		'Sin categoría'
+	]);
+	await expect(search).toHaveValue('');
+});
