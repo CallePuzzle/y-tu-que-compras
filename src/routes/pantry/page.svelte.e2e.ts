@@ -578,8 +578,15 @@ test('agrupa por categorias en su orden y deja Sin categoria al final (#176)', a
 
 	// Las secciones salen en el orden de la familia (posición) y «Sin
 	// categoría» al final; una categoría sin productos aquí no abre sección.
+	// La cabecera colapsable (#209) añade a cada título su contador de
+	// productos: el `\s*` tolera los renglones que el navegador mete entre
+	// chevron, título y contador.
 	const titulos = page.locator('#tour-pantry-list h3');
-	await expect(titulos).toHaveText(['Lácteos', 'Frutas', 'Sin categoría']);
+	await expect(titulos).toHaveText([
+		/^\s*Lácteos\s*1$/,
+		/^\s*Frutas\s*1$/,
+		/^\s*Sin categoría\s*2$/
+	]);
 
 	// Cada producto en SU sección.
 	await expect(
@@ -713,26 +720,29 @@ test('el buscador filtra la despensa y las secciones sin matches colapsan (#208)
 	await waitForHydration(page);
 
 	// El buscador, tras los alerts y antes de las secciones; sin consulta,
-	// las tres secciones completas (el filtro está desactivado).
+	// las tres secciones completas (el filtro está desactivado). Cada
+	// cabecera lleva su contador de productos (#209): el `\s*` tolera los
+	// renglones que el navegador mete entre chevron, título y contador.
 	const search = page.getByRole('textbox', { name: 'Buscar artículos' });
 	await expect(search).toBeVisible();
 	await expect(page.locator('#tour-pantry-list h3')).toHaveText([
-		'Lácteos',
-		'Frutas',
-		'Sin categoría'
+		/^\s*Lácteos\s*1$/,
+		/^\s*Frutas\s*1$/,
+		/^\s*Sin categoría\s*1$/
 	]);
 
 	// Filtrar por nombre SIN acentos y con espacios: «pan de molde» deja
-	// solo su sección — Lácteos y Frutas colapsan (sin productos no abren).
+	// solo su sección — Lácteos y Frutas desaparecen (sin productos no
+	// abren sección).
 	await search.fill('pan de molde');
 	await expect(page.locator('li', { hasText: 'Pan de molde' })).toBeVisible();
 	await expect(page.locator('li', { hasText: 'Yogur' })).toHaveCount(0);
-	await expect(page.locator('#tour-pantry-list h3')).toHaveText(['Sin categoría']);
+	await expect(page.locator('#tour-pantry-list h3')).toHaveText([/^\s*Sin categoría\s*1$/]);
 
 	// La categoría casa igual que el nombre: «frutas» encuentra la manzana.
 	await search.fill('frutas');
 	await expect(page.locator('li', { hasText: 'Manzana' })).toBeVisible();
-	await expect(page.locator('#tour-pantry-list h3')).toHaveText(['Frutas']);
+	await expect(page.locator('#tour-pantry-list h3')).toHaveText([/^\s*Frutas\s*1$/]);
 
 	// «En casa» / «Agotados» se reparten DESPUÉS de filtrar: una consulta
 	// que solo trae un agotado quita la cabecera de «En casa» entera.
@@ -750,9 +760,115 @@ test('el buscador filtra la despensa y las secciones sin matches colapsan (#208)
 	// Limpiar restaura las tres secciones.
 	await page.getByRole('button', { name: 'Limpiar la búsqueda' }).click();
 	await expect(page.locator('#tour-pantry-list h3')).toHaveText([
-		'Lácteos',
-		'Frutas',
-		'Sin categoría'
+		/^\s*Lácteos\s*1$/,
+		/^\s*Frutas\s*1$/,
+		/^\s*Sin categoría\s*1$/
 	]);
 	await expect(search).toHaveValue('');
+});
+test('las secciones se colapsan desde su cabecera y el estado sobrevive a la recarga (#209)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Yogur',
+		quantity: 4,
+		unit: 'unit',
+		categoryId: dairy.id
+	});
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 2,
+		unit: 'liter',
+		categoryId: dairy.id
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	// Por defecto TODO expandido: la vista de hoy no cambia (#209).
+	const cabecera = page.locator(`#casa-${dairy.id} button`);
+	const lista = page.locator(`#casa-${dairy.id}-list`);
+	await expect(cabecera).toHaveAttribute('aria-expanded', 'true');
+	await expect(cabecera).toHaveAttribute('aria-controls', `casa-${dairy.id}-list`);
+	await expect(lista).toBeVisible();
+	await expect(lista.locator('li')).toHaveCount(2);
+
+	// Colapsar: la lista se retira, el chevron gira y el nombre accesible
+	// pasa a ofrecer expandir.
+	await cabecera.click();
+	await expect(cabecera).toHaveAttribute('aria-expanded', 'false');
+	await expect(lista).toBeHidden();
+	await expect(cabecera.locator('svg')).toHaveClass(/-rotate-90/);
+	await expect(cabecera).toHaveAttribute('aria-label', 'Expandir Lácteos');
+
+	// El estado viaja a localStorage con SU clave de sección.
+	const collapsed = await page.evaluate(() =>
+		JSON.parse(localStorage.getItem('pantry-collapsed-v1') ?? '[]')
+	);
+	expect(collapsed).toEqual([`casa-${dairy.id}`]);
+
+	// La recarga lo retoma: sigue plegada…
+	await page.reload();
+	await waitForHydration(page);
+	await expect(page.locator(`#casa-${dairy.id}-list`)).toBeHidden();
+	await expect(page.locator(`#casa-${dairy.id} button`)).toHaveAttribute('aria-expanded', 'false');
+
+	// …y expandir de nuevo la devuelve y vacía el recuerdo.
+	await page.locator(`#casa-${dairy.id} button`).click();
+	await expect(page.locator(`#casa-${dairy.id}-list`)).toBeVisible();
+	const raw = await page.evaluate(() => localStorage.getItem('pantry-collapsed-v1'));
+	expect(JSON.parse(raw ?? '[]')).toEqual([]);
+});
+
+test('En casa y Agotados recuerdan su colapsado por separado (#209)', async ({ page }) => {
+	// La misma categoría con producto en casa y agotado: dos secciones con el
+	// mismo título, cada una con SU clave (`casa-<id>` / `fuera-<id>`).
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos', position: 0 });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Yogur',
+		quantity: 4,
+		unit: 'unit',
+		categoryId: dairy.id
+	});
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		quantity: 0,
+		unit: 'liter',
+		categoryId: dairy.id
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	const casa = page.locator(`#casa-${dairy.id} button`);
+	const fuera = page.locator(`#fuera-${dairy.id} button`);
+	await expect(casa).toHaveAttribute('aria-expanded', 'true');
+	await expect(fuera).toHaveAttribute('aria-expanded', 'true');
+
+	// Plegar SOLO la de casa: la de agotados queda abierta…
+	await casa.click();
+	await expect(page.locator(`#casa-${dairy.id}-list`)).toBeHidden();
+	await expect(page.locator(`#fuera-${dairy.id}-list`)).toBeVisible();
+	await expect(fuera).toHaveAttribute('aria-expanded', 'true');
+
+	// …y el recuerdo guarda SOLO la clave plegada, sin contagio.
+	const raw = await page.evaluate(() => localStorage.getItem('pantry-collapsed-v1'));
+	expect(JSON.parse(raw ?? '[]')).toEqual([`casa-${dairy.id}`]);
+
+	// Recarga: el reparto se conserva tal cual.
+	await page.reload();
+	await waitForHydration(page);
+	await expect(page.locator(`#casa-${dairy.id}-list`)).toBeHidden();
+	await expect(page.locator(`#fuera-${dairy.id}-list`)).toBeVisible();
 });

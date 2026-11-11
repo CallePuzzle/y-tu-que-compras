@@ -246,6 +246,8 @@
 	"pantry_restock": "Put back {step} {unit}",
 	"pantry_section_home": "At home",
 	"pantry_section_out": "Ran out",
+	"pantry_section_collapse": "Collapse {name}",
+	"pantry_section_expand": "Expand {name}",
 	"pantry_gone": "That item is no longer in the pantry.",
 	"pantry_error": "The pantry could not be updated. Please try again later.",
 	"pantry_readd": "Re-add to shopping list",

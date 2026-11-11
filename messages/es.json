@@ -246,6 +246,8 @@
 	"pantry_restock": "Devolver {step} {unit}",
 	"pantry_section_home": "En casa",
 	"pantry_section_out": "Agotados",
+	"pantry_section_collapse": "Contraer {name}",
+	"pantry_section_expand": "Expandir {name}",
 	"pantry_gone": "Ese producto ya no está en la despensa.",
 	"pantry_error": "No se ha podido actualizar la despensa. Inténtalo de nuevo más tarde.",
 	"pantry_readd": "Re-añadir a la compra",
