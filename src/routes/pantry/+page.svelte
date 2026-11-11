@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { Modal } from '@callepuzzle/svelte-ui';
 	import { SvelteMap } from 'svelte/reactivity';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Minus from '@lucide/svelte/icons/minus';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
@@ -15,6 +16,7 @@
 	import { formatQuantity } from '#lib/format.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
+	import { createPantryCollapse } from '#lib/utils/pantry-collapse.js';
 	import { unitLabels } from '#lib/units.js';
 	import { errorMessage } from '#lib/forms.js';
 	import { buildTourContext, continueOnboardingTour } from '#lib/utils/tour.js';
@@ -131,6 +133,19 @@
 	const withCategories = $derived(data.categories.length > 0);
 	const homeSections = $derived(groupByCategory(enCasa));
 	const depletedSections = $derived(groupByCategory(depleted));
+
+	// ---- Colapsar secciones (#209): la cabecera de cada categoría es un
+	// disclosure — chevron, contador de productos y aria-expanded — y el
+	// estado (qué secciones están plegadas, en «En casa» y en «Agotados» por
+	// separado) vive en un SvelteSet persistido en localStorage, así que
+	// sobrevive a la recarga. Por defecto TODO expandido: el conjunto sólo
+	// recuerda las colapsadas. ----
+	const pantryCollapse = createPantryCollapse();
+
+	/** La clave de UNA sección en el conjunto colapsado: prefijo + categoría. */
+	function collapseKey(prefix: string, section: PantrySection): string {
+		return `${prefix}-${section.key}`;
+	}
 
 	/**
 	 * Anota el delta del botón pulsado como ajuste en vuelo (optimista). El
@@ -486,20 +501,52 @@
 		     familia. Sin categorías en la familia, la sección única no lleva
 		     cabecera: la lista queda plana, como siempre. -->
 		{#snippet categorySection(section: PantrySection, prefix: string)}
+			{@const sectionKey = collapseKey(prefix, section)}
 			<section aria-labelledby={withCategories ? `${prefix}-${section.key}` : undefined}>
 				{#if withCategories}
+					<!-- #209: la cabecera entera es un disclosure — chevron que gira
+					     al plegar, contador de productos y aria-expanded/aria-controls.
+					     La etiqueta accesible viaja en el mensaje con el estado; el
+					     `uppercase` va también en el botón porque los controles de
+					     formulario no lo heredan. -->
 					<h3
 						id={`${prefix}-${section.key}`}
 						class="text-xs font-semibold tracking-wide uppercase opacity-50"
 					>
-						{section.title}
+						<button
+							type="button"
+							class="flex cursor-pointer items-center gap-1 uppercase hover:opacity-80"
+							aria-expanded={!pantryCollapse.isCollapsed(sectionKey)}
+							aria-controls={`${prefix}-${section.key}-list`}
+							aria-label={pantryCollapse.isCollapsed(sectionKey)
+								? m.pantry_section_expand({ name: section.title })
+								: m.pantry_section_collapse({ name: section.title })}
+							onclick={() => pantryCollapse.toggle(sectionKey)}
+						>
+							<ChevronDown
+								aria-hidden="true"
+								class={`size-3.5 shrink-0 transition-transform ${pantryCollapse.isCollapsed(sectionKey) ? '-rotate-90' : ''}`}
+							/>
+							{section.title}
+							<span class="badge badge-ghost badge-sm">{section.items.length}</span>
+						</button>
 					</h3>
 				{/if}
-				<ul class={`flex list-none flex-col gap-2 ${withCategories ? 'mt-2' : ''}`}>
-					{#each section.items as item (item.id)}
-						{@render productRow(item)}
-					{/each}
-				</ul>
+				<!-- Colapsada, la lista NO se esconde con `hidden`: su clase `flex`
+				     pisaría el `display: none` del atributo (los estilos de autor
+				     ganan a los del navegador), así que se retira del DOM — mientras
+				     tanto `aria-controls` apunta a un id ausente y no hace daño.
+				     Sin categorías (lista plana) no hay nada que colapsar. -->
+				{#if !withCategories || !pantryCollapse.isCollapsed(sectionKey)}
+					<ul
+						id={`${prefix}-${section.key}-list`}
+						class={`flex list-none flex-col gap-2 ${withCategories ? 'mt-2' : ''}`}
+					>
+						{#each section.items as item (item.id)}
+							{@render productRow(item)}
+						{/each}
+					</ul>
+				{/if}
 			</section>
 		{/snippet}
 
