@@ -13,6 +13,8 @@
 	import Tag from '@lucide/svelte/icons/tag';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import ItemSearch from '#lib/components/ItemSearch.svelte';
+	import { matchesItemSearch } from '#lib/components/item-search.js';
 	import { formatQuantity } from '#lib/format.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
@@ -65,9 +67,21 @@
 	 * producto consumido hasta 0 NO desaparece: baja a «Agotados» atenuado —
 	 * es la memoria de la compra habitual, con su botón de re-añadir a punto —
 	 * y solo se va de la despensa si se quita explícitamente (#74).
+	 *
+	 * El buscador (#208) se aplica ANTES de partir: filtrado EN CLIENTE — el
+	 * load ya trae todos los productos —, consulta en `$state` y listas en
+	 * `$derived`, sin debounce, casa por subcadena contra nombre o categoría
+	 * normalizados («telefono» encuentra «Teléfono fijo»). Así las dos
+	 * particiones y sus cabeceras condicionales siguen funcionando igual, y
+	 * `groupByCategory` — que solo crea secciones CON productos — colapsa
+	 * solas las categorías sin matches.
 	 */
-	const enCasa = $derived(data.items.filter((item) => displayQuantity(item) > 0));
-	const depleted = $derived(data.items.filter((item) => displayQuantity(item) === 0));
+	let searchQuery = $state('');
+
+	/** `data.items` ya pasado por el filtro del buscador. */
+	const filteredItems = $derived(data.items.filter((item) => matchesItemSearch(item, searchQuery)));
+	const enCasa = $derived(filteredItems.filter((item) => displayQuantity(item) > 0));
+	const depleted = $derived(filteredItems.filter((item) => displayQuantity(item) === 0));
 
 	// ---- Agrupado por categorías (#176): dentro de «En casa» y de
 	// «Agotados», los productos se reparten en secciones — una por categoría
@@ -550,39 +564,51 @@
 			</section>
 		{/snippet}
 
+		<!-- Buscador (#208): tras los alerts y antes de las secciones,
+		     visible siempre que haya productos (este es el `{:else}` del
+		     estado vacío). -->
+		<ItemSearch bind:query={searchQuery} />
+
 		<!-- Envoltorio con el `id` de ancla del tour (#142): cubre las dos
 		     secciones («En casa» y «Agotados»), una sola de las cuales puede
-		     existir según lo que haya en despensa. -->
+		     existir según lo que haya en despensa. Con búsqueda sin resultados
+		     (#208) el ancla sigue aquí, aunque dentro no haya secciones. -->
 		<div id="tour-pantry-list">
-			<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
-			     debajo (si no, sobra), como pendientes/comprados en la lista. -->
-			{#if enCasa.length > 0}
-				{#if depleted.length > 0}
-					<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
-						{m.pantry_section_home()}
-					</h2>
+			{#if filteredItems.length === 0}
+				<!-- Sin resultados (#208): la consulta no casa con ningún
+				     producto; no es el estado vacío de la despensa. -->
+				<p class="mt-8 text-center opacity-70">{m.ui_search_no_results()}</p>
+			{:else}
+				<!-- «En casa»: lo que queda. Su cabecera solo cuando hay agotados
+				     debajo (si no, sobra), como pendientes/comprados en la lista. -->
+				{#if enCasa.length > 0}
+					{#if depleted.length > 0}
+						<h2 class="mt-4 text-sm font-semibold tracking-wide uppercase opacity-60">
+							{m.pantry_section_home()}
+						</h2>
+					{/if}
+					<div class={`flex flex-col gap-4 ${depleted.length > 0 ? 'mt-2' : 'mt-4'}`}>
+						{#each homeSections as section (section.key)}
+							{@render categorySection(section, 'casa')}
+						{/each}
+					</div>
 				{/if}
-				<div class={`flex flex-col gap-4 ${depleted.length > 0 ? 'mt-2' : 'mt-4'}`}>
-					{#each homeSections as section (section.key)}
-						{@render categorySection(section, 'casa')}
-					{/each}
-				</div>
-			{/if}
 
-			<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
-			     servidor NO los borra) para poder re-añadirlos a la compra. -->
-			{#if depleted.length > 0}
-				<h2
-					class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
-				>
-					{m.pantry_section_out()}
-				</h2>
+				<!-- «Agotados»: consumidos hasta 0. Se quedan en la despensa (el
+				     servidor NO los borra) para poder re-añadirlos a la compra. -->
+				{#if depleted.length > 0}
+					<h2
+						class={`text-sm font-semibold tracking-wide uppercase opacity-60 ${enCasa.length > 0 ? 'mt-6' : 'mt-4'}`}
+					>
+						{m.pantry_section_out()}
+					</h2>
 
-				<div class={`flex flex-col gap-4 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
-					{#each depletedSections as section (section.key)}
-						{@render categorySection(section, 'fuera')}
-					{/each}
-				</div>
+					<div class={`flex flex-col gap-4 ${enCasa.length > 0 ? 'mt-2' : 'mt-4'}`}>
+						{#each depletedSections as section (section.key)}
+							{@render categorySection(section, 'fuera')}
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{/if}
