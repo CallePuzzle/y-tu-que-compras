@@ -10,8 +10,12 @@
  * UTC y el navegador del usuario no, y `Intl.DateTimeFormat` sin zona daría
  * horas distintas en cada lado. Es un producto español («¿Y tú qué
  * compras?»): la hora de península es la que esperan sus familias.
+ *
+ * Es también la zona del «hoy» del calendario (#217): el mes actual que
+ * sirve el load y el día destacado del grid se resuelven en ella, no en la
+ * del servidor (ver `src/routes/calendar/grid.ts`).
  */
-const APP_TIME_ZONE = 'Europe/Madrid';
+export const APP_TIME_ZONE = 'Europe/Madrid';
 
 /**
  * Fecha y hora cortas en la locale dada («28 oct 2026, 19:45» en es): el
