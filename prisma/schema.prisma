@@ -110,11 +110,12 @@ model RateLimit {
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
 //
-// Las relaciones `lists`, `categories`, `stores`, `purchases` y `pantryItems`
-// son de la app (no del plugin, que las ignora): al borrar la familia mueren
-// con ella sus listas de la compra (Cascade en List), sus categorías (Cascade
-// en Category), sus establecimientos (Cascade en Store), su historial de
-// compras (Cascade en PurchaseRecord) y su despensa (Cascade en PantryItem).
+// Las relaciones `lists`, `categories`, `stores`, `purchases`, `pantryItems`
+// y `mealPlans` son de la app (no del plugin, que las ignora): al borrar la
+// familia mueren con ella sus listas de la compra (Cascade en List), sus
+// categorías (Cascade en Category), sus establecimientos (Cascade en Store),
+// su historial de compras (Cascade en PurchaseRecord), su despensa (Cascade
+// en PantryItem) y sus menús planificados (Cascade en MealPlan).
 model Organization {
   id          String           @id
   name        String
@@ -127,6 +128,7 @@ model Organization {
   stores      Store[]
   purchases   PurchaseRecord[]
   pantryItems PantryItem[]
+  mealPlans   MealPlan[]
 
   @@map("organization")
 }
@@ -331,8 +333,9 @@ model List {
   @@map("list")
 }
 
-// Categoría de una familia (épica #164): agrupa items de la lista y productos
-// de la despensa. Empieza vacía (sin catálogo sembrado) y la gestiona
+// Categoría de una familia (épica #164): agrupa items de la lista, productos
+// de la despensa e ingredientes de los menús (épica #212). Empieza vacía
+// (sin catálogo sembrado) y la gestiona
 // cualquier miembro de la familia, sin checks de rol (issue #111). `name` es
 // el nombre visible; `normalizedName` es el nombre CANÓNICO de búsqueda (trim,
 // minúsculas y sin acentos, ver `normalizeItemName` en `$lib/normalize-name`)
@@ -345,17 +348,18 @@ model List {
 // sirve de índice al listado de categorías: con `organizationId` delante, la
 // propia restricción indexa la consulta por familia.
 model Category {
-  id             String         @id @default(cuid())
-  organizationId String
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  normalizedName String
-  position       Int
-  items          Item[]
-  pantryItems    PantryItem[]
-  purchaseItems  PurchaseItem[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                  String               @id @default(cuid())
+  organizationId      String
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                String
+  normalizedName      String
+  position            Int
+  items               Item[]
+  pantryItems         PantryItem[]
+  purchaseItems       PurchaseItem[]
+  mealPlanIngredients MealPlanIngredient[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([organizationId, normalizedName])
   @@map("category")
@@ -527,19 +531,94 @@ model PurchaseItem {
 // llevar categoría y borrarla no debe borrar el producto — solo la referencia.
 // Al finalizar una compra hereda la del item solo si no tenía ya una.
 model PantryItem {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name           String
-  normalizedName String
-  quantity       Decimal      @db.Decimal(10, 3)
-  unit           Unit
-  categoryId     String?
-  category       Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                  String               @id @default(cuid())
+  organizationId      String
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                String
+  normalizedName      String
+  quantity            Decimal              @db.Decimal(10, 3)
+  unit                Unit
+  categoryId          String?
+  category            Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  mealPlanIngredients MealPlanIngredient[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@unique([organizationId, normalizedName, unit])
   @@index([categoryId])
   @@map("pantryItem")
+}
+
+// Menú planificado de un día (épica #212, tarea #223): una comida concreta de
+// la familia en una fecha del calendario — desayuno, comida, cena u otro
+// (enum MealType). La familia es la dueña (Cascade, como las listas): al
+// borrarla mueren sus menús, y con cada menú sus ingredientes (Cascade en
+// MealPlanIngredient), sin huérfanos. `date` es @db.Date — solo el día, sin
+// hora: el calendario mensual agrupa por fecha, no por instante. `title` es
+// el nombre visible que escribe el usuario («Lentejas con verduras»).
+//
+// El único (familia, fecha, tipo) replica el patrón de Member: no caben dos
+// menús del mismo tipo el mismo día en la misma familia, y la carrera de dos
+// creaciones concurrentes muere en P2002 (la UI la traduce al error genérico).
+// El índice (familia, fecha) es el del calendario mensual: la consulta pide
+// los menús del mes filtrando por familia y rango de fechas.
+model MealPlan {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  date           DateTime             @db.Date
+  mealType       MealType
+  title          String
+  ingredients    MealPlanIngredient[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([organizationId, date, mealType])
+  @@index([organizationId, date])
+  @@map("mealPlan")
+}
+
+// Ingrediente de un menú (épica #212, tarea #223): lo que hay que comprar para
+// el plato. Es HÍBRIDO a propósito: `name`, `quantity` y `unit` van
+// snapshotados en el menú — el mismo patrón del historial de compras
+// (PurchaseItem) — para que el menú sobreviva íntegro al borrado del producto
+// de la despensa que lo inspiró, y `pantryItemId` es la FK opcional a ese
+// producto (nullable con SetNull: borrarlo solo le quita al ingrediente la
+// referencia, nunca el nombre, la cantidad ni la unidad). `categoryId` repite
+// el trato de Item y PantryItem (épica #164): opcional con SetNull, borrar la
+// categoría solo quita la referencia. `quantity` comparte la precisión del
+// resto de la app (DECIMAL(10,3), ver Item.quantity) y `unit` el mismo enum
+// `unit`. `position` fija el orden dentro del menú: lo calcula el servidor al
+// crear, sin default para que nadie inserte sin decir dónde (como el `order`
+// de Item y el `position` de PurchaseItem).
+model MealPlanIngredient {
+  id           String      @id @default(cuid())
+  mealPlanId   String
+  mealPlan     MealPlan    @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  position     Int
+  name         String
+  quantity     Decimal     @db.Decimal(10, 3)
+  unit         Unit
+  pantryItemId String?
+  pantryItem   PantryItem? @relation(fields: [pantryItemId], references: [id], onDelete: SetNull)
+  categoryId   String?
+  category     Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([mealPlanId])
+  @@index([pantryItemId])
+  @@index([categoryId])
+  @@map("mealPlanIngredient")
+}
+
+// Tipo de comida de un menú (épica #212, tarea #223): desayuno, comida, cena
+// u otro. Como el enum `unit`, los valores son identificadores estables en
+// inglés y NUNCA se muestran tal cual — las etiquetas visibles las resuelve
+// Paraglide (claves `meal_*` en `messages/{es,en}.json`).
+enum MealType {
+  breakfast
+  lunch
+  dinner
+  other
+
+  @@map("mealType")
 }
