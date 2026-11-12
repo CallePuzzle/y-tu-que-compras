@@ -1,5 +1,6 @@
 import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
+import CalendarDays from '@lucide/svelte/icons/calendar-days';
 import History from '@lucide/svelte/icons/history';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
@@ -50,6 +51,15 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 		routes['/pantry'] = {
 			label: m.routes_pantry(),
 			icon: Refrigerator,
+			showInMenu: true,
+			showInMobile: true
+		};
+		// El calendario de gastos y menús (#218, épica #212): consulta de uso
+		// diario como las listas o la despensa, así que también entra en el
+		// dock móvil — quinto item de la barra inferior (issue #188).
+		routes['/calendar'] = {
+			label: m.routes_calendar(),
+			icon: CalendarDays,
 			showInMenu: true,
 			showInMobile: true
 		};
