@@ -19,7 +19,7 @@ import prisma from '#lib/server/prisma.js';
 // ingrediente la referencia (SetNull): nombre, cantidad y unidad van
 // snapshotados en el ingrediente, igual que en el historial de compras.
 
-/** Un ingrediente del menú tal y como llega del formulario (ya validado). */
+/** Un ingrediente del menú tal y como llega del formulario, ya validado por `mealPlanSchema` (#lib/schemas/mealplan.ts). */
 export interface MealPlanIngredientData {
 	name: string;
 	/** `number` en el formulario; la base lo guarda con la precisión de `DECIMAL(10,3)`. */
@@ -30,7 +30,7 @@ export interface MealPlanIngredientData {
 	categoryId?: string;
 }
 
-/** Un menú tal y como llega del formulario (ya validado): su día, su tipo y sus ingredientes. */
+/** Un menú tal y como llega del formulario, ya validado por `mealPlanSchema` (#lib/schemas/mealplan.ts): su día, su tipo y sus ingredientes. */
 export interface MealPlanData {
 	/** El día del menú como clave `YYYY-MM-DD` (fecha de calendario, sin hora). */
 	date: string;
@@ -107,7 +107,7 @@ function isUniqueViolation(error: unknown): boolean {
 /** El patrón estricto de una clave de día (`YYYY-MM-DD`), la fecha que viaja del formulario. */
 const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-/** El patrón de una clave de mes (`YYYY-MM`), la misma que valida `monthKeySchema` del calendario. */
+/** El patrón de una clave de mes (`YYYY-MM`): réplica del de `monthKeySchema` del calendario (la cota de años la aplica `monthRange`). */
 const MONTH_KEY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
 /**
@@ -115,17 +115,27 @@ const MONTH_KEY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
  * `@db.Date` — pura fecha, sin hora — y Prisma la sirve como `Date` a
  * medianoche UTC: «el día 10 de marzo» se escribe y se lee monolítico, sin
  * que la zona del servidor ni la del usuario lo desplacen. La clave debe
- * venir validada (el schema del formulario la exige); aquí solo se defiende
- * el módulo de basura que no debe llegar a la base.
+ * venir validada (el `dayKeySchema` del formulario la exige); aquí solo se
+ * defiende el módulo de basura que no debe llegar a la base.
+ *
+ * El rechazo es por ROUND-TRIP, no por `NaN`: el parseo ISO de `Date` hace
+ * rollover en vez de invalidar — `2026-02-31` es para JS el 1 de marzo y
+ * `getTime()` no da NaN —, así que la fecha solo es real si el round-trip
+ * devuelve la misma clave. Los años van acotados al calendario navegable
+ * (1900–2099, la cota de `monthKeySchema` del grid: `Date.UTC` mapea 0–99 al
+ * siglo XX). Es la misma defensa que `dayKeySchema`, sin zod: este módulo es
+ * la última línea antes de la base.
  */
 function dateOfDayKey(dateKey: string): Date {
 	if (!DAY_KEY_PATTERN.test(dateKey)) {
 		throw new RangeError(`Clave de día inválida: ${dateKey}`);
 	}
+	const year = Number(dateKey.slice(0, 4));
+	if (year < 1900 || year > 2099) {
+		throw new RangeError(`Clave de día fuera del calendario: ${dateKey}`);
+	}
 	const date = new Date(`${dateKey}T00:00:00Z`);
-	// El patrón admite días que no existen (2026-02-31): la base los
-	// rechazaría por su cuenta, pero así ni se llega a ella.
-	if (Number.isNaN(date.getTime())) {
+	if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dateKey) {
 		throw new RangeError(`Fecha inexistente: ${dateKey}`);
 	}
 	return date;
@@ -142,14 +152,17 @@ function dayKeyOf(date: Date): string {
  * resuelta en la zona de la app (Europe/Madrid, ver `monthKeyOf` del
  * calendario) y la columna no lleva hora, así que aquí no hay `Intl` ni
  * zonas: aritmética UTC sobre medianoches, la misma que el grid usa para sus
- * claves de celda.
+ * claves de celda. La cota de años replica a `monthKeySchema` del grid — el
+ * patrón local no la lleva, y sin ella una clave tipo `0099-12` consultaría
+ * el mes de 1999 (`Date.UTC` mapea 0–99) en vez de rechazarse como lo
+ * rechaza el calendario.
  */
 function monthRange(monthKey: string): { gte: Date; lt: Date } {
 	const match = MONTH_KEY_PATTERN.exec(monthKey);
-	if (!match) {
+	const year = match ? Number(match[1]) : NaN;
+	if (!match || year < 1900 || year > 2099) {
 		throw new RangeError(`Clave de mes inválida: ${monthKey}`);
 	}
-	const year = Number(match[1]);
 	const month = Number(match[2]);
 	return {
 		gte: new Date(Date.UTC(year, month - 1, 1)),

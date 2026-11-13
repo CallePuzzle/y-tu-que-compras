@@ -304,6 +304,55 @@ describe('CRUD de menús por familia (#225)', () => {
 		);
 	});
 
+	it('la categoría del ingrediente ajena o rancia se guarda como «sin categoría», sin 500', async () => {
+		const ownFamily = await familyRow('Familia Categorizadora');
+		const otherFamily = await familyRow('Familia Ajena Categorial');
+		const foreign = await createCategory(otherFamily, { name: 'Ajena' });
+
+		const meal = await createMealPlan(ownFamily, {
+			...LENTES,
+			ingredients: [
+				// El id de UNA categoría de OTRA familia…
+				{ name: 'Cebolla', quantity: 2, unit: 'unit', categoryId: foreign.id },
+				// …y un id que ya no existe (rancio): mismo efecto que el SetNull.
+				{ name: 'Ajo', quantity: 1, unit: 'unit', categoryId: randomUUID() }
+			]
+		});
+
+		// Ninguno rompe la FK: el servidor los degrada a «sin categoría».
+		const rows = await prisma.mealPlanIngredient.findMany({
+			where: { mealPlanId: meal.id },
+			orderBy: { position: 'asc' }
+		});
+		expect(rows.map((row) => row.categoryId)).toEqual([null, null]);
+		// La despensa garantizada tampoco hereda una categoría ajena.
+		const pantry = await prisma.pantryItem.findMany({ where: { organizationId: ownFamily } });
+		expect(pantry).toHaveLength(2);
+		expect(pantry.every((product) => product.categoryId === null)).toBe(true);
+	});
+
+	it('un día inexistente se rechaza de verdad: el parseo ISO hace rollover, no invalida', async () => {
+		const familyId = await familyRow('Familia Calendarista');
+
+		// «31 de febrero» es para `new Date(...)` el 3 de marzo: sin el
+		// round-trip el menú se guardaría en un día distinto al elegido (y a
+		// veces en otro mes del calendario).
+		await expect(createMealPlan(familyId, { ...LENTES, date: '2026-02-31' })).rejects.toThrow(
+			RangeError
+		);
+		await expect(createMealPlan(familyId, { ...LENTES, date: '2026-13-01' })).rejects.toThrow(
+			RangeError
+		);
+
+		// La defensa va DENTRO de la transacción: la fecha se valida al
+		// componer el INSERT y el rechazo revierte también la despensa que
+		// `prepareIngredients` ya había garantizado.
+		expect(await prisma.mealPlan.findMany({ where: { organizationId: familyId } })).toHaveLength(0);
+		expect(await prisma.pantryItem.findMany({ where: { organizationId: familyId } })).toHaveLength(
+			0
+		);
+	});
+
 	it('deleteMealPlan borra el propio con sus ingredientes; uno ajeno devuelve false y queda', async () => {
 		const ownFamily = await familyRow('Familia Borradora');
 		const otherFamily = await familyRow('Familia Superviviente');
