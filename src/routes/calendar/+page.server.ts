@@ -15,6 +15,7 @@ import {
 } from '#lib/server/mealplans.js';
 import logger from '#lib/server/logger.js';
 import { listPantryItems } from '#lib/server/pantry.js';
+import { listPurchasesByDay } from '#lib/server/purchases.js';
 import {
 	buildMonthGrid,
 	monthKeyOf,
@@ -78,6 +79,18 @@ export const load: PageServerLoad = async (event) => {
 	// así que la vista los cuelga de cada celda sin buscar (tarea #222).
 	const mealPlans = await listMealPlans(family.id, monthKey);
 
+	// Los gastos del mes, agrupados POR DÍA (tarea #220): la misma clave de
+	// celda — `listPurchasesByDay` la resuelve en la zona de la app (Europe/
+	// Madrid), igual que los menús. Los días sin compras no aparecen en el
+	// Record: su ausencia ES el estado vacío del tab.
+	const purchasesByDay = await listPurchasesByDay(family.id, monthKey);
+
+	// El total del mes, suma EXACTA de sus días: se acumula en céntimos como
+	// los días (`listPurchasesByDay`) y viaja YA calculado — el cliente no
+	// repite la aritmética, solo pinta la cabecera del tab.
+	const expensesMonthTotal =
+		Object.values(purchasesByDay).reduce((sum, day) => sum + Math.round(day.total * 100), 0) / 100;
+
 	// Los nombres de los productos de la despensa: el autocompletado del
 	// nombre del ingrediente (`datalist`) se alimenta de ellos, como el alta
 	// rápida de items se alimenta de sus sugerencias. Sin duplicados (mismo
@@ -96,6 +109,11 @@ export const load: PageServerLoad = async (event) => {
 		weekdays: weekdayLabels(locale),
 		weeks: buildMonthGrid(monthKey, now, APP_TIME_ZONE),
 		mealPlans,
+		// Los gastos por día y el total del mes (tarea #220): la cabecera del
+		// tab pinta el total y el grid cuelga la cifra de cada celda con
+		// compras.
+		purchasesByDay,
+		expensesMonthTotal,
 		// Las categorías de la familia: el select opcional de cada ingrediente
 		// ofrece exactamente estas, como en el alta de items.
 		categories: await listCategories(family.id),

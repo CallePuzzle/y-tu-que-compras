@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatPrice, formatQuantity } from './format.js';
+import { formatDateTime, formatPrice, formatPriceCompact, formatQuantity } from './format.js';
 
 // Formato localizado del historial (issue #76). Los resultados concretos son
 // los de `Intl` con las locales de Paraglide (es/en) y la zona Europe/Madrid
@@ -29,6 +29,21 @@ describe('formatPrice', () => {
 	it('siempre en euros: la divisa es del producto, solo la presentación es local', () => {
 		expect(plain(formatPrice(7.5, 'es'))).toBe('7,50 €');
 		expect(plain(formatPrice(7.5, 'en'))).toBe('€7.50');
+	});
+});
+
+describe('formatPriceCompact', () => {
+	// La cifra compacta de las celdas del calendario (#220): a partir del
+	// millar, el redondeo al millar visible que `Intl` compone por locale; el
+	// detalle exacto lo muestra el modal del día, nunca la celda.
+	it('abrevia la cifra a partir del millar con la convención de cada idioma', () => {
+		expect(plain(formatPriceCompact(1234.56, 'es'))).toBe('1,2 mil €');
+		expect(plain(formatPriceCompact(1234.56, 'en'))).toBe('€1.2K');
+	});
+
+	it('respeta el signo: el gasto se pinta negativo', () => {
+		expect(plain(formatPriceCompact(-1234.56, 'es'))).toBe('-1,2 mil €');
+		expect(plain(formatPriceCompact(-1234.56, 'en'))).toBe('-€1.2K');
 	});
 });
 

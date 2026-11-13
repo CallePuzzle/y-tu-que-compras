@@ -41,6 +41,22 @@ export function formatPrice(amount: number, locale: string): string {
 }
 
 /**
+ * Precio en euros con la notación COMPACTA de la locale dada: la cifra
+ * abreviada al millar más legible («1,2 mil €» en es, «€1.2K» en en), el
+ * mismo `Intl` que `formatPrice` con `notation: 'compact'`. Para los huecos
+ * en los que el precio completo no cabe — las celdas del calendario (#220):
+ * el detalle exacto lo muestra la vista que abre la celda, nunca la celda.
+ */
+export function formatPriceCompact(amount: number, locale: string): string {
+	return new Intl.NumberFormat(locale, {
+		style: 'currency',
+		currency: 'EUR',
+		notation: 'compact',
+		maximumFractionDigits: 1
+	}).format(amount);
+}
+
+/**
  * Cantidad de un producto con los separadores de la locale dada («0,25» y
  * «1.500» en es; «0.25» y «1,500» en en). Hasta 3 decimales, los mismos que
  * guarda la BD (DECIMAL(10,3)), y sin ceros de relleno: 2 es «2», no «2,000».

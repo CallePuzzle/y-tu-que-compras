@@ -1,3 +1,4 @@
+import { APP_TIME_ZONE } from '#lib/format.js';
 import prisma from '#lib/server/prisma.js';
 import { Prisma } from '#lib/generated/prisma/client.js';
 import { normalizeItemName } from '#lib/normalize-name.js';
@@ -577,4 +578,166 @@ export async function getPurchase(
 			unit: item.unit
 		}))
 	};
+}
+
+// ---- Gastos por día del calendario (épica #212, tarea #219): el total de
+// cada día del mes y sus compras para el detalle. La clave de día es la MISMA
+// `YYYY-MM-DD` que llevan las celdas del grid (`dateKeyOf`) y los grupos de
+// menús (`listMealPlans`), para que la vista los cuelgue de cada celda sin
+// buscar. ----
+
+/** Una compra de UN día del calendario (#219), el detalle que pinta la celda. */
+export interface PurchaseDayPurchaseView {
+	id: string;
+	/**
+	 * El nombre visible del establecimiento: el ACTUAL si la tienda vive, el
+	 * congelado del snapshot si se borró (SetNull, #187) y `null` si la compra
+	 * no llevó — el mismo criterio del listado del historial.
+	 */
+	storeName: string | null;
+	/** `Decimal(10,2)` en la base; la vista lo lee como `number`. */
+	total: number;
+}
+
+/** Un día del mes con gastos (#219): su total y las compras que lo suman. */
+export interface PurchaseDayView {
+	/** La suma EXACTA del día en euros: se acumula en céntimos (ver `listPurchasesByDay`). */
+	total: number;
+	/** Las compras del día, de la más reciente a la más antigua (el orden del historial). */
+	purchases: PurchaseDayPurchaseView[];
+}
+
+/**
+ * El patrón de una clave de mes (`YYYY-MM`): réplica del de `monthKeySchema`
+ * del calendario y del `monthRange` de los menús (la cota de años la aplica
+ * `monthQueryRange`).
+ */
+const MONTH_KEY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/** Una parte de `formatToParts`, garantizada por haberla pedido al formatear. */
+function partOf(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+	const value = parts.find((part) => part.type === type)?.value;
+	if (value === undefined) throw new RangeError(`Intl no devolvió la parte ${type}`);
+	return value;
+}
+
+/**
+ * El formateador de la clave de día, HOISTEADO a scope de módulo: construir
+ * un `Intl.DateTimeFormat` es caro y la agregación lo invoca una vez por
+ * compra del mes (cientos) — una construcción por proceso basta, como el
+ * `weekdayLabels` del grid.
+ */
+const DAY_KEY_FORMATTER = new Intl.DateTimeFormat('en', {
+	timeZone: APP_TIME_ZONE,
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit'
+});
+
+/**
+ * La clave de día (`YYYY-MM-DD`) de una compra, resuelta EN LA ZONA DE LA
+ * APP: réplica de `dateKeyOf` (`src/routes/calendar/grid.ts`) porque la UI
+ * cuelga los gastos de las celdas por ESTA clave y tiene que coincidir letra
+ * a letra — locale `en` por la misma razón que allí: es una clave interna,
+ * no un texto para pintar.
+ *
+ * A diferencia del `dayKeyOf` de los menús — columna `@db.Date`, una fecha
+ * pura que ya viene en día de calendario —, aquí `createdAt` es TIMESTAMPTZ
+ * (UTC en la base) y el día de Madrid puede ser el SIGUIENTE al UTC: una
+ * compra de las 00:30 españolas son las 22:30/23:30 UTC de la víspera según
+ * el DST. `Intl` aplica la zona COMPLETA — CET/CEST según la fecha, sin
+ * offset a mano — que es justo lo que el caso pide.
+ */
+function dayKeyOf(createdAt: Date): string {
+	const parts = DAY_KEY_FORMATTER.formatToParts(createdAt);
+	return `${partOf(parts, 'year')}-${partOf(parts, 'month')}-${partOf(parts, 'day')}`;
+}
+
+/**
+ * El rango UTC que cubre toda compra cuyo día de Madrid caiga en el mes.
+ * Madrid va al ESTE de UTC (CET = UTC+1, CEST = UTC+2), así que su medianoche
+ * del día 1 es un instante UTC de la VÍSPERA: el mes calendario madrileño
+ * empieza antes en UTC de lo que dice su clave, y el rango del mes UTC a
+ * secas se la comería. Ampliarlo un día por lado cubre el arrastre de sobra
+ * — el DST lo aplica `Intl` al agrupar, no hay offset que calcular — y el
+ * sobrante (días contiguos que Madrid no pondría en el mes) lo descarta el
+ * filtro por clave al agrupar. El índice `(organizationId, createdAt desc,
+ * id)` sirve a este rango igual que al listado.
+ */
+function monthQueryRange(monthKey: string): { gte: Date; lt: Date } {
+	const match = MONTH_KEY_PATTERN.exec(monthKey);
+	const year = match ? Number(match[1]) : NaN;
+	if (!match || year < 1900 || year > 2099) {
+		throw new RangeError(`Clave de mes inválida: ${monthKey}`);
+	}
+	const month = Number(match[2]);
+	const DAY_MS = 24 * 60 * 60 * 1000;
+	return {
+		gte: new Date(Date.UTC(year, month - 1, 1) - DAY_MS),
+		lt: new Date(Date.UTC(year, month, 1) + DAY_MS)
+	};
+}
+
+/**
+ * Los gastos de la familia en un mes, agrupados POR DÍA (#219): un `Record`
+ * indexado por la clave `YYYY-MM-DD` de cada día — la misma que llevan las
+ * celdas del grid (`buildMonthGrid`) y los grupos de menús
+ * (`listMealPlans`) — con el total del día y sus compras para el detalle.
+ * Los días sin compras no aparecen: la celda no tiene nada que colgar, y el
+ * total del mes sale de sumar los totales de los días que sí.
+ *
+ * DECISIÓN DE DISEÑO (#219): traer las filas del mes y agrupar EN JS, no
+ * `date_trunc` en `queryRaw`. Un mes son cientos de filas — de sobra — y así
+ * el desplazamiento a Europe/Madrid lo aplica `Intl` con la zona completa
+ * (CET/CEST según fecha, nada hardcodeado), la clave de día sale de la MISMA
+ * función que usa el grid y el `where` lleva la familia SIEMPRE, como en el
+ * resto de vistas del módulo.
+ *
+ * La suma de cada día va en CÉNTIMOS: el Decimal se aplana a `number` como
+ * en toda vista, pero el total ha de ser EXACTO (#219) y la suma de floats
+ * arrastra ruido (0.1 + 0.2 ≠ 0.3). Redondear cada compra a su céntimo lo
+ * elimina; el día vuelve a euros UNA vez, ya sumado entero.
+ */
+export async function listPurchasesByDay(
+	familyId: string,
+	monthKey: string
+): Promise<Record<string, PurchaseDayView>> {
+	const range = monthQueryRange(monthKey);
+	const rows = await prisma.purchaseRecord.findMany({
+		where: { organizationId: familyId, createdAt: { gte: range.gte, lt: range.lt } },
+		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+		select: { id: true, total: true, createdAt: true, storeId: true, storeName: true }
+	});
+
+	// Los nombres ACTUALES de los establecimientos vivos con compras del mes:
+	// UNA consulta más, como en `listPurchasesByStore`. Una tienda borrada
+	// (SetNull) no está aquí y su compra conserva el nombre del snapshot.
+	const liveStoreIds = [...new Set(rows.map((row) => row.storeId).filter((id) => id !== null))];
+	const liveStores = await prisma.store.findMany({
+		where: { organizationId: familyId, id: { in: liveStoreIds } },
+		select: { id: true, name: true }
+	});
+	const currentNameById = new Map(liveStores.map((store) => [store.id, store.name]));
+
+	const byDay: Record<string, PurchaseDayView> = {};
+	for (const row of rows) {
+		const dayKey = dayKeyOf(row.createdAt);
+		// El rango UTC ampliado arrastra días contiguos ajenos al mes: solo
+		// cuentan los que Madrid pone dentro.
+		if (!dayKey.startsWith(`${monthKey}-`)) continue;
+
+		const day = (byDay[dayKey] ??= { total: 0, purchases: [] });
+		day.total += Math.round(Number(row.total) * 100);
+		day.purchases.push({
+			id: row.id,
+			storeName:
+				row.storeId === null ? row.storeName : (currentNameById.get(row.storeId) ?? row.storeName),
+			total: Number(row.total)
+		});
+	}
+	// De céntimos a euros, un solo reparto por día y ya con el día completo.
+	for (const day of Object.values(byDay)) {
+		day.total /= 100;
+	}
+	return byDay;
 }

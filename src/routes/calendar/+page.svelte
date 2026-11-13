@@ -3,21 +3,25 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import { formatPrice } from '#lib/format.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { getLocale } from '#lib/paraglide/runtime.js';
 	import CreateMealPlanModal from './CreateMealPlanModal.svelte';
 	import DayDetailModal from './DayDetailModal.svelte';
+	import DayExpensesModal from './DayExpensesModal.svelte';
 	import MonthGrid from './MonthGrid.svelte';
 	import type { PageData, PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	/**
-	 * Las dos vistas del calendario (épica #212). La de gastos sigue vacía
-	 * (#217): sus datos llegarán con #215. La de menús cuelga del load
-	 * (#222): los menús del mes se pintan en la celda de su día y pulsar un
-	 * día abre SU DETALLE si ya tiene menús (#221) o la creación si está
-	 * vacío. La pestaña solo decide qué se pinta dentro, así que de momento
-	 * basta estado local, sin query param.
+	 * Las dos vistas del calendario (épica #212), ambas colgadas del load:
+	 * la de gastos pinta el total del mes en su cabecera, la cifra de cada
+	 * día en su celda (#220) y abre el detalle de gastos al pulsar un día
+	 * con compras; la de menús cuelga del load (#222), con los menús de cada
+	 * día en su celda y el detalle — o la creación — al pulsarlo (#221).
+	 * La pestaña solo decide qué se pinta dentro, así que basta estado
+	 * local, sin query param.
 	 */
 	type CalendarTab = 'expenses' | 'menu';
 	let activeTab: CalendarTab = $state('expenses');
@@ -41,6 +45,12 @@
 	let deletedMeal: DayMealPlan | undefined = $state();
 	let deleteModal: ConfirmModal | undefined = $state();
 
+	// El detalle de GASTOS del día (#220): gemelo del de menús. Un día puede
+	// tener compras y menús a la vez, y los dos detalles son DOS VISTAS del
+	// mismo día: el paso de uno al otro CIERRA el abierto y abre el otro —
+	// no apila, que para eso está editar/borrar/crear sobre su detalle.
+	let expensesModal: DayExpensesModal | undefined = $state();
+
 	/**
 	 * El día pulsado del grid: su detalle si ya tiene menús, la creación si
 	 * está vacío. La clave la guarda la página porque editar y «crear otro»
@@ -56,6 +66,23 @@
 			detailDateKey = null;
 			createModal?.open(dateKey);
 		}
+	}
+
+	/**
+	 * El día con compras pulsado en el tab Gastos (#220): su modal de
+	 * gastos. El grid solo hace botones los días que traen total, así que
+	 * aquí no hay más decisión que abrir.
+	 */
+	function openExpensesDay(dateKey: string) {
+		detailModal?.close();
+		expensesModal?.open(dateKey);
+	}
+
+	/** «Menús del día» desde el detalle de gastos: el de menús, en su lugar (#220). */
+	function openMenusFromExpenses(dateKey: string) {
+		expensesModal?.close();
+		detailDateKey = dateKey;
+		detailModal?.open(dateKey);
 	}
 
 	/** Editar un menú del detalle: el modal de crear, precargado (#221). */
@@ -81,6 +108,11 @@
 	// ¿Hay menús este mes? El aviso de vacío solo con la cesta vacía; con
 	// datos, el grid manda y el hueco lo ocupan los títulos.
 	const monthHasMenus = $derived(Object.keys(data.mealPlans).length > 0);
+
+	// ¿Hay gastos este mes (#220)? Con ellos, la cabecera del tab pinta el
+	// total y el grid hace botones los días que traen cifra; sin ellos, el
+	// estado vacío manda.
+	const monthHasExpenses = $derived(Object.keys(data.purchasesByDay).length > 0);
 </script>
 
 <svelte:head>
@@ -121,9 +153,9 @@
 	</nav>
 
 	<!-- Pestañas Gastos/Menú (daisyUI tabs): `aria-selected` es a la vez el
-	     estado accesible y lo que daisyUI pinta como activa. La vista de
-	     gastos va vacía (#215 la rellenará); la de menús pinta el grid con
-	     los menús de su load y los días pulsables (#222). -->
+	     estado accesible y lo que daisyUI pinta como activa. La de gastos
+	     pinta el grid con la cifra de cada día (#220); la de menús, el grid
+	     con los menús de su load y todos los días pulsables (#222). -->
 	<div role="tablist" class="tabs tabs-box mt-4" aria-label={m.calendar_tabs()}>
 		<button
 			type="button"
@@ -149,8 +181,26 @@
 
 	{#if activeTab === 'expenses'}
 		<div id="calendar-panel-expenses" role="tabpanel" class="mt-3">
-			<MonthGrid weeks={data.weeks} weekdays={data.weekdays} caption={data.monthLabel} />
-			<p class="mt-3 text-center text-sm opacity-70">{m.calendar_expenses_empty()}</p>
+			{#if monthHasExpenses}
+				<!-- La cabecera del tab (tarea #220): el total del mes que ya
+				     calculó el load, formateado con la locale de la petición. -->
+				<p class="mb-2 flex items-center justify-between text-sm font-semibold">
+					<span>{m.expenses_month_total()}</span>
+					<span class="tabular-nums">{formatPrice(data.expensesMonthTotal, getLocale())}</span>
+				</p>
+			{/if}
+			<MonthGrid
+				weeks={data.weeks}
+				weekdays={data.weekdays}
+				caption={data.monthLabel}
+				purchasesByDay={data.purchasesByDay}
+				onDaySelect={openExpensesDay}
+			/>
+			{#if !monthHasExpenses}
+				<!-- El estado vacío del mes sin compras (#220): sustituye al
+				     aviso genérico y solo sale con la cesta vacía. -->
+				<p class="mt-3 text-center text-sm opacity-70">{m.calendar_expenses_empty()}</p>
+			{/if}
 		</div>
 	{:else}
 		<div id="calendar-panel-menu" role="tabpanel" class="mt-3">
@@ -186,13 +236,27 @@
 
 <!-- Detalle del día (#221): los menús del día abierto salen SIEMPRE del
      load, así que cada acción (editar, borrar, crear otro) lo repinta
-     cuando el load pesimista vuelve. -->
+     cuando el load pesimista vuelve. Los gastos del día (#220) viajan en
+     el mismo load: si el día también tiene compras, el detalle ofrece el
+     cambio de vista. -->
 <DayDetailModal
 	bind:this={detailModal}
 	mealPlans={data.mealPlans}
+	purchasesByDay={data.purchasesByDay}
 	onEdit={openEdit}
 	onDelete={openDelete}
 	onCreate={openCreateFromDetail}
+	onOpenExpenses={openExpensesDay}
+/>
+
+<!-- Detalle de GASTOS del día (#220): igual que el de menús, los datos
+     salen SIEMPRE del load; cada compra enlaza a su detalle del historial
+     y, si el día también tiene menús, el botón cambia de vista. -->
+<DayExpensesModal
+	bind:this={expensesModal}
+	purchasesByDay={data.purchasesByDay}
+	mealPlans={data.mealPlans}
+	onOpenMenus={openMenusFromExpenses}
 />
 
 <!-- Borrar menú (#221): una modal compartida; el botón del detalle fija a

@@ -15,6 +15,7 @@ import { createList } from './lists.js';
 import {
 	finalizePurchase,
 	getPurchase,
+	listPurchasesByDay,
 	listPurchasesByStore,
 	MAX_PURCHASES_OFFSET,
 	PURCHASES_PAGE_SIZE
@@ -1005,5 +1006,175 @@ describe('Historial: detalle de una compra (#76)', () => {
 		expect(await getPurchase(familyId, purchase.id)).toBeNull();
 		// Un id inventado tampoco: sin revelar si vive en otra parte.
 		expect(await getPurchase(familyId, 'no-existe')).toBeNull();
+	});
+});
+
+// ---- Gastos por día del calendario (épica #212, tarea #219): el total de
+// cada día del mes y sus compras para el detalle. `createdAt` es TIMESTAMPTZ,
+// así que las compras de prueba fijan instantes UTC concretos para ejercitar
+// el desplazamiento a Europe/Madrid (una 00:30 española son UTC de la
+// víspera, con y sin horario de verano) y los bordes del mes. ----
+
+describe('Gastos por día del calendario (#219)', () => {
+	it('suma el total de cada día exacto y deja fuera lo ajeno al mes', async () => {
+		const familyId = await familyRow('Familia Diario');
+		// Dos compras del día 1, sembradas de vieja a nueva: dentro del día se
+		// esperan de la más reciente a la más antigua (el orden del historial).
+		const vieja = await purchaseRow(familyId, {
+			listName: 'Compras del día 1, vieja',
+			total: 10.5,
+			createdAt: new Date('2026-06-01T10:00:00Z')
+		});
+		const nueva = await purchaseRow(familyId, {
+			listName: 'Compras del día 1, nueva',
+			total: 20.25,
+			createdAt: new Date('2026-06-01T18:00:00Z')
+		});
+		await purchaseRow(familyId, {
+			// 0.1 + 0.2 en flotantes sería 0.30000000000000004: el total del día
+			// ha de dar 0.3 exactos porque la suma va en céntimos.
+			listName: 'Céntimos a',
+			total: 0.1,
+			createdAt: new Date('2026-06-15T09:00:00Z')
+		});
+		await purchaseRow(familyId, {
+			listName: 'Céntimos b',
+			total: 0.2,
+			createdAt: new Date('2026-06-15T20:00:00Z')
+		});
+		await purchaseRow(familyId, {
+			listName: 'Última del mes',
+			total: 0.75,
+			createdAt: new Date('2026-06-30T21:30:00Z') // 23:30 CEST del día 30
+		});
+		// Fuera por arriba: las 02:30 CEST del 1 de julio.
+		await purchaseRow(familyId, {
+			listName: 'Ya en julio',
+			total: 99,
+			createdAt: new Date('2026-07-01T00:30:00Z')
+		});
+		// Fuera por abajo: las 23:00 CEST del 30 de mayo.
+		await purchaseRow(familyId, {
+			listName: 'Aún en mayo',
+			total: 88,
+			createdAt: new Date('2026-05-30T21:00:00Z')
+		});
+
+		const byDay = await listPurchasesByDay(familyId, '2026-06');
+
+		// Solo los días con compras, con su clave de celda del grid.
+		expect(Object.keys(byDay).sort()).toEqual(['2026-06-01', '2026-06-15', '2026-06-30']);
+		expect(byDay['2026-06-01'].total).toBe(30.75);
+		expect(byDay['2026-06-15'].total).toBe(0.3);
+		expect(byDay['2026-06-30'].total).toBe(0.75);
+		// Dentro del día, la más reciente primero (orden del historial) y cada
+		// compra con su total propio.
+		expect(byDay['2026-06-01'].purchases.map((purchase) => purchase.id)).toEqual([
+			nueva.id,
+			vieja.id
+		]);
+		expect(byDay['2026-06-01'].purchases.map((purchase) => purchase.total)).toEqual([20.25, 10.5]);
+		// El total del mes sale de la suma de los días (#219): con céntimos
+		// detrás da lo que debe (la última paja de flotante la junta la
+		// presentación, no la agregación).
+		const monthTotal = Object.values(byDay).reduce((sum, day) => sum + day.total, 0);
+		expect(monthTotal).toBeCloseTo(31.8, 10);
+	});
+
+	it('una compra de las 00:30 hora española cuenta en SU día, con y sin horario de verano', async () => {
+		const familyId = await familyRow('Familia Madrugadora');
+		// 22:30 UTC del 31 de mayo son las 00:30 CEST del 1 de junio (UTC+2):
+		// el día español manda aunque el UTC aún esté en mayo.
+		const verano = await purchaseRow(familyId, {
+			listName: 'Madrugona de verano',
+			total: 7,
+			createdAt: new Date('2026-05-31T22:30:00Z')
+		});
+		// 23:30 UTC del 31 de octubre son las 00:30 CET del 1 de noviembre
+		// (UTC+1, ya sin horario de verano): el mismo caso en el otro tramo
+		// del DST — no hay offset hardcodeado que valga para los dos.
+		const invierno = await purchaseRow(familyId, {
+			listName: 'Madrugona de invierno',
+			total: 8,
+			createdAt: new Date('2026-10-31T23:30:00Z')
+		});
+
+		const junio = await listPurchasesByDay(familyId, '2026-06');
+		expect(Object.keys(junio)).toEqual(['2026-06-01']);
+		expect(junio['2026-06-01'].purchases.map((purchase) => purchase.id)).toEqual([verano.id]);
+
+		const noviembre = await listPurchasesByDay(familyId, '2026-11');
+		expect(Object.keys(noviembre)).toEqual(['2026-11-01']);
+		expect(noviembre['2026-11-01'].purchases.map((purchase) => purchase.id)).toEqual([invierno.id]);
+
+		// El UTC de la víspera no las coló en mayo ni en octubre.
+		expect(await listPurchasesByDay(familyId, '2026-05')).toEqual({});
+		expect(await listPurchasesByDay(familyId, '2026-10')).toEqual({});
+	});
+
+	it('el detalle lleva el establecimiento vivo, o el del snapshot si la tienda se borró', async () => {
+		const familyId = await familyRow('Familia Tiendas Diario');
+		const mercadona = await createStore(familyId, { name: 'Mercadona' });
+		const muerta = await createStore(familyId, { name: 'Chino' });
+		await purchaseRow(familyId, {
+			listName: 'En tienda viva',
+			total: 3,
+			createdAt: new Date('2026-06-02T10:00:00Z'),
+			storeId: mercadona.id,
+			storeName: mercadona.name
+		});
+		await purchaseRow(familyId, {
+			listName: 'En tienda que morirá',
+			total: 4,
+			createdAt: new Date('2026-06-02T11:00:00Z'),
+			storeId: muerta.id,
+			storeName: muerta.name
+		});
+		await purchaseRow(familyId, {
+			listName: 'Sin tienda',
+			total: 5,
+			createdAt: new Date('2026-06-03T10:00:00Z')
+		});
+
+		// Renombrar la viva y borrar la otra: el día muestra el nombre ACTUAL
+		// de la primera (no el del snapshot) y el CONGELADO de la segunda,
+		// como titula las secciones el historial (#187).
+		await prisma.store.update({ where: { id: mercadona.id }, data: { name: 'Mercadona SA' } });
+		await prisma.store.delete({ where: { id: muerta.id } });
+
+		const byDay = await listPurchasesByDay(familyId, '2026-06');
+		expect(byDay['2026-06-02'].purchases.map((purchase) => purchase.storeName)).toEqual([
+			'Chino',
+			'Mercadona SA'
+		]);
+		expect(byDay['2026-06-03'].purchases.map((purchase) => purchase.storeName)).toEqual([null]);
+	});
+
+	it('la familia pedida solo ve SUS compras: las ajenas no aparecen ni suman', async () => {
+		const familyId = await familyRow('Familia Diario Propia');
+		const otherFamily = await familyRow('Familia Diario Ajena');
+		const ajena = await purchaseRow(otherFamily, {
+			listName: 'Caviar ajeno',
+			total: 99,
+			createdAt: new Date('2026-06-05T10:00:00Z')
+		});
+		const propia = await purchaseRow(familyId, {
+			listName: 'Compra propia',
+			total: 6,
+			createdAt: new Date('2026-06-05T11:00:00Z')
+		});
+
+		const byDay = await listPurchasesByDay(familyId, '2026-06');
+		expect(Object.keys(byDay)).toEqual(['2026-06-05']);
+		expect(byDay['2026-06-05'].purchases.map((purchase) => purchase.id)).toEqual([propia.id]);
+		expect(byDay['2026-06-05'].total).toBe(6);
+
+		// A la ajena solo le sale lo suyo, también ese mismo día.
+		const ajenaByDay = await listPurchasesByDay(otherFamily, '2026-06');
+		expect(ajenaByDay['2026-06-05'].purchases.map((purchase) => purchase.id)).toEqual([ajena.id]);
+		expect(ajenaByDay['2026-06-05'].total).toBe(99);
+
+		// Una familia sin compras ese mes no tiene días que pintar.
+		expect(await listPurchasesByDay(familyId, '2026-07')).toEqual({});
 	});
 });
