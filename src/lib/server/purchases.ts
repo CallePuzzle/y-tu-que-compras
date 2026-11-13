@@ -622,6 +622,19 @@ function partOf(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartT
 }
 
 /**
+ * El formateador de la clave de día, HOISTEADO a scope de módulo: construir
+ * un `Intl.DateTimeFormat` es caro y la agregación lo invoca una vez por
+ * compra del mes (cientos) — una construcción por proceso basta, como el
+ * `weekdayLabels` del grid.
+ */
+const DAY_KEY_FORMATTER = new Intl.DateTimeFormat('en', {
+	timeZone: APP_TIME_ZONE,
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit'
+});
+
+/**
  * La clave de día (`YYYY-MM-DD`) de una compra, resuelta EN LA ZONA DE LA
  * APP: réplica de `dateKeyOf` (`src/routes/calendar/grid.ts`) porque la UI
  * cuelga los gastos de las celdas por ESTA clave y tiene que coincidir letra
@@ -636,12 +649,7 @@ function partOf(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartT
  * offset a mano — que es justo lo que el caso pide.
  */
 function dayKeyOf(createdAt: Date): string {
-	const parts = new Intl.DateTimeFormat('en', {
-		timeZone: APP_TIME_ZONE,
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit'
-	}).formatToParts(createdAt);
+	const parts = DAY_KEY_FORMATTER.formatToParts(createdAt);
 	return `${partOf(parts, 'year')}-${partOf(parts, 'month')}-${partOf(parts, 'day')}`;
 }
 

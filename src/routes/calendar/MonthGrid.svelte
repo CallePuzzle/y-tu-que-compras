@@ -58,7 +58,9 @@
 	 * SIEMPRE en el modal del día.
 	 */
 	function expenseLabel(total: number, locale: string): string {
-		const amount = -total;
+		// Un día de total exactamente 0 (un ticket «gratis») no debe pintar el
+		// cero negativo de IEEE: `-0` formatea con su signo («-0,00 €»).
+		const amount = total === 0 ? 0 : -total;
 		return total >= 1000 ? formatPriceCompact(amount, locale) : formatPrice(amount, locale);
 	}
 </script>
