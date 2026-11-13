@@ -6,9 +6,14 @@
 	 * × 7 días, la semana empezando en lunes. Los textos (cabecera de días y
 	 * caption) viajan ya compuestos desde el load (regla i18n): aquí solo se
 	 * pinta. Las celdas de los meses contiguos van atenuadas y «hoy» queda
-	 * destacado con el primario (`aria-current="date"`); el resto del hueco
-	 * de cada celda es el sitio donde las vistas de la épica colgarán los
-	 * datos del día (#215 y #216), indexados por el `dateKey` de la celda.
+	 * destacado con el primario (`aria-current="date"`).
+	 *
+	 * Con menús (#222) la vista del tab Menú cuelga de cada `dateKey` los
+	 * menús del día (título truncado; el chip crece la celda, la altura es
+	 * mínima) y los días del mes se vuelven BOTONES que abren el detalle del
+	 * día — o la creación si está vacío; lo decide la página (#221) en el
+	 * mismo `onDaySelect`. Sin `onDaySelect` (tab Gastos, #215) las celdas
+	 * quedan como el esqueleto: número y nada más.
 	 */
 	type Props = {
 		weeks: CalendarCell[][];
@@ -16,13 +21,24 @@
 		weekdays: string[];
 		/** El nombre del mes en vista, para el caption accesible de la tabla. */
 		caption: string;
+		/** Menús por día (`YYYY-MM-DD`), tal y como los agrupa el load. */
+		mealPlans?: Record<string, DayMeal[]>;
+		/** Al pulsar un día del mes en vista: detalle del día o creación. */
+		onDaySelect?: (dateKey: string) => void;
 	};
 
-	let { weeks, weekdays, caption }: Props = $props();
+	/** Un menú del día tal y como la celda lo pinta: su título. */
+	interface DayMeal {
+		id: string;
+		title: string;
+	}
+
+	let { weeks, weekdays, caption, mealPlans, onDaySelect }: Props = $props();
 </script>
 
 <!-- `table-fixed`: las 7 columnas iguales sea cual sea el ancho; las celdas
-     llevan la altura (el hueco para datos) y el grid no baila entre meses. -->
+     llevan la altura mínima (el hueco para datos) y el grid no baila entre
+     meses: los chips del día crecen la fila sin desbordarla. -->
 <table class="w-full table-fixed border-collapse text-center">
 	<caption class="sr-only">{caption}</caption>
 	<thead>
@@ -39,7 +55,32 @@
 			<tr>
 				{#each week as cell (cell.dateKey)}
 					<td class="h-12 p-0.5 align-top sm:h-14" aria-current={cell.isToday ? 'date' : undefined}>
-						{#if cell.inMonth}
+						{#if onDaySelect && cell.inMonth}
+							<!-- Día del mes en vista con menús (#222/#221): un botón con
+							     altura mínima de toque propia (`min-h-11`), para el dedo
+							     y para el teclado. Su nombre accesible es el contenido
+							     visible: el número y los títulos del día. Los chips lo
+							     crecen; el `td` nunca se queda corto porque en celdas
+							     `height` ya actúa de mínimo. -->
+							<button
+								type="button"
+								class="focus-visible:outline-primary rounded-box hover:bg-base-200 flex min-h-11 w-full flex-col items-center gap-0.5 p-0.5 focus-visible:outline-2"
+								onclick={() => onDaySelect(cell.dateKey)}
+							>
+								<span
+									class={`mx-auto flex size-7 shrink-0 items-center justify-center rounded-full ${cell.isToday ? 'bg-primary text-primary-content font-bold' : ''}`}
+								>
+									{cell.day}
+								</span>
+								{#each mealPlans?.[cell.dateKey] ?? [] as meal (meal.id)}
+									<!-- Título truncado (#222): una celda no da para más;
+									     el detalle completo lo enseña el día pulsado (#221). -->
+									<span class="w-full truncate text-[10px] leading-tight opacity-80">
+										{meal.title}
+									</span>
+								{/each}
+							</button>
+						{:else if cell.inMonth}
 							<span
 								class={`mx-auto flex size-7 items-center justify-center rounded-full ${cell.isToday ? 'bg-primary text-primary-content font-bold' : ''}`}
 							>
