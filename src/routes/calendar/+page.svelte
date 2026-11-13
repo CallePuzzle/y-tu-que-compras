@@ -2,22 +2,28 @@
 	import { resolve } from '$app/paths';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import CreateMealPlanModal from './CreateMealPlanModal.svelte';
+	import DayDetailModal from './DayDetailModal.svelte';
 	import MonthGrid from './MonthGrid.svelte';
-	import type { PageProps } from './$types';
+	import type { PageData, PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	/**
 	 * Las dos vistas del calendario (épica #212). La de gastos sigue vacía
-	 * (#217): sus datos llegarán con #215. La de menús ya cuelga del load
+	 * (#217): sus datos llegarán con #215. La de menús cuelga del load
 	 * (#222): los menús del mes se pintan en la celda de su día y pulsar un
-	 * día abre la creación. La pestaña solo decide qué se pinta dentro, así
-	 * que de momento basta estado local, sin query param.
+	 * día abre SU DETALLE si ya tiene menús (#221) o la creación si está
+	 * vacío. La pestaña solo decide qué se pinta dentro, así que de momento
+	 * basta estado local, sin query param.
 	 */
 	type CalendarTab = 'expenses' | 'menu';
 	let activeTab: CalendarTab = $state('expenses');
+
+	/** Un menú del día, tal y como lo trae el load (grupo `YYYY-MM-DD`). */
+	type DayMealPlan = PageData['mealPlans'][string][number];
 
 	// Aviso de éxito FUERA del modal (#222): el menú creado se ve en su celda
 	// cuando el load pesimista repinta el grid; el texto confirma. El error de
@@ -26,9 +32,49 @@
 
 	let createModal: CreateMealPlanModal | undefined = $state();
 
-	/** El día pulsado del grid abre el modal de creación con esa fecha. */
-	function openCreate(dateKey: string) {
+	// Detalle del día (#221) y borrado con confirmación (patrón de familias y
+	// categorías): el detalle queda ABIERTO bajo el modal de editar o de
+	// borrar — ambos son `<dialog>` nativos apilados y al cerrarse el de
+	// arriba, el detalle repinta con los datos del load pesimista.
+	let detailModal: DayDetailModal | undefined = $state();
+	let detailDateKey: string | null = $state(null);
+	let deletedMeal: DayMealPlan | undefined = $state();
+	let deleteModal: ConfirmModal | undefined = $state();
+
+	/**
+	 * El día pulsado del grid: su detalle si ya tiene menús, la creación si
+	 * está vacío. La clave la guarda la página porque editar y «crear otro»
+	 * desde el detalle necesitan el día del menú en edición.
+	 */
+	function openDay(dateKey: string) {
 		successMessage = null;
+		const dayMeals = data.mealPlans[dateKey];
+		if (dayMeals && dayMeals.length > 0) {
+			detailDateKey = dateKey;
+			detailModal?.open(dateKey);
+		} else {
+			detailDateKey = null;
+			createModal?.open(dateKey);
+		}
+	}
+
+	/** Editar un menú del detalle: el modal de crear, precargado (#221). */
+	function openEdit(meal: DayMealPlan) {
+		const dateKey = detailDateKey;
+		if (!dateKey) return;
+		createModal?.openForEdit(meal, dateKey);
+	}
+
+	/** Borrar un menú del detalle: confirmación, patrón de familias/categorías. */
+	function openDelete(meal: DayMealPlan) {
+		deletedMeal = meal;
+		deleteModal?.showModal();
+	}
+
+	/** «Crear otro menú este día» desde el detalle: el de crear, apilado. */
+	function openCreateFromDetail() {
+		const dateKey = detailDateKey;
+		if (!dateKey) return;
 		createModal?.open(dateKey);
 	}
 
@@ -113,7 +159,7 @@
 				weekdays={data.weekdays}
 				caption={data.monthLabel}
 				mealPlans={data.mealPlans}
-				onDaySelect={openCreate}
+				onDaySelect={openDay}
 			/>
 			<!-- El aviso bajo el grid: vacío sin menús, pista de uso con ellos
 			     (los días son botones desde el esqueleto de #217). -->
@@ -136,4 +182,28 @@
 	categories={data.categories}
 	pantryNames={data.pantryNames}
 	onSuccess={(message) => (successMessage = message)}
+/>
+
+<!-- Detalle del día (#221): los menús del día abierto salen SIEMPRE del
+     load, así que cada acción (editar, borrar, crear otro) lo repinta
+     cuando el load pesimista vuelve. -->
+<DayDetailModal
+	bind:this={detailModal}
+	mealPlans={data.mealPlans}
+	onEdit={openEdit}
+	onDelete={openDelete}
+	onCreate={openCreateFromDetail}
+/>
+
+<!-- Borrar menú (#221): una modal compartida; el botón del detalle fija a
+     qué menú borra antes de abrirla (patrón de categorías). -->
+<ConfirmModal
+	bind:this={deleteModal}
+	title={m.meal_plan_delete_title({ title: deletedMeal?.title ?? '' })}
+	description={m.meal_plan_delete_description()}
+	confirmLabel={m.meal_plan_delete_confirm()}
+	action="?/delete"
+	fields={{ id: deletedMeal?.id ?? '' }}
+	errorFallback={m.meal_plan_error()}
+	onSuccess={() => (successMessage = m.meal_plan_deleted())}
 />

@@ -1,3 +1,4 @@
+import { z } from 'zod/v4';
 import { m } from '#lib/paraglide/messages.js';
 import { mealPlanSchema } from '#lib/schemas/mealplan.js';
 
@@ -31,4 +32,19 @@ export function mealPlanFormSchema() {
 		unitLabel: m.schema_items_unit_label(),
 		categoryLabel: m.schema_items_category_label()
 	});
+}
+
+/**
+ * El contrato de EDITAR menú (#221): los campos de crear MÁS el id del menú.
+ * El id no va en el schema compartido (crear y editar tienen los mismos
+ * campos), así que el modal lo inyecta en el JSON de salida (`onSubmit`,
+ * fuera de `$form`) y el action de editar lo valida con ESTE schema — un
+ * `extend` del de crear, para no repetir un solo texto ni un solo campo.
+ * Va OPCIONAL a propósito: si un id ausente o vacío (petición hecha a mano)
+ * muriera en el schema, el 400 no llevaría mensaje y el modal se quedaría
+ * mudo; así el action lo convierte en el aviso controlado «no existe», que
+ * la UI pinta dentro del modal como el resto de fallos.
+ */
+export function mealPlanUpdateSchema() {
+	return mealPlanFormSchema().extend({ id: z.string().optional() });
 }

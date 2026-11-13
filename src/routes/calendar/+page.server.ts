@@ -6,7 +6,13 @@ import { m } from '#lib/paraglide/messages.js';
 import { getLocale } from '#lib/paraglide/runtime.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
 import { listCategories } from '#lib/server/categories.js';
-import { MealPlanExistsError, createMealPlan, listMealPlans } from '#lib/server/mealplans.js';
+import {
+	MealPlanExistsError,
+	createMealPlan,
+	deleteMealPlan,
+	listMealPlans,
+	updateMealPlan
+} from '#lib/server/mealplans.js';
 import logger from '#lib/server/logger.js';
 import { listPantryItems } from '#lib/server/pantry.js';
 import {
@@ -17,7 +23,7 @@ import {
 	shiftMonth,
 	weekdayLabels
 } from './grid.js';
-import { mealPlanFormSchema } from './schemas.js';
+import { mealPlanFormSchema, mealPlanUpdateSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -32,6 +38,15 @@ const EMPTY_MEAL_PLAN = {
 	mealType: 'lunch' as const,
 	ingredients: [{ name: '', quantity: 1, unit: 'unit' as const, categoryId: '' }]
 };
+
+/**
+ * El id de menú que viaja en el formulario de borrar (input hidden del
+ * ConfirmModal): `null` si falta o es basura, como `itemIdOf` de las listas.
+ */
+function mealPlanIdOf(data: FormData): string | null {
+	const id = data.get('id');
+	return typeof id === 'string' && id ? id : null;
+}
 
 // El esqueleto del calendario (épica #212, tarea #217) más su tab de menús
 // (#222): el mes en vista manda SIEMPRE en la query (`?month=YYYY-MM`) y se
@@ -118,5 +133,71 @@ export const actions: Actions = {
 		}
 
 		return message(form, m.meal_plan_success());
+	},
+
+	// Editar menú (#221): el modal de crear REUTILIZADO, precargado con el
+	// menú del detalle del día. Valida el schema de editar (el de crear más
+	// el id del menú, ver `schemas.ts`): el body llega como FormData con el
+	// JSON troceado en `__superform_json` — la forma en que superforms viaja
+	// los `dataType: 'json'` — y `superValidate(request, …)` lo junta solo.
+	update: async (event) => {
+		const family = requireActiveFamily(event);
+		const form = await superValidate(event.request, zod4(mealPlanUpdateSchema()));
+		if (!form.valid) {
+			return fail(400, { form });
+		}
+
+		// El id ya validado se separa: al CRUD le llegan los MISMOS datos que
+		// a `createMealPlan`. Si falta o va vacío (petición hecha a mano), el
+		// aviso controlado dentro del modal — sin 500, como el resto de
+		// basura de UI (ver `schemas.ts`).
+		const { id, ...meal } = form.data;
+		if (!id) {
+			return message(form, m.meal_plan_gone(), { status: 400 });
+		}
+
+		try {
+			// `updateMealPlan` solo toca menús DE LA FAMILIA ACTIVA: un id
+			// ajeno o rancio llega como `false` — 404 controlado (issue #110),
+			// no 500: la UI lo enseña dentro del modal como el resto de fallos.
+			const updated = await updateMealPlan(family.id, id, meal);
+			if (!updated) {
+				return message(form, m.meal_plan_gone(), { status: 404 });
+			}
+		} catch (error) {
+			if (error instanceof MealPlanExistsError) {
+				// Mover (de tipo) el menú a un día+tipo ya ocupado: el mensaje
+				// genérico, como en crear.
+				return message(form, m.meal_plan_exists(), { status: 409 });
+			}
+			logger.error({ err: error }, 'Error al editar el menú');
+			return message(form, m.meal_plan_error(), { status: 500 });
+		}
+
+		return message(form, m.meal_plan_updated());
+	},
+
+	// Borrar menú (#221): confirmación en la UI (ConfirmModal). Sin schema de
+	// superforms (solo el id oculto), como el borrado de items. Un id ajeno
+	// o de doble envío sale de `deleteMealPlan` como `false`: 404, que el
+	// ConfirmModal pinta dentro de sí, sin 500.
+	delete: async (event) => {
+		const family = requireActiveFamily(event);
+		const id = mealPlanIdOf(await event.request.formData());
+		if (!id) {
+			return fail(400, { error: m.meal_plan_error() });
+		}
+
+		try {
+			const deleted = await deleteMealPlan(family.id, id);
+			if (!deleted) {
+				return fail(404, { error: m.meal_plan_gone() });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al borrar el menú');
+			return fail(500, { error: m.meal_plan_error() });
+		}
+
+		return { success: true };
 	}
 };

@@ -10,10 +10,10 @@
 	 *
 	 * Con menús (#222) la vista del tab Menú cuelga de cada `dateKey` los
 	 * menús del día (título truncado; el chip crece la celda, la altura es
-	 * mínima) y los días del mes se vuelven BOTONES que abren la creación:
-	 * pulsar un día es el «añadir» de esa fecha (el detalle/editar llega con
-	 * #221 y colgará del mismo `onDaySelect`). Sin `onDaySelect` (tab Gastos,
-	 * #215) las celdas quedan como el esqueleto: número y nada más.
+	 * mínima) y los días del mes se vuelven BOTONES que abren el detalle del
+	 * día — o la creación si está vacío; lo decide la página (#221) en el
+	 * mismo `onDaySelect`. Sin `onDaySelect` (tab Gastos, #215) las celdas
+	 * quedan como el esqueleto: número y nada más.
 	 */
 	type Props = {
 		weeks: CalendarCell[][];
@@ -23,7 +23,7 @@
 		caption: string;
 		/** Menús por día (`YYYY-MM-DD`), tal y como los agrupa el load. */
 		mealPlans?: Record<string, DayMeal[]>;
-		/** Al pulsar un día del mes en vista: abre la creación de menú. */
+		/** Al pulsar un día del mes en vista: detalle del día o creación. */
 		onDaySelect?: (dateKey: string) => void;
 	};
 
@@ -56,7 +56,7 @@
 				{#each week as cell (cell.dateKey)}
 					<td class="h-12 p-0.5 align-top sm:h-14" aria-current={cell.isToday ? 'date' : undefined}>
 						{#if onDaySelect && cell.inMonth}
-							<!-- Día del mes en vista con creación (#222): un botón con
+							<!-- Día del mes en vista con menús (#222/#221): un botón con
 							     altura mínima de toque propia (`min-h-11`), para el dedo
 							     y para el teclado. Su nombre accesible es el contenido
 							     visible: el número y los títulos del día. Los chips lo
@@ -74,7 +74,7 @@
 								</span>
 								{#each mealPlans?.[cell.dateKey] ?? [] as meal (meal.id)}
 									<!-- Título truncado (#222): una celda no da para más;
-									     el detalle completo llega con #221. -->
+									     el detalle completo lo enseña el día pulsado (#221). -->
 									<span class="w-full truncate text-[10px] leading-tight opacity-80">
 										{meal.title}
 									</span>
