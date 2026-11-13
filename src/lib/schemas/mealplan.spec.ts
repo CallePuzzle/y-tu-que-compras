@@ -144,9 +144,10 @@ describe('MEAL_TYPES', () => {
 });
 
 describe('etiquetas del schema de menú', () => {
-	// El enum no se muestra tal cual: la UI resuelve la etiqueta con las
-	// claves `meal_*` de Paraglide, que llegan con la vista de menú (#215).
-	// Este spec se ampliará entonces; hoy solo se canta lo que YA debe existir.
+	// Los enum no se muestran tal cual: la UI resuelve las etiquetas con las
+	// claves `meal_*` de Paraglide (llegan con la vista de menú, #222) y las
+	// `unit_*` las comparte con el item. Estos specs cantan que los catálogos
+	// tienen traducción en ambas locales antes de que la UI los pinte.
 	for (const locale of ['es', 'en'] as const) {
 		it(`las claves unit_* siguen presentes en ${locale} (las comparte el ingrediente)`, () => {
 			const messages = JSON.parse(
@@ -157,6 +158,20 @@ describe('etiquetas del schema de menú', () => {
 			) as Record<string, string>;
 
 			expect(typeof messages.unit_unit === 'string' && messages.unit_unit.length > 0).toBe(true);
+		});
+
+		it(`cada tipo de MEAL_TYPES tiene su clave meal_* en ${locale}`, () => {
+			const messages = JSON.parse(
+				readFileSync(
+					fileURLToPath(new URL(`../../../messages/${locale}.json`, import.meta.url)),
+					'utf8'
+				)
+			) as Record<string, string>;
+
+			for (const mealType of MEAL_TYPES) {
+				const label = messages[`meal_${mealType}`];
+				expect(typeof label === 'string' && label.length > 0).toBe(true);
+			}
 		});
 	}
 });

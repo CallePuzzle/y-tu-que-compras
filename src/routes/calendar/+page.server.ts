@@ -1,6 +1,14 @@
+import { fail } from '@sveltejs/kit';
+import { zod4 } from 'sveltekit-superforms/adapters';
+import { message, superValidate } from 'sveltekit-superforms/server';
 import { APP_TIME_ZONE } from '#lib/format.js';
+import { m } from '#lib/paraglide/messages.js';
 import { getLocale } from '#lib/paraglide/runtime.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
+import { listCategories } from '#lib/server/categories.js';
+import { MealPlanExistsError, createMealPlan, listMealPlans } from '#lib/server/mealplans.js';
+import logger from '#lib/server/logger.js';
+import { listPantryItems } from '#lib/server/pantry.js';
 import {
 	buildMonthGrid,
 	monthKeyOf,
@@ -9,19 +17,33 @@ import {
 	shiftMonth,
 	weekdayLabels
 } from './grid.js';
-import type { PageServerLoad } from './$types';
+import { mealPlanFormSchema } from './schemas.js';
+import type { Actions, PageServerLoad } from './$types';
 
-// El esqueleto del calendario (épica #212, tarea #217): lectura pura, sin
-// acciones. El mes en vista manda SIEMPRE en la query (`?month=YYYY-MM`) y
-// se resuelve EN SERVIDOR — el cliente no calcula nada de fechas, solo pinta
-// lo que trae el load. La familia activa es la puerta de la vista, como en
-// listas, despensa e historial (issue #63): los datos por día llegarán con
-// las vistas de gastos (#215) y menús (#216), colgando de las celdas del
-// grid que aquí se calcula.
+/**
+ * Valores iniciales del formulario de crear menú (#222): la comida es la más
+ * común (la principal del día) y el ingrediente arranca como el item del alta
+ * rápida — cantidad 1 y unidad «ud». El día lo fija el modal al abrirse con
+ * la celda pulsada, así que aquí va vacío.
+ */
+const EMPTY_MEAL_PLAN = {
+	title: '',
+	date: '',
+	mealType: 'lunch' as const,
+	ingredients: [{ name: '', quantity: 1, unit: 'unit' as const, categoryId: '' }]
+};
+
+// El esqueleto del calendario (épica #212, tarea #217) más su tab de menús
+// (#222): el mes en vista manda SIEMPRE en la query (`?month=YYYY-MM`) y se
+// resuelve EN SERVIDOR — el cliente no calcula nada de fechas, solo pinta lo
+// que trae el load. La familia activa es la puerta de la vista, como en
+// listas, despensa e historial (issue #63): los menús, las categorías y las
+// sugerencias de despensa viajan filtrados por ella, colgando de las celdas
+// del grid que aquí se calcula.
 export const load: PageServerLoad = async (event) => {
 	// El gate (302 a /families sin familia activa) y, desde aquí, el contexto
-	// verificado para las queries futuras (#215/#216).
-	requireActiveFamily(event);
+	// verificado para todas las queries de la vista.
+	const family = requireActiveFamily(event);
 
 	// ¿El mes de la query o el actual? Ausente o basura (`?month=x`,
 	// `2026-13`, `26-11`…) caen al mes actual — EN LA ZONA DE LA APP: el
@@ -36,6 +58,18 @@ export const load: PageServerLoad = async (event) => {
 	// puede desdecir al servidor ni divergir al hidratar.
 	const locale = getLocale();
 
+	// Los menús del mes, agrupados POR DÍA: la clave de cada grupo es la
+	// misma `YYYY-MM-DD` que llevan las celdas del grid (`buildMonthGrid`),
+	// así que la vista los cuelga de cada celda sin buscar (tarea #222).
+	const mealPlans = await listMealPlans(family.id, monthKey);
+
+	// Los nombres de los productos de la despensa: el autocompletado del
+	// nombre del ingrediente (`datalist`) se alimenta de ellos, como el alta
+	// rápida de items se alimenta de sus sugerencias. Sin duplicados (mismo
+	// producto con dos unidades sale dos veces de la consulta) y alfabéticos,
+	// que es como se mira la despensa.
+	const pantryNames = [...new Set((await listPantryItems(family.id)).map(({ name }) => name))];
+
 	return {
 		monthKey,
 		monthLabel: monthLabelOf(monthKey, locale),
@@ -45,6 +79,44 @@ export const load: PageServerLoad = async (event) => {
 		nextMonthKey: shiftMonth(monthKey, 1),
 		todayMonthKey: monthKeyOf(now, APP_TIME_ZONE),
 		weekdays: weekdayLabels(locale),
-		weeks: buildMonthGrid(monthKey, now, APP_TIME_ZONE)
+		weeks: buildMonthGrid(monthKey, now, APP_TIME_ZONE),
+		mealPlans,
+		// Las categorías de la familia: el select opcional de cada ingrediente
+		// ofrece exactamente estas, como en el alta de items.
+		categories: await listCategories(family.id),
+		pantryNames,
+		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanFormSchema()))
 	};
+};
+
+export const actions: Actions = {
+	// Crear menú (#222): el schema valida título, día, tipo e ingredientes;
+	// el día viaja como `YYYY-MM-DD` (`dayKeySchema`) y la despensa la
+	// garantiza el SERVIDOR (`createMealPlan`: cada ingrediente crea su
+	// producto con cantidad 0 si no estaba). El único (familia, fecha, tipo)
+	// muere en P2002 y sale como `MealPlanExistsError`: se traduce al mensaje
+	// genérico de la UI (patrón `stores`), sin filtrar el error crudo.
+	// Tras crear, `invalidateAll: 'pessimistic'` en el cliente rerun el load
+	// y el grid repinta el menú en su celda.
+	create: async (event) => {
+		const family = requireActiveFamily(event);
+		const form = await superValidate(event.request, zod4(mealPlanFormSchema()));
+		if (!form.valid) {
+			return fail(400, { form });
+		}
+
+		try {
+			await createMealPlan(family.id, form.data);
+		} catch (error) {
+			if (error instanceof MealPlanExistsError) {
+				return message(form, m.meal_plan_exists(), { status: 409 });
+			}
+			logger.error({ err: error }, 'Error al crear el menú');
+			// Fallo inesperado (BD caída, columna…): 5xx, que el cliente y la
+			// monitorización lo vean como lo que es (issue #110).
+			return message(form, m.meal_plan_error(), { status: 500 });
+		}
+
+		return message(form, m.meal_plan_success());
+	}
 };

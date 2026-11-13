@@ -3,19 +3,38 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { m } from '#lib/paraglide/messages.js';
+	import CreateMealPlanModal from './CreateMealPlanModal.svelte';
 	import MonthGrid from './MonthGrid.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	/**
-	 * Las dos vistas del calendario (épica #212). El esqueleto (#217) las
-	 * trae vacías: sus datos llegarán con #215 (gastos) y #216 (menús), que
-	 * rellenarán las celdas del MISMO grid — la pestaña solo decide qué se
-	 * pinta dentro, así que de momento basta estado local, sin query param.
+	 * Las dos vistas del calendario (épica #212). La de gastos sigue vacía
+	 * (#217): sus datos llegarán con #215. La de menús ya cuelga del load
+	 * (#222): los menús del mes se pintan en la celda de su día y pulsar un
+	 * día abre la creación. La pestaña solo decide qué se pinta dentro, así
+	 * que de momento basta estado local, sin query param.
 	 */
 	type CalendarTab = 'expenses' | 'menu';
 	let activeTab: CalendarTab = $state('expenses');
+
+	// Aviso de éxito FUERA del modal (#222): el menú creado se ve en su celda
+	// cuando el load pesimista repinta el grid; el texto confirma. El error de
+	// crear se queda dentro del modal, como en editar item.
+	let successMessage: string | null = $state(null);
+
+	let createModal: CreateMealPlanModal | undefined = $state();
+
+	/** El día pulsado del grid abre el modal de creación con esa fecha. */
+	function openCreate(dateKey: string) {
+		successMessage = null;
+		createModal?.open(dateKey);
+	}
+
+	// ¿Hay menús este mes? El aviso de vacío solo con la cesta vacía; con
+	// datos, el grid manda y el hueco lo ocupan los títulos.
+	const monthHasMenus = $derived(Object.keys(data.mealPlans).length > 0);
 </script>
 
 <svelte:head>
@@ -56,9 +75,9 @@
 	</nav>
 
 	<!-- Pestañas Gastos/Menú (daisyUI tabs): `aria-selected` es a la vez el
-	     estado accesible y lo que daisyUI pinta como activa. Las vistas van
-	     vacías (#217): cada una es el grid del mes más el aviso de vacío que
-	     las futuras vistas de datos (#215/#216) sustituirán. -->
+	     estado accesible y lo que daisyUI pinta como activa. La vista de
+	     gastos va vacía (#215 la rellenará); la de menús pinta el grid con
+	     los menús de su load y los días pulsables (#222). -->
 	<div role="tablist" class="tabs tabs-box mt-4" aria-label={m.calendar_tabs()}>
 		<button
 			type="button"
@@ -89,8 +108,32 @@
 		</div>
 	{:else}
 		<div id="calendar-panel-menu" role="tabpanel" class="mt-3">
-			<MonthGrid weeks={data.weeks} weekdays={data.weekdays} caption={data.monthLabel} />
-			<p class="mt-3 text-center text-sm opacity-70">{m.calendar_menu_empty()}</p>
+			<MonthGrid
+				weeks={data.weeks}
+				weekdays={data.weekdays}
+				caption={data.monthLabel}
+				mealPlans={data.mealPlans}
+				onDaySelect={openCreate}
+			/>
+			<!-- El aviso bajo el grid: vacío sin menús, pista de uso con ellos
+			     (los días son botones desde el esqueleto de #217). -->
+			<p class="mt-3 text-center text-sm opacity-70">
+				{monthHasMenus ? m.calendar_menu_hint() : m.calendar_menu_empty()}
+			</p>
 		</div>
 	{/if}
 </section>
+
+{#if successMessage}
+	<div class="alert alert-success mx-auto mt-4 max-w-md text-sm" role="status">
+		{successMessage}
+	</div>
+{/if}
+
+<CreateMealPlanModal
+	bind:this={createModal}
+	form={data.form}
+	categories={data.categories}
+	pantryNames={data.pantryNames}
+	onSuccess={(message) => (successMessage = message)}
+/>
