@@ -7,6 +7,8 @@ import type {
 	Item,
 	List,
 	Member,
+	MealPlan,
+	MealType,
 	Organization,
 	PantryItem,
 	PurchaseRecord,
@@ -342,6 +344,43 @@ export async function createPurchaseRecord(options: {
 					name: item.name ?? `Producto E2E ${randomUUID().slice(0, 8)}`,
 					quantity: item.quantity ?? 1,
 					unit: item.unit ?? 'unit'
+				}))
+			}
+		}
+	});
+}
+
+/**
+ * Un menú planificado (#224): lo mismo que deja `createMealPlan` del servidor
+ * (`#lib/server/mealplans.ts`) — la fecha PURA (`@db.Date`, medianoche UTC del
+ * día clave), su tipo de comida, el título y los ingredientes con la
+ * `position` del servidor, desde 0. Sin producto de despensa enlazado
+ * (`pantryItemId` nulo): garantizar la despensa es trabajo de la UI, que es
+ * justo lo que prueban los e2e de la ruta del calendario.
+ */
+export async function createMealPlan(options: {
+	familyId: string;
+	/** El día del menú como clave `YYYY-MM-DD` (la misma que viaja por UI). */
+	dateKey: string;
+	mealType: MealType;
+	title?: string;
+	ingredients?: Array<{ name?: string; quantity?: number; unit?: Unit }>;
+}): Promise<MealPlan> {
+	const ingredients = options.ingredients ?? [];
+	return prisma.mealPlan.create({
+		data: {
+			organizationId: options.familyId,
+			// La columna `date` es `@db.Date`: medianoche UTC del día, lo mismo
+			// que deja `dateOfDayKey` al guardar por UI.
+			date: new Date(`${options.dateKey}T00:00:00Z`),
+			mealType: options.mealType,
+			title: options.title ?? `Menú E2E ${randomUUID().slice(0, 8)}`,
+			ingredients: {
+				create: ingredients.map((ingredient, position) => ({
+					position,
+					name: ingredient.name ?? `Ingrediente E2E ${randomUUID().slice(0, 8)}`,
+					quantity: ingredient.quantity ?? 1,
+					unit: ingredient.unit ?? 'unit'
 				}))
 			}
 		}
