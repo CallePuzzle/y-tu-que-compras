@@ -28,16 +28,20 @@
 	type Props = {
 		/** Los menús del mes agrupados por día, tal y como los trae el load. */
 		mealPlans: PageData['mealPlans'];
+		/** Los gastos del mes por día: para ofrecer el detalle de gastos si el día también tiene (#220). */
+		purchasesByDay?: PageData['purchasesByDay'];
 		onEdit: (meal: DayMealPlan) => void;
 		onDelete: (meal: DayMealPlan) => void;
 		/** «Crear otro menú este día»: la página abre el modal de crear. */
 		onCreate: (dateKey: string) => void;
+		/** «Gastos del día»: la página cierra este modal y abre el de gastos (#220). */
+		onOpenExpenses?: (dateKey: string) => void;
 	};
 
 	/** Un menú del día, tal y como lo trae el load (mismo tipo en la página y en el modal de crear). */
 	type DayMealPlan = PageData['mealPlans'][string][number];
 
-	let { mealPlans, onEdit, onDelete, onCreate }: Props = $props();
+	let { mealPlans, purchasesByDay, onEdit, onDelete, onCreate, onOpenExpenses }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
@@ -136,16 +140,29 @@
 			</div>
 		{/if}
 
-		<!-- Crear otro menú este día (#221): el detalle se queda abierto y el
-		     modal de crear se apila encima; al guardar, el load pesimista
-		     trae el menú nuevo y este detalle lo pinta. -->
-		<button
-			type="button"
-			class="btn btn-outline btn-sm mt-4 self-start"
-			onclick={() => dateKey && onCreate(dateKey)}
-		>
-			<Plus aria-hidden="true" />
-			{m.meal_plan_create_other()}
-		</button>
+		<!-- Los pies del detalle (#220): crear otro menú apila el modal de
+		     crear SOBRE este detalle (ha de seguir viéndose); si el día
+		     también tiene compras, «Gastos del día» CAMBIA de vista — la
+		     página cierra este modal y abre el de gastos, que no apila:
+		     son dos vistas del mismo día, no una acción sobre él. -->
+		<div class="mt-4 flex flex-col items-start gap-2">
+			<button
+				type="button"
+				class="btn btn-outline btn-sm"
+				onclick={() => dateKey && onCreate(dateKey)}
+			>
+				<Plus aria-hidden="true" />
+				{m.meal_plan_create_other()}
+			</button>
+			{#if onOpenExpenses && dateKey && (purchasesByDay?.[dateKey] ?? null)}
+				<button
+					type="button"
+					class="btn btn-outline btn-sm"
+					onclick={() => dateKey && onOpenExpenses(dateKey)}
+				>
+					{m.calendar_day_expenses()}
+				</button>
+			{/if}
+		</div>
 	{/if}
 </Modal>
