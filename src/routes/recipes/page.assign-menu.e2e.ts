@@ -160,9 +160,9 @@ test('asignar al menu: modal prefijado desde la receta, snapshot en el calendari
 	await expect(detalle.getByText(todayKey())).toBeVisible();
 	await expect(detalle.getByText('Comida', { exact: true })).toBeVisible();
 	await expect(detalle.getByText('Lentejas pardinas')).toBeVisible();
-	await expect(detalle.getByText('1 kg')).toBeVisible();
+	await expect(detalle.getByText('1 kg', { exact: true })).toBeVisible();
 	await expect(detalle.getByText('Cebolla')).toBeVisible();
-	await expect(detalle.getByText('2 ud')).toBeVisible();
+	await expect(detalle.getByText('2 ud', { exact: true })).toBeVisible();
 });
 
 test('editar la receta no altera el menu ya asignado: el snapshot vive solo', async ({ page }) => {
