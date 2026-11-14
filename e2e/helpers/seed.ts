@@ -12,6 +12,7 @@ import type {
 	Organization,
 	PantryItem,
 	PurchaseRecord,
+	Recipe,
 	Store,
 	Unit,
 	User
@@ -383,6 +384,56 @@ export async function createMealPlan(options: {
 					unit: ingredient.unit ?? 'unit'
 				}))
 			}
+		}
+	});
+}
+
+/**
+ * Una receta de la familia (#239): lo mismo que deja `createRecipe` del
+ * servidor (`#lib/server/recipes.ts`) — el nombre visible, su canónico (el
+ * mismo `normalizeItemName` que usa la capa de servidor: NFD, sin acentos,
+ * minúsculas, espacios colapsados, para que los duplicados se comporten igual
+ * que en la app), las raciones opcionales y los ingredientes con la
+ * `position` del servidor, desde 0. El enlace al producto de despensa
+ * (`pantryItemId`) es opcional: `null` si el ingrediente viene suelto.
+ */
+export async function createRecipe(options: {
+	familyId: string;
+	name?: string;
+	servings?: number;
+	ingredients?: Array<{
+		name?: string;
+		quantity?: number;
+		unit?: Unit;
+		/** El producto de despensa al que enlaza (FK directa, sin resolución). */
+		pantryItemId?: string;
+	}>;
+}): Promise<Recipe> {
+	const now = new Date();
+	const name = options.name ?? `Receta E2E ${randomUUID().slice(0, 8)}`;
+	const ingredients = options.ingredients ?? [];
+	return prisma.recipe.create({
+		data: {
+			organizationId: options.familyId,
+			name,
+			normalizedName: name
+				.trim()
+				.normalize('NFD')
+				.replace(/\p{Diacritic}/gu, '')
+				.toLowerCase()
+				.replace(/\s+/g, ' '),
+			servings: options.servings ?? null,
+			ingredients: {
+				create: ingredients.map((ingredient, position) => ({
+					position,
+					name: ingredient.name ?? `Ingrediente E2E ${randomUUID().slice(0, 8)}`,
+					quantity: ingredient.quantity ?? 1,
+					unit: ingredient.unit ?? 'unit',
+					pantryItemId: ingredient.pantryItemId ?? null
+				}))
+			},
+			createdAt: now,
+			updatedAt: now
 		}
 	});
 }
