@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import History from '@lucide/svelte/icons/history';
 	import Languages from '@lucide/svelte/icons/languages';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
@@ -51,6 +52,11 @@
 			icon: History,
 			title: m.landing_feature_history_title(),
 			text: m.landing_feature_history_text()
+		},
+		{
+			icon: CalendarDays,
+			title: m.landing_feature_calendar_title(),
+			text: m.landing_feature_calendar_text()
 		},
 		{
 			icon: Tags,
