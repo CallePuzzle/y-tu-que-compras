@@ -1,5 +1,7 @@
+import { z } from 'zod/v4';
 import { m } from '#lib/paraglide/messages.js';
 import { recipeSchema, recipeUpdateSchema } from '#lib/schemas/recipe.js';
+import { mealPlanFormSchema } from '../calendar/schemas.js';
 
 // El schema de la vista de recetas (épica #232, tarea #239), compartido por el
 // servidor (validación de las acciones de crear y editar) y el modal (validación
@@ -49,4 +51,21 @@ export function recipeFormSchema() {
  */
 export function recipeUpdateFormSchema() {
 	return recipeUpdateSchema(recipeStrings());
+}
+
+/**
+ * El contrato de ASIGNAR receta al menú (#242): los campos del menú del
+ * calendario MÁS el id de la receta de la que nace. El schema de menú YA
+ * existe — se reutiliza con SUS textos (`mealPlanFormSchema` del calendario,
+ * la referencia de la mecánica que replica este modal) y solo se añade el
+ * `recipeId` por el MISMO patrón del id en edición (`mealPlanUpdateSchema`):
+ * no va en el schema compartido porque un menú creado a mano no lo lleva,
+ * así que el modal lo inyecta en el JSON de salida (`onSubmit`, fuera de
+ * `$form`) y el action lo valida con ESTE schema. Va OPCIONAL a propósito:
+ * que la FK pertenezca a la familia lo resuelve el SERVIDOR
+ * (`resolveRecipeId` de `mealplans.ts`) — un id ausente, ajeno o rancio se
+ * guarda como «sin receta», sin 500.
+ */
+export function recipeMealPlanFormSchema() {
+	return mealPlanFormSchema().extend({ recipeId: z.string().optional() });
 }

@@ -346,6 +346,7 @@
 	"recipe_delete_description": "La receta desaparece con sus ingredientes; la despensa y los menús no cambian. No se puede deshacer.",
 	"recipe_delete_confirm": "Borrar definitivamente",
 	"recipe_servings": "Raciones: {count}",
+	"recipe_assign_menu": "Añadir al menú",
 	"schema_recipes_name_label": "Nombre de la receta",
 	"schema_recipes_name_placeholder": "p. ej. Tortilla de patatas",
 	"schema_recipes_name_error": "Escribe un nombre de receta (máximo 100 caracteres).",

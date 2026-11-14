@@ -91,12 +91,17 @@ export const load: PageServerLoad = async (event) => {
 	const expensesMonthTotal =
 		Object.values(purchasesByDay).reduce((sum, day) => sum + Math.round(day.total * 100), 0) / 100;
 
-	// Los nombres de los productos de la despensa: el autocompletado del
-	// nombre del ingrediente (`datalist`) se alimenta de ellos, como el alta
-	// rápida de items se alimenta de sus sugerencias. Sin duplicados (mismo
-	// producto con dos unidades sale dos veces de la consulta) y alfabéticos,
-	// que es como se mira la despensa.
-	const pantryNames = [...new Set((await listPantryItems(family.id)).map(({ name }) => name))];
+	// Los productos de la despensa: el autocompletado del nombre del
+	// ingrediente (`datalist`) se alimenta de ellos y el chip de unidad
+	// conflictiva del modal los busca (#243) — id (trazabilidad de la
+	// sugerencia), nombre y unidad (la que el chip compara). El mismo nombre
+	// puede salir DOS veces con unidades distintas (un producto por fila de
+	// despensa): es justo lo que el chip necesita para avisar.
+	const pantryItems = (await listPantryItems(family.id)).map(({ id, name, unit }) => ({
+		id,
+		name,
+		unit
+	}));
 
 	return {
 		monthKey,
@@ -117,7 +122,7 @@ export const load: PageServerLoad = async (event) => {
 		// Las categorías de la familia: el select opcional de cada ingrediente
 		// ofrece exactamente estas, como en el alta de items.
 		categories: await listCategories(family.id),
-		pantryNames,
+		pantryItems,
 		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanFormSchema()))
 	};
 };

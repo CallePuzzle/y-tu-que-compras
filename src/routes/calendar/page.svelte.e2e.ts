@@ -215,6 +215,95 @@ test('guardar un menu crea los productos nuevos en la despensa a cero sin tocar 
 	await expect(page.locator('li', { hasText: 'Leche entera' }).getByText('2 L')).toBeVisible();
 });
 
+test('aviso de unidad conflictiva: convierte g a kg, guarda enlazado al producto y sin segundo producto', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// El arroz vive en la despensa en KILOS (#243): teclearlo en el menú en
+	// gramos ha de avisar y proponer la conversión exacta.
+	const arroz = await createPantryItem({
+		familyId: family.id,
+		name: 'Arroz',
+		normalizedName: 'arroz',
+		quantity: 3,
+		unit: 'kilogram'
+	});
+	await seedSession(page, user);
+
+	await openMenuTab(page);
+
+	await page.getByRole('button', { name: '11', exact: true }).click();
+	const creacion = modalCrear(page);
+
+	// «Arroz» en 300 g: el chip avisa (match por nombre canónico) y ofrece
+	// «usar kg → 0,3 kg».
+	await creacion.locator('#meal-title').fill('Paella');
+	await creacion.locator('#meal-ingredient-name-0').fill('Arroz');
+	await creacion.locator('#meal-ingredient-quantity-0').fill('300');
+	await creacion.locator('#meal-ingredient-unit-0').selectOption({ label: 'g' });
+	await expect(creacion.getByText('está en la despensa en kg')).toBeVisible();
+	const usarKg = creacion.getByRole('button', { name: 'usar kg → 0,3 kg' });
+	await expect(usarKg).toBeVisible();
+
+	// Pulsado: la fila adapta cantidad y unidad — y el chip desaparece, que
+	// ya no hay conflicto.
+	await usarKg.click();
+	await expect(creacion.locator('#meal-ingredient-quantity-0')).toHaveValue('0.3');
+	await expect(creacion.locator('#meal-ingredient-unit-0')).toHaveValue('kilogram');
+	await expect(creacion.getByText('está en la despensa en kg')).toHaveCount(0);
+
+	await creacion.getByRole('button', { name: 'Crear menú' }).click();
+	await expect(creacion).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Menú creado.');
+
+	// La verdad en la BD: 0,3 kg y ENLAZADO al producto en kg — con la fila
+	// ya en su unidad, el upsert del guardado cayó en el EXISTENTE: sin
+	// segundo producto en despensa y sin tocar sus tres kilos.
+	const menu = await prisma.mealPlan.findFirstOrThrow({ where: { organizationId: family.id } });
+	const ingredientes = await prisma.mealPlanIngredient.findMany({
+		where: { mealPlanId: menu.id }
+	});
+	expect(ingredientes.map((row) => [row.name, Number(row.quantity), row.unit])).toEqual([
+		['Arroz', 0.3, 'kilogram']
+	]);
+	expect(ingredientes.map((row) => row.pantryItemId)).toEqual([arroz.id]);
+	expect(await prisma.pantryItem.count()).toBe(1);
+
+	// En EDICIÓN el mismo chip vigila sus filas (#243): reabrir el menú y
+	// volver a los gramos trae el aviso de nuevo, con su conversión.
+	await page.getByRole('button', { name: 'Paella' }).click();
+	const detalle = modalDetalle(page);
+	await detalle
+		.locator('article', { hasText: 'Paella' })
+		.getByRole('button', { name: 'Editar menú' })
+		.click();
+	const edicion = modalEditar(page);
+	await expect(edicion.locator('#meal-ingredient-name-0')).toHaveValue('Arroz');
+	await edicion.locator('#meal-ingredient-quantity-0').fill('300');
+	await edicion.locator('#meal-ingredient-unit-0').selectOption({ label: 'g' });
+	await expect(edicion.getByText('está en la despensa en kg')).toBeVisible();
+	await edicion.getByRole('button', { name: 'usar kg → 0,3 kg' }).click();
+	await expect(edicion.locator('#meal-ingredient-quantity-0')).toHaveValue('0.3');
+	await expect(edicion.locator('#meal-ingredient-unit-0')).toHaveValue('kilogram');
+	await expect(edicion.getByText('está en la despensa en kg')).toHaveCount(0);
+
+	await edicion.getByRole('button', { name: 'Guardar cambios' }).click();
+	await expect(edicion).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Menú actualizado.');
+
+	// Y la edición no mudó nada: mismo enlace al producto en kg, despensa
+	// intacta de un solo producto.
+	const ingredientesTras = await prisma.mealPlanIngredient.findMany({
+		where: { mealPlanId: menu.id }
+	});
+	expect(ingredientesTras.map((row) => [row.name, Number(row.quantity), row.unit])).toEqual([
+		['Arroz', 0.3, 'kilogram']
+	]);
+	expect(ingredientesTras.map((row) => row.pantryItemId)).toEqual([arroz.id]);
+	expect(await prisma.pantryItem.count()).toBe(1);
+});
+
 test('editar precarga el modal, guarda los cambios y los pinta al instante en celda y detalle', async ({
 	page
 }) => {

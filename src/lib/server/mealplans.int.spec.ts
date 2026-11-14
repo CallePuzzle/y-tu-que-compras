@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 // edición reemplaza los ingredientes entera.
 import prisma from './prisma.js';
 import { createCategory } from './categories.js';
+import { createRecipe, deleteRecipe } from './recipes.js';
 import type { MealPlanData } from './mealplans.js';
 import {
 	MealPlanExistsError,
@@ -302,6 +303,56 @@ describe('CRUD de menús por familia (#225)', () => {
 		expect((await prisma.mealPlan.findUniqueOrThrow({ where: { id: martes.id } })).title).toBe(
 			LENTES.title
 		);
+	});
+
+	it('createMealPlan guarda la receta de origen de la familia; la ajena o rancia queda «sin receta», sin 500 (#242)', async () => {
+		const ownFamily = await familyRow('Familia Originaria');
+		const otherFamily = await familyRow('Familia Ajena de Recetas');
+		const propia = await createRecipe(ownFamily, {
+			name: 'Lentejas de la abuela',
+			ingredients: []
+		});
+		const ajena = await createRecipe(otherFamily, { name: 'Receta secreta', ingredients: [] });
+
+		// El menú nacido de UNA receta de la familia lleva su id: trazabilidad
+		// del origen, no propiedad (#242).
+		const meal = await createMealPlan(ownFamily, { ...LENTES, recipeId: propia.id });
+		expect((await prisma.mealPlan.findUniqueOrThrow({ where: { id: meal.id } })).recipeId).toBe(
+			propia.id
+		);
+
+		// El id de UNA receta de OTRA familia y uno que ya no existe (rancio)
+		// se guardan «sin receta», sin 500 por la FK: el mismo trato que la
+		// categoría y el producto de despensa del ingrediente.
+		const ajeno = await createMealPlan(ownFamily, {
+			...LENTES,
+			mealType: 'dinner',
+			recipeId: ajena.id
+		});
+		const rancio = await createMealPlan(ownFamily, {
+			...LENTES,
+			mealType: 'breakfast',
+			recipeId: randomUUID()
+		});
+		expect(
+			(await prisma.mealPlan.findUniqueOrThrow({ where: { id: ajeno.id } })).recipeId
+		).toBeNull();
+		expect(
+			(await prisma.mealPlan.findUniqueOrThrow({ where: { id: rancio.id } })).recipeId
+		).toBeNull();
+
+		// Editar el menú después NO toca la trazabilidad: el recipeId queda…
+		await updateMealPlan(ownFamily, meal.id, { ...LENTES, title: 'Lentejas rápidas' });
+		expect((await prisma.mealPlan.findUniqueOrThrow({ where: { id: meal.id } })).recipeId).toBe(
+			propia.id
+		);
+
+		// …y borrar la receta tampoco toca al menú: solo le quita la referencia
+		// (SetNull) — el snapshot vive solo.
+		await deleteRecipe(ownFamily, propia.id);
+		const huerfano = await prisma.mealPlan.findUniqueOrThrow({ where: { id: meal.id } });
+		expect(huerfano.recipeId).toBeNull();
+		expect(huerfano.title).toBe('Lentejas rápidas');
 	});
 
 	it('la categoría del ingrediente ajena o rancia se guarda como «sin categoría», sin 500', async () => {

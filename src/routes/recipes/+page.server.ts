@@ -1,9 +1,11 @@
 import { fail } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
+import { APP_TIME_ZONE } from '#lib/format.js';
 import { m } from '#lib/paraglide/messages.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
 import logger from '#lib/server/logger.js';
+import { MealPlanExistsError, createMealPlan } from '#lib/server/mealplans.js';
 import { listPantryItems } from '#lib/server/pantry.js';
 import {
 	RecipeExistsError,
@@ -12,7 +14,8 @@ import {
 	listRecipes,
 	updateRecipe
 } from '#lib/server/recipes.js';
-import { recipeFormSchema, recipeUpdateFormSchema } from './schemas.js';
+import { dateKeyOf } from '../calendar/grid.js';
+import { recipeFormSchema, recipeMealPlanFormSchema, recipeUpdateFormSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
 
 // La vista de recetas de la familia activa (épica #232, tarea #239): el load
@@ -21,7 +24,10 @@ import type { Actions, PageServerLoad } from './$types';
 // schema compartido y el `RecipeExistsError` a superforms y mensajes de UI
 // (patrón calendario: 400/409/404/500 en `message`, sin filtrar el error
 // crudo). Guardar una receta NO crea productos en despensa (decisión de fase
-// 2): el CRUD de `recipes.ts` solo ENLAZA el id que llega validado.
+// 2): el CRUD de `recipes.ts` solo ENLAZA el id que llega validado. La
+// acción assignToMenu (#242) lleva la receta AL MENÚ por la capa de
+// servidor del calendario (`createMealPlan`), con el `recipeId` como
+// trazabilidad del origen.
 
 /**
  * Valores iniciales del formulario de crear receta: una fila de ingrediente
@@ -33,6 +39,20 @@ import type { Actions, PageServerLoad } from './$types';
 const EMPTY_RECIPE = {
 	name: '',
 	ingredients: [{ name: '', quantity: 1, unit: 'unit' as const, pantryItemId: '' }]
+};
+
+/**
+ * Valores iniciales del formulario de asignar al menú (#242): el día lo fija
+ * el modal al abrirse (el «hoy» que este load sirve ya resuelto) y el título
+ * y los ingredientes los precarga la receta elegida, así que aquí todo va
+ * vacío — la comida como tipo por defecto (la principal del día) y una fila
+ * de ingrediente, igual que el formulario del calendario.
+ */
+const EMPTY_MENU_PLAN = {
+	title: '',
+	date: '',
+	mealType: 'lunch' as const,
+	ingredients: [{ name: '', quantity: 1, unit: 'unit' as const }]
 };
 
 /**
@@ -70,7 +90,12 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		recipes,
 		pantryItems,
-		form: await superValidate(EMPTY_RECIPE, zod4(recipeFormSchema()))
+		// El «hoy» de la zona de la app (el cliente no calcula fechas, las
+		// sirve el servidor: ver `grid.ts` del calendario): el día por defecto
+		// del modal de asignar al menú (#242).
+		todayKey: dateKeyOf(new Date(), APP_TIME_ZONE),
+		form: await superValidate(EMPTY_RECIPE, zod4(recipeFormSchema())),
+		menuForm: await superValidate(EMPTY_MENU_PLAN, zod4(recipeMealPlanFormSchema()))
 	};
 };
 
@@ -142,6 +167,40 @@ export const actions: Actions = {
 		}
 
 		return message(form, m.recipe_updated());
+	},
+
+	// Asignar receta al menú (#242): el modal llega con el título y los
+	// ingredientes PREFIJADOS desde la receta (editables) y el `recipeId`
+	// como trazabilidad. Valida el schema de menú extendido con el id de
+	// receta (ver `schemas.ts`): el body llega como JSON con `dataType:
+	// 'json'` y `superValidate(request, …)` lo valida entero. La creación es
+	// la MISMA capa de servidor del calendario (`createMealPlan`): el único
+	// (familia, fecha, tipo) muere en P2002 y el `MealPlanExistsError` sale
+	// como 409, que el modal pinta dentro de sí para reintentar otro hueco;
+	// la FK de la receta la resuelve el servidor (`resolveRecipeId`) y la
+	// despensa la garantiza `ensurePantryProducts` intacto de fase 1 — cada
+	// ingrediente crea su producto a cantidad 0 si no estaba. Tras crear,
+	// `invalidateAll: 'pessimistic'` en el cliente rerun el load.
+	assignToMenu: async (event) => {
+		const family = requireActiveFamily(event);
+		const form = await superValidate(event.request, zod4(recipeMealPlanFormSchema()));
+		if (!form.valid) {
+			return fail(400, { form });
+		}
+
+		try {
+			await createMealPlan(family.id, form.data);
+		} catch (error) {
+			if (error instanceof MealPlanExistsError) {
+				return message(form, m.meal_plan_exists(), { status: 409 });
+			}
+			logger.error({ err: error }, 'Error al asignar la receta al menú');
+			// Fallo inesperado (BD caída, columna…): 5xx, que el cliente y la
+			// monitorización lo vean como lo que es (issue #110).
+			return message(form, m.meal_plan_error(), { status: 500 });
+		}
+
+		return message(form, m.meal_plan_success());
 	},
 
 	// Borrar receta (#239): confirmación en la UI (ConfirmModal). Sin schema de
