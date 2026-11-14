@@ -37,6 +37,13 @@ export interface MealPlanData {
 	mealType: MealType;
 	title: string;
 	ingredients: MealPlanIngredientData[];
+	/**
+	 * Id de UNA receta de la familia de la que nace el menú (#242):
+	 * trazabilidad del origen, no propiedad — un id ajeno o rancio se guarda
+	 * como «sin receta» (ver `resolveRecipeId`), y los menús escritos a mano
+	 * no lo llevan.
+	 */
+	recipeId?: string;
 }
 
 /** Un ingrediente tal y como la vista del menú lo muestra. */
@@ -205,6 +212,29 @@ async function resolveCategoryId(
 		select: { id: true }
 	});
 	return category?.id ?? null;
+}
+
+/**
+ * Resuelve la receta de ORIGEN del menú (#242): el id de UNA receta de la
+ * familia, o `null` si no viaja o no es de ella — un id ajeno o rancio se
+ * guarda «sin receta» (el mismo efecto que el `SetNull` del borrado) y sin
+ * 500 por violar la FK, el mismo trato que la categoría y el producto de
+ * despensa del ingrediente en `recipes.ts`. Solo es trazabilidad: el menú
+ * vive de su snapshot (título e ingredientes), nunca de la receta.
+ */
+async function resolveRecipeId(
+	db: Prisma.TransactionClient,
+	familyId: string,
+	recipeId: string | undefined
+): Promise<string | null> {
+	if (!recipeId) {
+		return null;
+	}
+	const recipe = await db.recipe.findFirst({
+		where: { id: recipeId, organizationId: familyId },
+		select: { id: true }
+	});
+	return recipe?.id ?? null;
 }
 
 /**
@@ -391,6 +421,10 @@ function toMealPlanView(row: {
  * el INSERT muere en P2002 y sale como `MealPlanExistsError` — a prueba de
  * carrera, sin ventana entre un check previo y el write, para que la acción
  * lo traduzca al mensaje genérico de la UI.
+ *
+ * Si los datos traen `recipeId` (#242, el alta desde /recipes), se resuelve
+ * contra la familia y queda guardado como trazabilidad del origen; el resto
+ * de caminos (calendario, petición hecha a mano) lo dejan en «sin receta».
  */
 export async function createMealPlan(familyId: string, data: MealPlanData): Promise<MealPlanView> {
 	try {
@@ -402,6 +436,7 @@ export async function createMealPlan(familyId: string, data: MealPlanData): Prom
 					date: dateOfDayKey(data.date),
 					mealType: data.mealType,
 					title: data.title,
+					recipeId: await resolveRecipeId(tx, familyId, data.recipeId),
 					ingredients: { create: ingredients }
 				},
 				select: MEAL_PLAN_SELECT
@@ -437,6 +472,10 @@ export async function createMealPlan(familyId: string, data: MealPlanData): Prom
  * el alta; editar sin mover no choca consigo mismo (Postgres ignora el
  * update que no cambia los valores de la fila). El rechazo no deja nada a
  * medias: la transacción revierte despensa, borrado y reemplazo.
+ *
+ * La trazabilidad del origen no se toca (#242): el `recipeId` que el alta
+ * dejó (o la ausencia de él) sobrevive a las ediciones — el menú sigue
+ * sabiendo de qué receta nació aunque su contenido cambie entera.
  */
 export async function updateMealPlan(
 	familyId: string,

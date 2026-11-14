@@ -1,4 +1,5 @@
 <script lang="ts">
+	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import ChefHat from '@lucide/svelte/icons/chef-hat';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -8,6 +9,7 @@
 	import { matchesItemSearch } from '#lib/components/item-search.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
+	import AssignRecipeModal from './AssignRecipeModal.svelte';
 	import CreateRecipeModal from './CreateRecipeModal.svelte';
 	import type { PageProps } from './$types';
 
@@ -17,7 +19,7 @@
 	type RecipeRow = PageProps['data']['recipes'][number];
 
 	// Aviso de éxito FUERA de los modales; el de error se enseña dentro, junto
-	// al formulario (crear/editar) o en el ConfirmModal (borrar).
+	// al formulario (crear/editar/asignar) o en el ConfirmModal (borrar).
 	let successMessage: string | null = $state(null);
 
 	// Modal compartida de crear/editar (un solo formulario): `undefined` =
@@ -35,6 +37,17 @@
 	function openEdit(recipe: RecipeRow) {
 		successMessage = null;
 		createModal?.openForEdit(recipe);
+	}
+
+	// Asignar al menú (#242): una modal compartida; el botón de cada fila fija
+	// qué receta se asigna antes de abrirla. El fallo (el 409 de hueco
+	// ocupado incluido) vive dentro del modal, para reintentar otro hueco.
+	let assignModal: AssignRecipeModal | undefined = $state();
+
+	/** Abre el modal de asignar al menú, prefijado con la receta elegida. */
+	function openAssign(recipe: RecipeRow) {
+		successMessage = null;
+		assignModal?.open(recipe, data.todayKey);
 	}
 
 	// Borrar con confirmación: un `ConfirmModal` compartido (patrón items);
@@ -123,6 +136,15 @@
 							<button
 								type="button"
 								class="btn btn-ghost btn-sm"
+								title={m.recipe_assign_menu()}
+								onclick={() => openAssign(recipe)}
+							>
+								<CalendarPlus aria-hidden="true" />
+								<span class="sr-only">{m.recipe_assign_menu()}</span>
+							</button>
+							<button
+								type="button"
+								class="btn btn-ghost btn-sm"
 								title={m.recipe_edit()}
 								onclick={() => openEdit(recipe)}
 							>
@@ -152,6 +174,17 @@
 	bind:this={createModal}
 	form={data.form}
 	pantryItems={data.pantryItems}
+	onSuccess={(message) => (successMessage = message)}
+/>
+
+<!-- Asignar al menú (#242): una modal compartida; el botón de cada fila fija
+     a qué receta se refiere antes de abrirla. El título y los ingredientes
+     llegan prefijados desde la receta (snapshot) y el éxito avisa a la
+     página como el resto de acciones. -->
+<AssignRecipeModal
+	bind:this={assignModal}
+	menuForm={data.menuForm}
+	pantryNames={data.pantryItems.map((item) => item.name)}
 	onSuccess={(message) => (successMessage = message)}
 />
 
