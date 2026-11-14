@@ -7,7 +7,7 @@
       "dependencies": {
         "@callepuzzle/auth": "^2.0.0",
         "@callepuzzle/core": "^1.0.1",
-        "@callepuzzle/svelte-ui": "^2.0.0",
+        "@callepuzzle/svelte-ui": "^2.1.0",
         "@lucide/svelte": "^1.57.0",
         "@opentelemetry/api": "^1.9.1",
         "@prisma/adapter-pg": "^7.10.0",
@@ -128,7 +128,7 @@
 
     "@callepuzzle/core": ["@callepuzzle/core@1.0.1", "https://npm.pkg.github.com/download/@callepuzzle/core/1.0.1/97a57ce29ffa32d8e19f3e253e24b926267ae785", { "peerDependencies": { "svelte": "^5.36.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-AeE3ldTiEPDGxtP/4++IiSch++sPiKP0MUZ1ZkSTnPY/2LxPgGS3snGQ9At0JngT7aMWC3lVrb7VypFBnw01GA=="],
 
-    "@callepuzzle/svelte-ui": ["@callepuzzle/svelte-ui@2.0.0", "https://npm.pkg.github.com/download/@callepuzzle/svelte-ui/2.0.0/5e29ac0f19ac7ac869abd6890ce853ca09733a56", { "dependencies": { "@callepuzzle/core": "^1.0.1", "clsx": "^2.1.1", "esm-env": "^1.2.2", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@lucide/svelte": "^0.488.0 || ^1.0.0", "@sveltejs/kit": "^3.0.0", "bits-ui": "^2.19.0", "daisyui": "^5.0.50", "formsnap": "^2.1.0", "svelte": "^5.57.1", "sveltekit-superforms": "^3.0.0", "tailwindcss": "^4.1.11", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-kJrw1bhwWgNVvo+jA+bia3d8l6cjyNQPlgqRMM4K1IRBy/7PyfSHceWoW8X/9c3CrRUWkqzJVlfSLnZiiG/XqA=="],
+    "@callepuzzle/svelte-ui": ["@callepuzzle/svelte-ui@2.1.0", "https://npm.pkg.github.com/download/@callepuzzle/svelte-ui/2.1.0/421509af11424d9a4fd7941e78eb648cc1bc18b6", { "dependencies": { "@callepuzzle/core": "^1.0.1", "clsx": "^2.1.1", "esm-env": "^1.2.2", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@lucide/svelte": "^0.488.0 || ^1.0.0", "@sveltejs/kit": "^3.0.0", "bits-ui": "^2.19.0", "daisyui": "^5.0.50", "formsnap": "^2.1.0", "svelte": "^5.57.1", "sveltekit-superforms": "^3.0.0", "tailwindcss": "^4.1.11", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-fw+Y8HJGADqjbQg2IWpkm7F/oMIZzoXBVLT5th787VzNJLWJP+JxPJDtdhiHaoWWCJ9MaaRsp4lHHQqsEZ5zJQ=="],
 
     "@electric-sql/pglite": ["@electric-sql/pglite@0.4.3", "", {}, "sha512-ichuWTgtd4mOM1G4SpyGJa5trT03lWbMypDV0fUXUCXg5hiHqVAz/bZyV68NqmkLB7WcYmj1RMJVSp8HV/v/ZQ=="],
 
