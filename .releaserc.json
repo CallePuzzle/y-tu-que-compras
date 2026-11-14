@@ -16,7 +16,6 @@
 					{ "type": "revert", "release": "patch" },
 					{ "type": "chore", "scope": "!deploy", "release": "patch" },
 					{ "type": "chore", "scope": null, "release": "patch" },
-					{ "type": "docs", "release": "patch" },
 					{ "type": "refactor", "release": "patch" },
 					{ "type": "test", "release": "patch" },
 					{ "type": "build", "release": "patch" },
