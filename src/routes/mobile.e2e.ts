@@ -74,6 +74,17 @@ test('el dock navega las rutas principales y ninguna vista desborda el ancho', a
 	await drawer.getByRole('link', { name: 'History' }).click();
 	await expect(page.getByRole('heading', { name: 'Purchase history' })).toBeVisible();
 	await expectNoOverflow(page);
+
+	// Y las recetas (#241), como el historial: fuera del dock — ningún
+	// enlace en la barra inferior — y a un toque en el cajón lateral, que
+	// las sigue mostrando (el menú de escritorio lo cubre el e2e de
+	// /recipes).
+	await expect(dock.getByRole('link', { name: 'Recipes' })).toHaveCount(0);
+	await page.locator('.navbar label[for]').click();
+	await expect(drawer).toBeVisible();
+	await drawer.getByRole('link', { name: 'Recipes' }).click();
+	await expect(page.getByRole('heading', { name: 'Your recipes' })).toBeVisible();
+	await expectNoOverflow(page);
 });
 
 test('el cajón lateral abre con la hamburguesa y cierra tocando fuera', async ({ page }) => {
