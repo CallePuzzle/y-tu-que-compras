@@ -1,11 +1,12 @@
 import { fail } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
-import { APP_TIME_ZONE } from '#lib/format.js';
+import { APP_TIME_ZONE, formatQuantity } from '#lib/format.js';
 import { m } from '#lib/paraglide/messages.js';
 import { getLocale } from '#lib/paraglide/runtime.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
 import { listCategories } from '#lib/server/categories.js';
+import { dumpDayToList } from '#lib/server/dump.js';
 import {
 	MealPlanExistsError,
 	createMealPlan,
@@ -16,6 +17,8 @@ import {
 import logger from '#lib/server/logger.js';
 import { listPantryItems } from '#lib/server/pantry.js';
 import { listPurchasesByDay } from '#lib/server/purchases.js';
+import { listLists } from '#lib/server/lists.js';
+import { unitLabels } from '#lib/units.js';
 import {
 	buildMonthGrid,
 	monthKeyOf,
@@ -24,7 +27,7 @@ import {
 	shiftMonth,
 	weekdayLabels
 } from './grid.js';
-import { mealPlanFormSchema, mealPlanUpdateSchema } from './schemas.js';
+import { dumpFormSchema, mealPlanFormSchema, mealPlanUpdateSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -39,6 +42,16 @@ const EMPTY_MEAL_PLAN = {
 	mealType: 'lunch' as const,
 	ingredients: [{ name: '', quantity: 1, unit: 'unit' as const, categoryId: '' }]
 };
+
+/**
+ * El modal de volcado (#245) lleva SU formulario de superforms, con id propio
+ * para que el resultado de su acción no pise al de crear/editar menú (patrón
+ * `READD_FORM_ID` de la despensa).
+ */
+const DUMP_FORM_ID = 'dump-day';
+
+/** Valores iniciales del volcado: el día y la lista los fija el detalle al abrirse. */
+const EMPTY_DUMP = { date: '', listId: '' } as const;
 
 /**
  * El id de menú que viaja en el formulario de borrar (input hidden del
@@ -131,7 +144,13 @@ export const load: PageServerLoad = async (event) => {
 		categories: await listCategories(family.id),
 		pantryItems,
 		pantryQuantities,
-		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanFormSchema()))
+		// Las listas de la familia: alimentan el selector de destino del
+		// volcado (#245), el mismo contrato que el modal de re-añadir de
+		// despensa — la lista puede ser cualquiera de las de la familia.
+		lists: await listLists(family.id),
+		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanFormSchema())),
+		// El formulario del volcado (#245), con id propio (ver `DUMP_FORM_ID`).
+		dumpForm: await superValidate(EMPTY_DUMP, zod4(dumpFormSchema()), { id: DUMP_FORM_ID })
 	};
 };
 
@@ -230,5 +249,50 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	// Volcar lo que falta a la compra (#245): el día entero o UN ingrediente,
+	// a la lista elegida en el detalle del día. El body llega como FormData
+	// (sin JS) o como el JSON troceado de `dataType: 'json'` —
+	// `superValidate(request, …)` lo junta solo, como en crear/editar. Lo que
+	// falta lo recalcula SIEMPRE el servidor dentro de la transacción
+	// (`dumpDayToList`, patrón `readdPantryItem`): al cliente no se le
+	// confía cantidad alguna. Déficit 0 sale como el mensaje «no falta nada»,
+	// sin escritura; un id rancio (lista o ingrediente borrados con el
+	// detalle abierto) sale como 404 controlado (issue #110).
+	dump: async (event) => {
+		const family = requireActiveFamily(event);
+		const form = await superValidate(event.request, zod4(dumpFormSchema()), { id: DUMP_FORM_ID });
+		if (!form.valid) {
+			return fail(400, { dumpForm: form });
+		}
+
+		try {
+			const result = await dumpDayToList(family.id, form.data);
+			if (result.outcome === 'nothing') {
+				return message(form, m.calendar_dump_nothing());
+			}
+			if (result.outcome === 'list-gone') {
+				return message(form, m.lists_gone(), { status: 404 });
+			}
+			if (result.outcome === 'ingredient-gone') {
+				return message(form, m.calendar_dump_gone(), { status: 404 });
+			}
+
+			// La confirmación lista lo añadido: cantidades con los separadores
+			// de la locale de la petición y unidades traducidas (regla i18n) —
+			// el mensaje se compone EN SERVIDOR, como el resto de textos.
+			const locale = getLocale();
+			const unitLabel = unitLabels();
+			const items = result.items
+				.map(
+					(item) => `${item.name} ${formatQuantity(item.quantity, locale)} ${unitLabel[item.unit]}`
+				)
+				.join(', ');
+			return message(form, m.calendar_dump_success({ items }));
+		} catch (error) {
+			logger.error({ err: error }, 'Error al volcar lo que falta a la lista');
+			return message(form, m.calendar_dump_error(), { status: 500 });
+		}
 	}
 };

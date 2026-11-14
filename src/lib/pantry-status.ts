@@ -1,10 +1,15 @@
-// Estado de despensa de UN día del calendario (épica #236, tarea #244):
-// funciones PURAS, sin Paraglide ni imports de servidor, para que las pruebe
-// el proyecto `server` de vitest (patrón `grid.ts`). Dado el día (sus menús)
-// y el mapa despensa id → cantidad que trae el load, calcula el estado
-// agregado POR PRODUCTO: la necesidad de todas las comidas del día sobre el
-// mismo producto se suma ANTES de compararla con la despensa — dos comidas
-// que piden huevos son una sola necesidad, no dos consultas sueltas.
+// Estado de despensa de UN día del calendario (épica #236, tareas #244 y
+// #245): funciones PURAS, sin Paraglide ni imports de servidor, para que las
+// pruebe el proyecto `server` de vitest (patrón `grid.ts`). Dado el día (sus
+// menús) y el mapa despensa id → cantidad, calcula el estado agregado POR
+// PRODUCTO: la necesidad de todas las comidas del día sobre el mismo producto
+// se suma ANTES de compararla con la despensa — dos comidas que piden huevos
+// son una sola necesidad, no dos consultas sueltas.
+//
+// Lo consume la vista del detalle del día (el badge de cada ingrediente,
+// #244) y el volcado a la lista de compra (`#lib/server/dump.ts`, #245): el
+// servidor recalcula el déficit SIEMPRE al volcar — lo que falta no lo decide
+// nunca el cliente.
 //
 // El ingrediente lleva su `pantryItemId` desde la fase 1 (guardar el menú
 // garantiza el producto y lo enlaza), así que el cálculo no resuelve
