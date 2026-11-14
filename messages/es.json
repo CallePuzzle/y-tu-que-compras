@@ -210,6 +210,8 @@
 	"unit_package": "paquete",
 	"unit_can": "lata",
 	"unit_dozen": "docena",
+	"unit_convert_conflict": "«{name}» está en la despensa en {units}",
+	"unit_convert_apply": "usar {unit} → {quantity}",
 	"lists_no_items": "Vacía",
 	"lists_pending_count": "Pendientes: {count}",
 	"lists_all_purchased": "Todo comprado",

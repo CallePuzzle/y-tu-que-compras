@@ -2,11 +2,13 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
 	import { Modal } from '@callepuzzle/svelte-ui';
+	import UnitConflictChip from '#lib/components/UnitConflictChip.svelte';
 	import { errorMessage } from '#lib/forms.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS } from '#lib/schemas/item.js';
 	import type { RecipeFormData } from '#lib/schemas/recipe.js';
 	import { unitLabels } from '#lib/units.js';
+	import type { UnitConversion } from '#lib/unit-convert.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { recipeFormSchema } from './schemas.js';
@@ -22,9 +24,9 @@
 	 * teclear un nombre que ES un producto de la familia, la fila HEREDA su
 	 * unidad y lo ENLAZA (`pantryItemId`); un nombre inventado no sugiere nada
 	 * y queda suelto — el servidor lo guarda sin FK y NADA se crea en la
-	 * despensa (decisión de fase 2). El aviso de unidad conflictiva y su
-	 * conversión viene después (#240): este modal deja la fila lista para que
-	 * aquél añada su chip por fila.
+	 * despensa (decisión de fase 2). Si lo tecleado casa con un producto en
+	 * OTRA unidad, el chip por fila (`UnitConflictChip`, #240) avisa y propone
+	 * la conversión cuando es exacta.
 	 *
 	 * Los ingredientes van ANIDADOS (array de objetos), así que el formulario
 	 * viaja como JSON (`dataType: 'json'`, requisito de superforms para
@@ -151,8 +153,9 @@
 	 * evento. Se pasa por `form.update()` y no por una mutación directa de la
 	 * fila: el estado de superforms es un store plano, y tocar un objeto
 	 * anidado sin `update` no repinta el select de la unidad. Si el producto
-	 * existe en varias unidades, manda la primera: elegir entre todas (y
-	 * avisar del conflicto) es la tarea #240.
+	 * existe en varias unidades, manda la primera: elegir entre todas lo hace
+	 * el chip de unidad conflictiva (`applyConversion`, #240), que detecta por
+	 * nombre canónico lo que este match visible deja pasar.
 	 */
 	function syncIngredientName(index: number, name: string) {
 		formData.update((data) => {
@@ -165,6 +168,27 @@
 			if (product) {
 				row.unit = product.unit;
 			}
+			return data;
+		});
+	}
+
+	/**
+	 * La conversión que el chip propuso (tarea #240), aplicada a su fila:
+	 * cantidad y unidad convertidas, y el producto de despensa ENLAZADO — el
+	 * mismo trato que `syncIngredientName` da al nombre visible exacto, ahora
+	 * que la fila ha acabado en la unidad del producto. Mismo `update()` que
+	 * allí: sin él, la mutación anidada no repinta el select ni retira el
+	 * chip (que desaparece solo: la unidad queda igualada a la del producto).
+	 */
+	function applyConversion(index: number, conversion: UnitConversion) {
+		formData.update((data) => {
+			const row = data.ingredients[index];
+			if (!row) {
+				return data;
+			}
+			row.quantity = conversion.quantity;
+			row.unit = conversion.unit;
+			row.pantryItemId = conversion.pantryItemId;
 			return data;
 		});
 	}
@@ -343,6 +367,19 @@
 							{/if}
 						</div>
 					</div>
+
+					<!-- Aviso de unidad conflictiva (#240): el nombre tecleado casa
+					     con un producto de despensa en OTRA unidad (por nombre
+					     canónico, no solo visible). El chip propone la conversión
+					     exacta y aquí se aplica a SU fila — por `update`, como todo
+					     lo que toca el store de superforms. -->
+					<UnitConflictChip
+						name={ingredient.name}
+						unit={ingredient.unit}
+						quantity={ingredient.quantity}
+						pantryProducts={pantryItems}
+						onApply={(conversion) => applyConversion(index, conversion)}
+					/>
 				</div>
 			{/each}
 

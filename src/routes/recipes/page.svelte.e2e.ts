@@ -114,6 +114,74 @@ test('crear con autocompletado: hereda la unidad, enlaza el producto y no crea n
 	expect(Number(lecheTrasGuardar.quantity)).toBe(2);
 });
 
+test('aviso de unidad conflictiva: propone la conversión exacta y la aplica al pulsar', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// El arroz vive en la despensa en KILOS (tarea #240): teclearlo en otra
+	// unidad ha de avisar y proponer la conversión cuando es exacta.
+	const arroz = await createPantryItem({
+		familyId: family.id,
+		name: 'Arroz',
+		normalizedName: 'arroz',
+		quantity: 3,
+		unit: 'kilogram'
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+
+	await page.getByRole('button', { name: 'Nueva receta' }).first().click();
+	const creacion = modalCrear(page);
+
+	// «arroz» en MINÚSCULAS: no casan los nombres visibles (no hereda la
+	// unidad del autocompletado) y la fila va a mano — 300 g.
+	await creacion.locator('#recipe-name').fill('Paella');
+	await creacion.locator('#recipe-ingredient-name-0').fill('arroz');
+	await creacion.locator('#recipe-ingredient-quantity-0').fill('300');
+	await creacion.locator('#recipe-ingredient-unit-0').selectOption({ label: 'g' });
+
+	// El chip avisa del conflicto (match por nombre canónico) y ofrece la
+	// conversión exacta: «usar kg → 0,3 kg».
+	await expect(creacion.getByText('está en la despensa en kg')).toBeVisible();
+	const usarKg = creacion.getByRole('button', { name: 'usar kg → 0,3 kg' });
+	await expect(usarKg).toBeVisible();
+
+	// Pulsado: la fila adapta cantidad y unidad — y el chip desaparece, que
+	// ya no hay conflicto.
+	await usarKg.click();
+	await expect(creacion.locator('#recipe-ingredient-quantity-0')).toHaveValue('0.3');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('kilogram');
+	await expect(creacion.getByText('está en la despensa en kg')).toHaveCount(0);
+
+	// Sin conversión posible (ud→docena, paquete…): el aviso informa SIN botón.
+	await creacion.locator('#recipe-ingredient-unit-0').selectOption({ label: 'paquete' });
+	await expect(creacion.getByText('está en la despensa en kg')).toBeVisible();
+	await expect(creacion.getByRole('button', { name: /usar/ })).toHaveCount(0);
+
+	// De vuelta al kilo del producto: el conflicto se esfuma y se guarda.
+	await creacion.locator('#recipe-ingredient-unit-0').selectOption({ label: 'kg' });
+	await expect(creacion.getByText('está en la despensa en kg')).toHaveCount(0);
+	await creacion.getByRole('button', { name: 'Nueva receta' }).click();
+	await expect(creacion).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Receta creada: ya aparece en la vista.');
+
+	// La verdad en la BD: 0,3 kg y ENLAZADO al producto de despensa (la
+	// conversión enlaza, como el autocompletado de #239).
+	const receta = await prisma.recipe.findFirstOrThrow({
+		where: { organizationId: family.id, name: 'Paella' }
+	});
+	const ingredientes = await prisma.recipeIngredient.findMany({
+		where: { recipeId: receta.id },
+		orderBy: { position: 'asc' }
+	});
+	expect(ingredientes.map((row) => [row.name, Number(row.quantity), row.unit])).toEqual([
+		['arroz', 0.3, 'kilogram']
+	]);
+	expect(ingredientes.map((row) => row.pantryItemId)).toEqual([arroz.id]);
+});
+
 test('editar precarga el modal, sustituye los ingredientes y acepta quitar las raciones', async ({
 	page
 }) => {
