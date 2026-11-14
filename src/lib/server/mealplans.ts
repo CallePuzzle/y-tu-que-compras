@@ -131,9 +131,10 @@ const MONTH_KEY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
  * devuelve la misma clave. Los años van acotados al calendario navegable
  * (1900–2099, la cota de `monthKeySchema` del grid: `Date.UTC` mapea 0–99 al
  * siglo XX). Es la misma defensa que `dayKeySchema`, sin zod: este módulo es
- * la última línea antes de la base.
+ * la última línea antes de la base. La reutiliza el volcado a la lista de
+ * compra (`dump.ts`, #245): el día del formulario pasa por el mismo filtro.
  */
-function dateOfDayKey(dateKey: string): Date {
+export function dateOfDayKey(dateKey: string): Date {
 	if (!DAY_KEY_PATTERN.test(dateKey)) {
 		throw new RangeError(`Clave de día inválida: ${dateKey}`);
 	}

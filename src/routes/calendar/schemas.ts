@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import { m } from '#lib/paraglide/messages.js';
-import { mealPlanSchema } from '#lib/schemas/mealplan.js';
+import { dayKeySchema, mealPlanSchema } from '#lib/schemas/mealplan.js';
 
 // El schema de la vista de calendario, compartido por el servidor (validación
 // de la acción de crear menú, #222) y el modal (validación en cliente). El
@@ -47,4 +47,21 @@ export function mealPlanFormSchema() {
  */
 export function mealPlanUpdateSchema() {
 	return mealPlanFormSchema().extend({ id: z.string().optional() });
+}
+
+/**
+ * El contrato del volcado a la lista de compra (#245): el día del calendario,
+ * la lista destino y — si el volcado es individual — el ingrediente pulsado.
+ * La CANTIDAD no viaja nunca: la calcula el SERVIDOR con `dayPantryStatus`
+ * dentro de la transacción (`dumpDayToList`), así que el formulario no puede
+ * inflar déficits. El día comparte el contrato del menú (`dayKeySchema`, el
+ * que valida el modal de crear) y la lista, el texto del selector de
+ * re-añadir de despensa: el mismo destino, el mismo aviso.
+ */
+export function dumpFormSchema() {
+	return z.object({
+		date: dayKeySchema(m.schema_mealplans_date_error()),
+		listId: z.string(m.schema_readd_list_error()).min(1, m.schema_readd_list_error()),
+		ingredientId: z.string().optional()
+	});
 }
