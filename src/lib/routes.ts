@@ -1,6 +1,7 @@
 import type { RouteId } from '$app/types';
 import type { RouteMap } from '@callepuzzle/core';
 import CalendarDays from '@lucide/svelte/icons/calendar-days';
+import ChefHat from '@lucide/svelte/icons/chef-hat';
 import History from '@lucide/svelte/icons/history';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
@@ -62,6 +63,17 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 			icon: CalendarDays,
 			showInMenu: true,
 			showInMobile: true
+		};
+		// El recetario de la familia (#241, épica #232): los platos que
+		// alimentarán los menús del calendario. Como el historial o las
+		// categorías, FUERA del dock móvil: la barra inferior se queda con la
+		// navegación de ida y vuelta y el recetario queda a un toque en el
+		// cajón lateral y en el menú de escritorio.
+		routes['/recipes'] = {
+			label: m.routes_recipes(),
+			icon: ChefHat,
+			showInMenu: true,
+			showInMobile: false
 		};
 		// La gestión de categorías de la familia (#170): en el menú de escritorio
 		// y en el cajón lateral, pero FUERA del dock móvil (#162): la barra

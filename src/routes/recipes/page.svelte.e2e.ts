@@ -385,3 +385,18 @@ test('el filtro busca por nombre en cliente, avisa sin resultados y se limpia', 
 		/Tortilla francesa/
 	]);
 });
+
+test('la entrada de navegación lleva a las recetas (#241)', async ({ page }) => {
+	const user = await createUser();
+	await createFamily({ owner: user });
+	await seedSession(page, user);
+
+	// Entrada del menú (showInMenu de #241, patrón historial/categorías):
+	// desde otra vista se llega en un toque. La parte móvil (fuera del dock,
+	// dentro del cajón) la cubre el e2e transversal de navegación.
+	await page.goto('/lists');
+	await waitForHydration(page);
+	await page.getByRole('link', { name: 'Recetas' }).first().click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('heading', { name: 'Tus recetas' })).toBeVisible();
+});
