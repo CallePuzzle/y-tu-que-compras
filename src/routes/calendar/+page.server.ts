@@ -97,11 +97,18 @@ export const load: PageServerLoad = async (event) => {
 	// sugerencia), nombre y unidad (la que el chip compara). El mismo nombre
 	// puede salir DOS veces con unidades distintas (un producto por fila de
 	// despensa): es justo lo que el chip necesita para avisar.
-	const pantryItems = (await listPantryItems(family.id)).map(({ id, name, unit }) => ({
+	const pantryRows = await listPantryItems(family.id);
+	const pantryItems = pantryRows.map(({ id, name, unit }) => ({
 		id,
 		name,
 		unit
 	}));
+
+	// El estado de despensa del detalle del día (#244): el mapa id → cantidad
+	// es el payload mínimo que necesita el cálculo puro (`pantry-status.ts`)
+	// — nombre y unidad no viajan aquí, que ya van snapshotados en cada
+	// ingrediente del menú, y la cantidad es lo único que la despensa añade.
+	const pantryQuantities = Object.fromEntries(pantryRows.map(({ id, quantity }) => [id, quantity]));
 
 	return {
 		monthKey,
@@ -123,6 +130,7 @@ export const load: PageServerLoad = async (event) => {
 		// ofrece exactamente estas, como en el alta de items.
 		categories: await listCategories(family.id),
 		pantryItems,
+		pantryQuantities,
 		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanFormSchema()))
 	};
 };

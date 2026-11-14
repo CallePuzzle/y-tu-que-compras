@@ -236,13 +236,15 @@
 
 <!-- Detalle del día (#221): los menús del día abierto salen SIEMPRE del
      load, así que cada acción (editar, borrar, crear otro) lo repinta
-     cuando el load pesimista vuelve. Los gastos del día (#220) viajan en
-     el mismo load: si el día también tiene compras, el detalle ofrece el
+     cuando el load pesimista vuelve. La despensa id → cantidad (#244)
+     viaja en el mismo load para el badge de cada ingrediente. Los gastos
+     del día (#220): si el día también tiene compras, el detalle ofrece el
      cambio de vista. -->
 <DayDetailModal
 	bind:this={detailModal}
 	mealPlans={data.mealPlans}
 	purchasesByDay={data.purchasesByDay}
+	pantryQuantities={data.pantryQuantities}
 	onEdit={openEdit}
 	onDelete={openDelete}
 	onCreate={openCreateFromDetail}

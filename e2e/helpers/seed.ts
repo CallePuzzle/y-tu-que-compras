@@ -360,9 +360,11 @@ export async function createPurchaseRecord(options: {
  * Un menú planificado (#224): lo mismo que deja `createMealPlan` del servidor
  * (`#lib/server/mealplans.ts`) — la fecha PURA (`@db.Date`, medianoche UTC del
  * día clave), su tipo de comida, el título y los ingredientes con la
- * `position` del servidor, desde 0. Sin producto de despensa enlazado
- * (`pantryItemId` nulo): garantizar la despensa es trabajo de la UI, que es
- * justo lo que prueban los e2e de la ruta del calendario.
+ * `position` del servidor, desde 0. El enlace al producto de despensa
+ * (`pantryItemId`) es opcional por ingrediente: `null` si viene suelto, que
+ * garantizar la despensa es trabajo de la UI — aunque los specs de estado de
+ * despensa (#244) siembran el enlace directamente para controlar qué hay en
+ * la despensa sin pasar por el formulario.
  */
 export async function createMealPlan(options: {
 	familyId: string;
@@ -370,7 +372,7 @@ export async function createMealPlan(options: {
 	dateKey: string;
 	mealType: MealType;
 	title?: string;
-	ingredients?: Array<{ name?: string; quantity?: number; unit?: Unit }>;
+	ingredients?: Array<{ name?: string; quantity?: number; unit?: Unit; pantryItemId?: string }>;
 }): Promise<MealPlan> {
 	const ingredients = options.ingredients ?? [];
 	return prisma.mealPlan.create({
@@ -386,7 +388,8 @@ export async function createMealPlan(options: {
 					position,
 					name: ingredient.name ?? `Ingrediente E2E ${randomUUID().slice(0, 8)}`,
 					quantity: ingredient.quantity ?? 1,
-					unit: ingredient.unit ?? 'unit'
+					unit: ingredient.unit ?? 'unit',
+					pantryItemId: ingredient.pantryItemId ?? null
 				}))
 			}
 		}

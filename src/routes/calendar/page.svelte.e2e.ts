@@ -139,16 +139,20 @@ test('crear menu desde una celda vacia: chip en la celda y detalle del dia con i
 
 	// Pulsar el día AHORA abre su DETALLE (#221): el tipo, el título y los
 	// ingredientes — cantidad con los separadores de la locale y unidad
-	// traducida, como los pinta el modal del detalle.
+	// traducida, como los pinta el modal del detalle. Y el estado de
+	// despensa de cada uno (#244): guardar el menú GARANTIZA sus productos
+	// a CERO, así que los dos avisan de todo lo que falta para el día.
 	await celda.click();
 	const detalle = modalDetalle(page);
 	await expect(detalle.getByText(dayKey(month, 15))).toBeVisible();
 	await expect(detalle.getByText('Cena', { exact: true })).toBeVisible();
 	await expect(detalle.getByRole('heading', { name: 'Lentejas con verduras' })).toBeVisible();
-	await expect(detalle.getByText('500 g')).toBeVisible();
+	await expect(detalle.getByText('500 g', { exact: true })).toBeVisible();
 	await expect(detalle.getByText('Lentejas castellanas')).toBeVisible();
-	await expect(detalle.getByText('1 ud')).toBeVisible();
+	await expect(detalle.getByText('Faltan 500 g')).toBeVisible();
+	await expect(detalle.getByText('1 ud', { exact: true })).toBeVisible();
 	await expect(detalle.getByText('Pimiento rojo')).toBeVisible();
+	await expect(detalle.getByText('Faltan 1 ud')).toBeVisible();
 
 	// Y la verdad quedó en la BD: un menú (día y tipo exactos) con dos
 	// ingredientes en su orden de formulario.
@@ -165,6 +169,76 @@ test('crear menu desde una celda vacia: chip en la celda y detalle del dia con i
 		['Lentejas castellanas', 500, 'gram'],
 		['Pimiento rojo', 1, 'unit']
 	]);
+});
+
+test('el detalle pinta el estado de despensa de cada ingrediente, agregado por producto y dia', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const month = currentMonthKey();
+
+	// Despensa sembrada: huevos JUSTOS para las dos comidas del día (6+6
+	// contra 12), leche a medias (1 L contra 1,5) y arroz agotado (0 contra
+	// 0,5 kg). El pimentón del revuelto no lleva FK: sin producto, falta.
+	const huevos = await createPantryItem({
+		familyId: family.id,
+		name: 'Huevos',
+		normalizedName: 'huevos',
+		quantity: 12,
+		unit: 'unit'
+	});
+	const leche = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche',
+		normalizedName: 'leche',
+		quantity: 1,
+		unit: 'liter'
+	});
+	const arroz = await createPantryItem({
+		familyId: family.id,
+		name: 'Arroz',
+		normalizedName: 'arroz',
+		quantity: 0,
+		unit: 'kilogram'
+	});
+	await createMealPlan({
+		familyId: family.id,
+		dateKey: dayKey(month, 10),
+		mealType: 'lunch',
+		title: 'Arroz con huevo',
+		ingredients: [
+			{ name: 'Huevos', quantity: 6, unit: 'unit', pantryItemId: huevos.id },
+			{ name: 'Arroz', quantity: 0.5, unit: 'kilogram', pantryItemId: arroz.id }
+		]
+	});
+	await createMealPlan({
+		familyId: family.id,
+		dateKey: dayKey(month, 10),
+		mealType: 'dinner',
+		title: 'Revuelto',
+		ingredients: [
+			{ name: 'Huevos', quantity: 6, unit: 'unit', pantryItemId: huevos.id },
+			{ name: 'Leche', quantity: 1.5, unit: 'liter', pantryItemId: leche.id },
+			{ name: 'Pimentón', quantity: 1, unit: 'unit' }
+		]
+	});
+	await seedSession(page, user);
+
+	await openMenuTab(page);
+	await page.getByRole('button', { name: 'Arroz con huevo' }).click();
+	const detalle = modalDetalle(page);
+
+	// Suficiente justo: la necesidad de las DOS comidas se agrega (6+6
+	// contra 12) y cada ingrediente lo pinta.
+	await expect(detalle.getByText('Suficiente')).toHaveCount(2);
+	// Insuficiente con el déficit exacto: medio litro de leche…
+	await expect(detalle.getByText('Faltan 0,5 L')).toBeVisible();
+	// …y el arroz AGOTADO también es insuficiente (el producto existe, a
+	// cero): falta lo que pide el día entero.
+	await expect(detalle.getByText('Faltan 0,5 kg')).toBeVisible();
+	// Sin producto de despensa (sin FK): falta, sin cifra.
+	await expect(detalle.getByText('Falta', { exact: true })).toHaveCount(1);
 });
 
 test('guardar un menu crea los productos nuevos en la despensa a cero sin tocar los que ya estaban', async ({
@@ -365,12 +439,14 @@ test('editar precarga el modal, guarda los cambios y los pinta al instante en ce
 	await expect(page.getByRole('button', { name: 'Tortilla francesa' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Tortilla de patatas' })).toHaveCount(0);
 	// …y el detalle, que siguió ABIERTO debajo, repinta con los ingredientes
-	// sustituidos: huevos y pimentón (0,5 g con el separador español), la
+	// sustituidos: huevos y pimentón (0,5 g con el separador español, que
+	// ahora SÍ va enlazado a su producto a cero: le falta entero), la
 	// cebolla fuera.
 	await expect(detalle.getByRole('heading', { name: 'Tortilla francesa' })).toBeVisible();
 	await expect(detalle.getByText('Huevos')).toBeVisible();
 	await expect(detalle.getByText('Pimentón dulce')).toBeVisible();
-	await expect(detalle.getByText('0,5 g')).toBeVisible();
+	await expect(detalle.getByText('0,5 g', { exact: true })).toBeVisible();
+	await expect(detalle.getByText('Faltan 0,5 g')).toBeVisible();
 	await expect(detalle.getByText('Cebolla')).toHaveCount(0);
 
 	// La verdad en la BD: título nuevo y la edición sustituye los

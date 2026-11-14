@@ -8,17 +8,20 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLocale } from '#lib/paraglide/runtime.js';
 	import { unitLabels } from '#lib/units.js';
+	import { dayPantryStatus } from './pantry-status.js';
 	import type { PageData } from './$types';
 
 	/**
 	 * Detalle de UN día del calendario (épica #212, tarea #221): los menús de
 	 * la fecha pulsada en su orden natural (el load ya los ordena por tipo de
 	 * comida), cada uno con su título, sus ingredientes etiquetados (cantidad
-	 * localizada y unidad traducida con las claves `unit_*`) y sus botones de
-	 * editar y borrar. Editar abre el modal de creación precargado y borrar
-	 * confirma en un `ConfirmModal`: ambos apilan su `<dialog>` nativo SOBRE
-	 * este — el detalle se queda abierto y se repinta solo cuando el load
-	 * pesimista trae los datos nuevos tras cada acción.
+	 * localizada y unidad traducida con las claves `unit_*`), el estado de
+	 * despensa de cada ingrediente (#244: suficiente / lo que falta / falta,
+	 * el cálculo puro de `pantry-status.ts` agregado por producto y día) y
+	 * sus botones de editar y borrar. Editar abre el modal de creación
+	 * precargado y borrar confirma en un `ConfirmModal`: ambos apilan su
+	 * `<dialog>` nativo SOBRE este — el detalle se queda abierto y se repinta
+	 * solo cuando el load pesimista trae los datos nuevos tras cada acción.
 	 *
 	 * La fecha se pinta como su clave `YYYY-MM-DD` (la celda la usa como
 	 * identidad, no como texto localizado), igual que el badge fijo del
@@ -30,6 +33,8 @@
 		mealPlans: PageData['mealPlans'];
 		/** Los gastos del mes por día: para ofrecer el detalle de gastos si el día también tiene (#220). */
 		purchasesByDay?: PageData['purchasesByDay'];
+		/** La despensa de la familia como mapa id → cantidad (#244): contra lo que el cálculo compara la necesidad del día. */
+		pantryQuantities: PageData['pantryQuantities'];
 		onEdit: (meal: DayMealPlan) => void;
 		onDelete: (meal: DayMealPlan) => void;
 		/** «Crear otro menú este día»: la página abre el modal de crear. */
@@ -41,7 +46,15 @@
 	/** Un menú del día, tal y como lo trae el load (mismo tipo en la página y en el modal de crear). */
 	type DayMealPlan = PageData['mealPlans'][string][number];
 
-	let { mealPlans, purchasesByDay, onEdit, onDelete, onCreate, onOpenExpenses }: Props = $props();
+	let {
+		mealPlans,
+		purchasesByDay,
+		pantryQuantities,
+		onEdit,
+		onDelete,
+		onCreate,
+		onOpenExpenses
+	}: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
@@ -55,6 +68,12 @@
 	// editar o borrar (invalidateAll pesimista), este `derived` recalcula y
 	// el detalle muestra el estado fresco sin tocar nada más.
 	const dayMeals = $derived(dateKey ? (mealPlans[dateKey] ?? []) : []);
+
+	// El estado de despensa del día abierto (#244): el cálculo puro agregado
+	// por producto sobre SUS menús, contra la despensa que trae el load.
+	// Cada ingrediente consulta el resultado por su `pantryItemId` (los sin
+	// FK, bajo `null`) y repinta con el load pesimista, igual que los menús.
+	const pantryStatuses = $derived(dayPantryStatus(dayMeals, pantryQuantities));
 
 	/** Abre el detalle de UN día: la celda pulsada manda la clave `YYYY-MM-DD`. */
 	export function open(key: string) {
@@ -117,17 +136,39 @@
 							<!-- Ingredientes etiquetados (#221): cantidad con los
 							     separadores de la locale (`formatQuantity`, igual que
 							     la despensa) y unidad traducida (`unit_*`), como el
-							     enum nunca se muestra tal cual. -->
+							     enum nunca se muestra tal cual. El badge de despensa
+							     (#244) consulta el agregado del día por el producto
+							     del ingrediente — los sin FK caen en «falta» — y el
+							     déficit se formatea con la unidad DEL INGREDIENTE
+							     (mismo producto es misma unidad: el guardado enlaza
+							     por nombre normalizado + unidad). -->
 							<div class="flex flex-col gap-1">
 								<p class="fieldset-label">{m.meal_plan_ingredients()}</p>
 								<ul class="flex flex-col gap-1">
 									{#each meal.ingredients as ingredient (ingredient.id)}
+										{@const status = pantryStatuses.get(ingredient.pantryItemId)}
 										<li class="flex items-baseline gap-2 text-sm">
 											<span class="shrink-0 font-mono text-xs opacity-80">
 												{formatQuantity(ingredient.quantity, getLocale())}
 												{UNIT_LABEL[ingredient.unit]}
 											</span>
 											<span>{ingredient.name}</span>
+											{#if status?.status === 'enough'}
+												<span class="badge badge-success badge-sm ms-auto shrink-0">
+													{m.meal_status_enough()}
+												</span>
+											{:else if status?.status === 'short'}
+												<span class="badge badge-warning badge-sm ms-auto shrink-0">
+													{m.meal_status_short({
+														quantity: formatQuantity(status.deficit, getLocale()),
+														unit: UNIT_LABEL[ingredient.unit]
+													})}
+												</span>
+											{:else}
+												<span class="badge badge-error badge-sm ms-auto shrink-0">
+													{m.meal_status_missing()}
+												</span>
+											{/if}
 										</li>
 									{/each}
 								</ul>
