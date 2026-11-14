@@ -110,12 +110,13 @@ model RateLimit {
 // Familia: raíz de la jerarquía. No tiene FK: los ids de contextos viajan como
 // columnas planas (contextId) en role/member/invitation/grant/deny.
 //
-// Las relaciones `lists`, `categories`, `stores`, `purchases`, `pantryItems`
-// y `mealPlans` son de la app (no del plugin, que las ignora): al borrar la
-// familia mueren con ella sus listas de la compra (Cascade en List), sus
-// categorías (Cascade en Category), sus establecimientos (Cascade en Store),
-// su historial de compras (Cascade en PurchaseRecord), su despensa (Cascade
-// en PantryItem) y sus menús planificados (Cascade en MealPlan).
+// Las relaciones `lists`, `categories`, `stores`, `purchases`, `pantryItems`,
+// `mealPlans` y `recipes` son de la app (no del plugin, que las ignora): al
+// borrar la familia mueren con ella sus listas de la compra (Cascade en List),
+// sus categorías (Cascade en Category), sus establecimientos (Cascade en
+// Store), su historial de compras (Cascade en PurchaseRecord), su despensa
+// (Cascade en PantryItem), sus menús planificados (Cascade en MealPlan) y sus
+// recetas (Cascade en Recipe).
 model Organization {
   id          String           @id
   name        String
@@ -129,6 +130,7 @@ model Organization {
   purchases   PurchaseRecord[]
   pantryItems PantryItem[]
   mealPlans   MealPlan[]
+  recipes     Recipe[]
 
   @@map("organization")
 }
@@ -358,6 +360,7 @@ model Category {
   pantryItems         PantryItem[]
   purchaseItems       PurchaseItem[]
   mealPlanIngredients MealPlanIngredient[]
+  recipeIngredients   RecipeIngredient[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -541,6 +544,7 @@ model PantryItem {
   categoryId          String?
   category            Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   mealPlanIngredients MealPlanIngredient[]
+  recipeIngredients   RecipeIngredient[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -562,6 +566,12 @@ model PantryItem {
 // creaciones concurrentes muere en P2002 (la UI la traduce al error genérico).
 // El índice (familia, fecha) es el del calendario mensual: la consulta pide
 // los menús del mes filtrando por familia y rango de fechas.
+//
+// `recipeId` (épica #232, tarea #237) apunta a la receta que originó el menú:
+// es trazabilidad del origen, no propiedad. Va nullable con SetNull a
+// propósito — el menú vive solo de su snapshot (título e ingredientes), así
+// que borrar la receta deja el menú intacto, sin propagación — y null porque
+// los menús escritos a mano nunca tuvieron receta.
 model MealPlan {
   id             String               @id @default(cuid())
   organizationId String
@@ -569,6 +579,8 @@ model MealPlan {
   date           DateTime             @db.Date
   mealType       MealType
   title          String
+  recipeId       String?
+  recipe         Recipe?              @relation(fields: [recipeId], references: [id], onDelete: SetNull)
   ingredients    MealPlanIngredient[]
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
@@ -608,6 +620,69 @@ model MealPlanIngredient {
   @@index([pantryItemId])
   @@index([categoryId])
   @@map("mealPlanIngredient")
+}
+
+// Receta de una familia (épica #232, tarea #237): el plato con nombre propio
+// que alimenta los menús y, más adelante, la lista de la compra. La familia es
+// la dueña (Cascade, como las listas y los establecimientos): al borrarla
+// mueren sus recetas, y con cada receta sus ingredientes (Cascade en
+// RecipeIngredient), sin huérfanos. `name` es el nombre visible («Lentejas con
+// verduras»); `normalizedName` es el nombre CANÓNICO de búsqueda (trim,
+// minúsculas y sin acentos, ver `normalizeItemName` en `$lib/normalize-name`)
+// — no se muestra, existe para que «Tortilla de patatas» y «tortilla de
+// patatas» sean la misma receta. `servings` es el número de raciones que
+// rinde la receta (opcional: no toda receta lo declara) por si al llevar el
+// plato al menú hay que escalar los ingredientes.
+//
+// El único (familia, nombre normalizado) replica el contrato de Category y
+// Store y sirve de índice al listado de recetas: con `organizationId` delante,
+// la propia restricción indexa la consulta por familia.
+model Recipe {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String
+  servings       Int?
+  ingredients    RecipeIngredient[]
+  mealPlans      MealPlan[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([organizationId, normalizedName])
+  @@map("recipe")
+}
+
+// Ingrediente de una receta (épica #232, tarea #237): lo que lleva el plato.
+// Replica el híbrido de MealPlanIngredient: `name`, `quantity` y `unit` van
+// snapshotados en la receta — el mismo patrón del historial de compras
+// (PurchaseItem) — para que la receta sobreviva íntegra al borrado del
+// producto de la despensa que lo inspiró, y `pantryItemId` es la FK opcional a
+// ese producto (nullable con SetNull: borrarlo solo le quita al ingrediente la
+// referencia, nunca el nombre, la cantidad ni la unidad). `categoryId` repite
+// el trato de Item y PantryItem (épica #164): opcional con SetNull, borrar la
+// categoría solo quita la referencia. `quantity` comparte la precisión del
+// resto de la app (DECIMAL(10,3), ver Item.quantity) y `unit` el mismo enum
+// `unit`. `position` fija el orden dentro de la receta: lo calcula el servidor
+// al crear, sin default para que nadie inserte sin decir dónde (como el
+// `order` de Item y el `position` de PurchaseItem).
+model RecipeIngredient {
+  id           String      @id @default(cuid())
+  recipeId     String
+  recipe       Recipe      @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  position     Int
+  name         String
+  quantity     Decimal     @db.Decimal(10, 3)
+  unit         Unit
+  pantryItemId String?
+  pantryItem   PantryItem? @relation(fields: [pantryItemId], references: [id], onDelete: SetNull)
+  categoryId   String?
+  category     Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([recipeId])
+  @@index([pantryItemId])
+  @@index([categoryId])
+  @@map("recipeIngredient")
 }
 
 // Tipo de comida de un menú (épica #212, tarea #223): desayuno, comida, cena
