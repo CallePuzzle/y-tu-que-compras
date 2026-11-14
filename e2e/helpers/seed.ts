@@ -231,9 +231,14 @@ export async function createCategory(options: {
  * canónico — el mismo `normalizeItemName` que usa la capa de servidor (NFD,
  * sin acentos, minúsculas, espacios colapsados), para que los duplicados se
  * comporten igual que en la app.
+ *
+ * El `createdAt` va desplazado +1ms por llamada: `listStores` ordena por
+ * creación y dos stores sembradas en el mismo milisegundo empatarían, con
+ * orden indefinido (flake del spec de finalizar con establecimiento, #185).
  */
+let storeSeq = 0;
 export async function createStore(options: { familyId: string; name?: string }): Promise<Store> {
-	const now = new Date();
+	const now = new Date(Date.now() + storeSeq++);
 	const name = options.name ?? `Establecimiento E2E ${randomUUID().slice(0, 8)}`;
 	return prisma.store.create({
 		data: {
