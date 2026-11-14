@@ -230,7 +230,7 @@
 	bind:this={createModal}
 	form={data.form}
 	categories={data.categories}
-	pantryNames={data.pantryNames}
+	pantryItems={data.pantryItems}
 	onSuccess={(message) => (successMessage = message)}
 />
 

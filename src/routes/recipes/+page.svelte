@@ -184,7 +184,7 @@
 <AssignRecipeModal
 	bind:this={assignModal}
 	menuForm={data.menuForm}
-	pantryNames={data.pantryItems.map((item) => item.name)}
+	pantryItems={data.pantryItems}
 	onSuccess={(message) => (successMessage = message)}
 />
 

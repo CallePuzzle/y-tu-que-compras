@@ -261,6 +261,63 @@ test('borrar la receta deja el menu asignado intacto, con recipeId en null', asy
 	expect(ingredientes.map((row) => [row.name, Number(row.quantity)])).toEqual([['Arroz', 300]]);
 });
 
+test('aviso de unidad conflictiva al asignar: convierte y guarda enlazado al producto en su unidad', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// El arroz vive en la despensa en KILOS: asignar la receta con su
+	// ingrediente en gramos ha de avisar y convertir antes de guardar (#243).
+	const arroz = await createPantryItem({
+		familyId: family.id,
+		name: 'Arroz',
+		normalizedName: 'arroz',
+		quantity: 3,
+		unit: 'kilogram'
+	});
+	// «arroz» en minúsculas en la receta: el chip casa por nombre canónico,
+	// no solo por el visible.
+	await createRecipe({
+		familyId: family.id,
+		name: 'Paella',
+		ingredients: [{ name: 'arroz', quantity: 300, unit: 'gram' }]
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+
+	await filaDe(page, 'Paella').getByRole('button', { name: 'Añadir al menú' }).click();
+	const asignacion = modalAsignar(page);
+
+	// Prefijado con «arroz» en 300 g: el chip avisa y ofrece la conversión.
+	await expect(asignacion.getByText('está en la despensa en kg')).toBeVisible();
+	const usarKg = asignacion.getByRole('button', { name: 'usar kg → 0,3 kg' });
+	await expect(usarKg).toBeVisible();
+	await usarKg.click();
+	await expect(asignacion.locator('#assign-ingredient-quantity-0')).toHaveValue('0.3');
+	await expect(asignacion.locator('#assign-ingredient-unit-0')).toHaveValue('kilogram');
+	await expect(asignacion.getByText('está en la despensa en kg')).toHaveCount(0);
+
+	await asignacion.getByRole('button', { name: 'Añadir al menú' }).click();
+	await expect(asignacion).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Menú creado.');
+
+	// La verdad en la BD: el ingrediente del menú quedó en 0,3 kg y ENLAZADO
+	// al producto en kg — sin segundo producto en despensa y sin tocar sus
+	// tres kilos (un menú no es una compra).
+	const menu = await prisma.mealPlan.findFirstOrThrow({ where: { organizationId: family.id } });
+	const ingredientes = await prisma.mealPlanIngredient.findMany({
+		where: { mealPlanId: menu.id }
+	});
+	expect(ingredientes.map((row) => [row.name, Number(row.quantity), row.unit])).toEqual([
+		['arroz', 0.3, 'kilogram']
+	]);
+	expect(ingredientes.map((row) => row.pantryItemId)).toEqual([arroz.id]);
+	expect(await prisma.pantryItem.count()).toBe(1);
+	const arrozTras = await prisma.pantryItem.findUniqueOrThrow({ where: { id: arroz.id } });
+	expect(Number(arrozTras.quantity)).toBe(3);
+});
+
 test('hueco ocupado: el 409 se pinta dentro del modal y otro tipo guarda', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });

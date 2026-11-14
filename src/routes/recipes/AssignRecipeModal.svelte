@@ -2,12 +2,14 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
 	import { Modal } from '@callepuzzle/svelte-ui';
+	import UnitConflictChip from '#lib/components/UnitConflictChip.svelte';
 	import { errorMessage } from '#lib/forms.js';
 	import { mealTypeLabels } from '#lib/meal-types.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS } from '#lib/schemas/item.js';
 	import { MEAL_TYPES, type MealPlanFormData } from '#lib/schemas/mealplan.js';
 	import { unitLabels } from '#lib/units.js';
+	import type { UnitConversion } from '#lib/unit-convert.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { recipeMealPlanFormSchema } from './schemas.js';
@@ -36,18 +38,25 @@
 	 * dataType json superforms manda solo los datos validados y aquí se
 	 * inyecta en el JSON de salida en `onSubmit` — el patrón del id en
 	 * edición — para que lo valide el action con el schema extendido.
+	 *
+	 * Cada fila lleva el chip de unidad conflictiva (#243): si el nombre
+	 * tecleado casa con un producto de despensa en OTRA unidad (los productos
+	 * viajan en el load, con su unidad), avisa y propone la conversión
+	 * exacta — con la fila ya en la unidad del producto, el `upsert` del
+	 * guardado (`ensurePantryProducts`) cae en el producto EXISTENTE y no
+	 * crea el segundo en despensa.
 	 */
 	type Props = {
 		menuForm: PageData['menuForm'];
-		/** Nombres de producto de la despensa, para el autocompletado del nombre. */
-		pantryNames: string[];
+		/** Los productos de la despensa: id, nombre y unidad — autocompletado y chip. */
+		pantryItems: PageData['pantryItems'];
 		onSuccess: (message: string) => void;
 	};
 
 	/** Una receta del listado, tal y como la trae el load (la que se asigna). */
 	type RecipeRow = PageData['recipes'][number];
 
-	let { menuForm, pantryNames, onSuccess }: Props = $props();
+	let { menuForm, pantryItems, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
@@ -129,6 +138,29 @@
 			}))
 		} as MealPlanFormData);
 		modal?.showModal();
+	}
+
+	/**
+	 * La conversión que el chip propuso (#243), aplicada a su fila: cantidad
+	 * y unidad convertidas — el ENLACE al producto no va en este formulario
+	 * (el schema de menú no lleva `pantryItemId`): lo resuelve el SERVIDOR al
+	 * guardar (`ensurePantryProducts`, por nombre normalizado y unidad), y
+	 * con la fila ya en la unidad del producto el upsert cae en el producto
+	 * EXISTENTE. Mismo `update()` que en el modal de recetas: el estado de
+	 * superforms es un store plano, y tocar un objeto anidado sin `update`
+	 * no repinta el select ni retira el chip (que desaparece solo: la unidad
+	 * queda igualada a la del producto).
+	 */
+	function applyConversion(index: number, conversion: UnitConversion) {
+		formData.update((data) => {
+			const row = data.ingredients[index];
+			if (!row) {
+				return data;
+			}
+			row.quantity = conversion.quantity;
+			row.unit = conversion.unit;
+			return data;
+		});
 	}
 
 	/** Añade una fila de ingrediente al final, en blanco. */
@@ -302,6 +334,19 @@
 							{/if}
 						</div>
 					</div>
+
+					<!-- Aviso de unidad conflictiva (#243): el nombre tecleado casa
+					     con un producto de despensa en OTRA unidad (por nombre
+					     canónico, no solo visible). El chip propone la conversión
+					     exacta y aquí se aplica a SU fila — por `update`, como todo
+					     lo que toca el store de superforms. -->
+					<UnitConflictChip
+						name={ingredient.name}
+						unit={ingredient.unit}
+						quantity={ingredient.quantity}
+						pantryProducts={pantryItems}
+						onApply={(conversion) => applyConversion(index, conversion)}
+					/>
 				</div>
 			{/each}
 
@@ -327,15 +372,16 @@
 		</button>
 	</form>
 
-	<!-- Sugerencias de despensa: los nombres que el load trajo de la familia.
-	     El `datalist` es el autocompletado NATIVO del navegador — filtra
-	     mientras se escribe y no pisa lo tecleado; un nombre nuevo simplemente
-	     no sugiere nada, y su producto lo crea la despensa al guardar
-	     (`createMealPlan`, cantidad 0). Id propio: el modal de recetas de esta
-	     misma página ya pinta su `datalist`. -->
+	<!-- Sugerencias de despensa: los productos que el load trajo de la
+	     familia, con su unidad junto al nombre. El `datalist` es el
+	     autocompletado NATIVO del navegador — filtra mientras se escribe y no
+	     pisa lo tecleado; un nombre nuevo simplemente no sugiere nada, y su
+	     producto lo crea la despensa al guardar (`createMealPlan`, cantidad
+	     0). Id propio: el modal de recetas de esta misma página ya pinta su
+	     `datalist`. -->
 	<datalist id="assign-pantry-products">
-		{#each pantryNames as name (name)}
-			<option value={name}></option>
+		{#each pantryItems as product (product.id)}
+			<option value={product.name}>{UNIT_LABEL[product.unit]}</option>
 		{/each}
 	</datalist>
 </Modal>
