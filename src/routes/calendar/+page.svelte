@@ -15,16 +15,17 @@
 	let { data }: PageProps = $props();
 
 	/**
-	 * Las dos vistas del calendario (épica #212), ambas colgadas del load:
-	 * la de gastos pinta el total del mes en su cabecera, la cifra de cada
-	 * día en su celda (#220) y abre el detalle de gastos al pulsar un día
-	 * con compras; la de menús cuelga del load (#222), con los menús de cada
-	 * día en su celda y el detalle — o la creación — al pulsarlo (#221).
+	 * Las dos vistas del calendario (épica #212), ambas colgadas del load.
+	 * Menú (#253) va primera en el tablist y es la vista por defecto al
+	 * entrar: los menús de cada día en su celda (#222) y el detalle — o la
+	 * creación — al pulsarlo (#221). Gastos va segunda: el total del mes en
+	 * su cabecera, la cifra de cada día en su celda (#220) y abre el detalle
+	 * de gastos al pulsar un día con compras.
 	 * La pestaña solo decide qué se pinta dentro, así que basta estado
 	 * local, sin query param.
 	 */
-	type CalendarTab = 'expenses' | 'menu';
-	let activeTab: CalendarTab = $state('expenses');
+	type CalendarTab = 'menu' | 'expenses';
+	let activeTab: CalendarTab = $state('menu');
 
 	/** Un menú del día, tal y como lo trae el load (grupo `YYYY-MM-DD`). */
 	type DayMealPlan = PageData['mealPlans'][string][number];
@@ -152,21 +153,12 @@
 		</form>
 	</nav>
 
-	<!-- Pestañas Gastos/Menú (daisyUI tabs): `aria-selected` es a la vez el
-	     estado accesible y lo que daisyUI pinta como activa. La de gastos
-	     pinta el grid con la cifra de cada día (#220); la de menús, el grid
-	     con los menús de su load y todos los días pulsables (#222). -->
+	<!-- Pestañas Menú/Gastos (daisyUI tabs): `aria-selected` es a la vez el
+	     estado accesible y lo que daisyUI pinta como activa. La de menús va
+	     primera y es la vista por defecto (#253): el grid con los menús de
+	     su load y todos los días pulsables (#222); la de gastos, el grid
+	     con la cifra de cada día (#220). -->
 	<div role="tablist" class="tabs tabs-box mt-4" aria-label={m.calendar_tabs()}>
-		<button
-			type="button"
-			role="tab"
-			class="tab"
-			aria-selected={activeTab === 'expenses'}
-			aria-controls="calendar-panel-expenses"
-			onclick={() => (activeTab = 'expenses')}
-		>
-			{m.calendar_tab_expenses()}
-		</button>
 		<button
 			type="button"
 			role="tab"
@@ -177,9 +169,34 @@
 		>
 			{m.calendar_tab_menu()}
 		</button>
+		<button
+			type="button"
+			role="tab"
+			class="tab"
+			aria-selected={activeTab === 'expenses'}
+			aria-controls="calendar-panel-expenses"
+			onclick={() => (activeTab = 'expenses')}
+		>
+			{m.calendar_tab_expenses()}
+		</button>
 	</div>
 
-	{#if activeTab === 'expenses'}
+	{#if activeTab === 'menu'}
+		<div id="calendar-panel-menu" role="tabpanel" class="mt-3">
+			<MonthGrid
+				weeks={data.weeks}
+				weekdays={data.weekdays}
+				caption={data.monthLabel}
+				mealPlans={data.mealPlans}
+				onDaySelect={openDay}
+			/>
+			<!-- El aviso bajo el grid: vacío sin menús, pista de uso con ellos
+			     (los días son botones desde el esqueleto de #217). -->
+			<p class="mt-3 text-center text-sm opacity-70">
+				{monthHasMenus ? m.calendar_menu_hint() : m.calendar_menu_empty()}
+			</p>
+		</div>
+	{:else}
 		<div id="calendar-panel-expenses" role="tabpanel" class="mt-3">
 			{#if monthHasExpenses}
 				<!-- La cabecera del tab (tarea #220): el total del mes que ya
@@ -201,21 +218,6 @@
 				     aviso genérico y solo sale con la cesta vacía. -->
 				<p class="mt-3 text-center text-sm opacity-70">{m.calendar_expenses_empty()}</p>
 			{/if}
-		</div>
-	{:else}
-		<div id="calendar-panel-menu" role="tabpanel" class="mt-3">
-			<MonthGrid
-				weeks={data.weeks}
-				weekdays={data.weekdays}
-				caption={data.monthLabel}
-				mealPlans={data.mealPlans}
-				onDaySelect={openDay}
-			/>
-			<!-- El aviso bajo el grid: vacío sin menús, pista de uso con ellos
-			     (los días son botones desde el esqueleto de #217). -->
-			<p class="mt-3 text-center text-sm opacity-70">
-				{monthHasMenus ? m.calendar_menu_hint() : m.calendar_menu_empty()}
-			</p>
 		</div>
 	{/if}
 </section>
