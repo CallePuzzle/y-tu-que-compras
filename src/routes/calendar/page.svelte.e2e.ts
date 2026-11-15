@@ -63,14 +63,12 @@ function monthLabel(monthKey: string): string {
 }
 
 /**
- * La vista del calendario en SU pestaña de menús (#222): la vista por defecto
- * es la de Gastos (el esqueleto de #217), así que hay que pulsar la pestaña
- * antes de tocar las celdas — el grid de Gastos no tiene días pulsables.
+ * La vista del calendario en SU pestaña de menús (#222): Menú es la vista
+ * por defecto (#253), así que basta entrar — sin pulsar pestaña alguna.
  */
 async function openMenuTab(page: Page): Promise<void> {
 	await page.goto('/calendar');
 	await waitForHydration(page);
-	await page.getByRole('tab', { name: 'Menú' }).click();
 }
 
 /**
@@ -106,6 +104,10 @@ test('crear menu desde una celda vacia: chip en la celda y detalle del dia con i
 	await seedSession(page, user);
 
 	await openMenuTab(page);
+
+	// Por defecto al entrar (#253): Menú es la pestaña activa, no Gastos.
+	await expect(page.getByRole('tab', { name: 'Menú' })).toHaveAttribute('aria-selected', 'true');
+	await expect(page.getByRole('tab', { name: 'Gastos' })).toHaveAttribute('aria-selected', 'false');
 
 	// Sin menús aún: el aviso de vacío bajo el grid (#222).
 	await expect(page.getByText('Todavía no hay menús este mes.')).toBeVisible();
@@ -616,8 +618,9 @@ test('navegar de mes cambia la query y cada celda sigue mostrando SU mes', async
 	await page.getByRole('button', { name: 'Mes siguiente' }).click();
 	await expect(page).toHaveURL(new RegExp(`month=${siguiente}$`));
 	await expect(nav.locator('p')).toHaveText(monthLabel(siguiente));
-	// La pestaña remonta la página y vuelve a Gastos (estado local): tocarla
-	// de nuevo para mirar las celdas del mes en vista.
+	// La navegación remonta la página y el estado local vuelve al por
+	// defecto, Menú (#253): el clic re-selecciona la vista — inocuo —
+	// antes de mirar las celdas del mes en vista.
 	await page.getByRole('tab', { name: 'Menú' }).click();
 	await expect(page.getByRole('button', { name: 'Menu del mes que viene' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Menu de este mes' })).toHaveCount(0);
