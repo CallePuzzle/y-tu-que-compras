@@ -1,4 +1,4 @@
 setupAgentStartupPolicy: wait-for-setup
 scripts:
   setup: |
-    command -v cp $HOME/projects/y-tu-que-compras/.env . && bun install && codegraph init
+    cp $HOME/projects/y-tu-que-compras/.env . && bun install && codegraph init
