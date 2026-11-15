@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import ChefHat from '@lucide/svelte/icons/chef-hat';
 	import History from '@lucide/svelte/icons/history';
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
@@ -22,14 +24,15 @@
 	const userName = $derived(user.name?.trim() || user.email);
 
 	// Los accesos del home: todo lo que el menú de sesión ofrece, menos el
-	// propio inicio. En orden de uso diario: navegar primero (listas,
-	// despensa, historial) y gestión fina después (categorías,
-	// establecimientos, familias). Etiquetas del mapa de rutas (`routes_*`),
-	// igual que dock y menús, y una línea `home_*_text` que explica qué hay
-	// detrás de cada acceso. En render: `setLocale` recarga la página, así que
-	// resolver las etiquetas aquí (como en `Landing`) no se queda congelado.
-	// El de listas lleva el ancla del paso 1 del tour de onboarding (#142),
-	// que sobrevive al rediseño.
+	// propio inicio — los ocho, con calendario (#218) y recetas (#241)
+	// completando el mapa (#254). En orden de uso diario: navegar primero
+	// (listas, despensa, calendario, recetas, historial) y gestión fina
+	// después (categorías, establecimientos, familias). Etiquetas del mapa de
+	// rutas (`routes_*`), igual que dock y menús, y una línea `home_*_text`
+	// que explica qué hay detrás de cada acceso. En render: `setLocale`
+	// recarga la página, así que resolver las etiquetas aquí (como en
+	// `Landing`) no se queda congelado. El de listas lleva el ancla del paso
+	// 1 del tour de onboarding (#142), que sobrevive al rediseño.
 	const quickLinks = [
 		{
 			href: resolve('/lists'),
@@ -43,6 +46,18 @@
 			icon: Refrigerator,
 			label: m.routes_pantry(),
 			text: m.home_pantry_text()
+		},
+		{
+			href: resolve('/calendar'),
+			icon: CalendarDays,
+			label: m.routes_calendar(),
+			text: m.home_calendar_text()
+		},
+		{
+			href: resolve('/recipes'),
+			icon: ChefHat,
+			label: m.routes_recipes(),
+			text: m.home_recipes_text()
 		},
 		{
 			href: resolve('/history'),
