@@ -45,14 +45,12 @@ function dayKey(monthKey: string, day: number): string {
 }
 
 /**
- * La vista del calendario en SU pestaña de menús (#222): la vista por defecto
- * es la de Gastos (el esqueleto de #217), así que hay que pulsar la pestaña
- * antes de tocar las celdas.
+ * La vista del calendario en SU pestaña de menús (#222): Menú es la vista
+ * por defecto (#253), así que basta entrar — sin pulsar pestaña alguna.
  */
 async function openMenuTab(page: Page): Promise<void> {
 	await page.goto('/calendar');
 	await waitForHydration(page);
-	await page.getByRole('tab', { name: 'Menú' }).click();
 }
 
 /** El `<dialog>` ABIERTO que contiene el elemento dado (ver `page.svelte.e2e.ts`). */
