@@ -6,6 +6,7 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Minus from '@lucide/svelte/icons/minus';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Refrigerator from '@lucide/svelte/icons/refrigerator';
 	import ShoppingBasket from '@lucide/svelte/icons/shopping-basket';
@@ -24,8 +25,9 @@
 	import { buildTourContext, continueOnboardingTour } from '#lib/utils/tour.js';
 	import { getLocale } from '#lib/paraglide/runtime.js';
 	import { UNIT_STEP, roundQuantity } from '#lib/pantry-steps.js';
-	import { readdSchema } from '#lib/schemas/pantry.js';
-	import type { Unit } from '#lib/schemas/item.js';
+	import { convertQuantity } from '#lib/unit-convert.js';
+	import { editSchema, readdSchema } from '#lib/schemas/pantry.js';
+	import { UNITS, type Unit } from '#lib/schemas/item.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageProps } from './$types';
@@ -313,6 +315,85 @@
 		};
 	}
 
+	// ---- Editar cantidad y unidad (#249): modal con SU formulario de
+	// superforms (id «edit-item», lo pone el load), patrón del re-añadido.
+	// Al cambiar la unidad del select, si la conversión es EXACTA
+	// (`convertQuantity`: kg↔g, L↔ml, docena→ud) la cantidad se pre-rellena
+	// convertida; si no (paquete→kg, lata→g…), queda como está y se edita a
+	// mano. ----
+	const editSchemaCompiled = editSchema({
+		quantityError: m.schema_items_quantity_error(),
+		quantityLabel: m.pantry_edit_quantity_label(),
+		unitError: m.schema_items_unit_error(),
+		unitLabel: m.schema_items_unit_label()
+	});
+
+	/** El producto que se quiere editar: fija título, id y valores iniciales. */
+	let editItem: PantryRow | undefined = $state();
+	let editModal: { showModal(): void; close(): void } | undefined = $state();
+
+	/** La unidad con la que se abrió el modal: la «desde» de la auto-conversión. */
+	let editUnit: Unit | undefined = $state();
+
+	// svelte-ignore state_referenced_locally
+	const editForm = superForm(data.editForm, {
+		validators: zod4Client(editSchemaCompiled),
+		// Pesimista, como el re-añadido: el modal cierra cuando el load trae
+		// el producto ya editado.
+		invalidateAll: 'pessimistic',
+		onResult({ result }) {
+			if (result.type === 'success') {
+				// El texto concreto lo decide la acción y viaja en el resultado
+				// (`message()`), como en los modales de la lista.
+				const data = result.data as { form?: { message?: string } } | undefined;
+				successMessage = data?.form?.message ?? m.pantry_edit_success();
+				editModal?.close();
+			}
+		}
+	});
+	const {
+		form: editFormData,
+		enhance: editEnhance,
+		delayed: editDelayed,
+		message: editMessage,
+		errors: editErrors
+	} = editForm;
+
+	/** Fija el producto y sus valores actuales, y abre el modal. */
+	function openEdit(item: PantryRow) {
+		successMessage = null;
+		editItem = item;
+		editMessage.set(undefined);
+		editErrors.clear();
+		editFormData.set({ quantity: item.quantity, unit: item.unit });
+		editUnit = item.unit;
+		editModal?.showModal();
+	}
+
+	/**
+	 * La auto-conversión al cambiar de unidad (#249): con la cantidad actual
+	 * y la unidad ANTERIOR (`editUnit`), `convertQuantity` pre-rellena el
+	 * input solo cuando el resultado cabe EXACTO (kg↔g, L↔ml, docena→ud); si
+	 * no, su `null` deja la cantidad como estaba, editable a mano. El valor
+	 * nuevo llega del evento del select — no del store, cuyo orden frente al
+	 * handler no se da por sentado — y `editUnit` recuerda el anterior para el
+	 * cambio siguiente.
+	 */
+	function handleEditUnitChange(next: string) {
+		if (!editUnit || next === editUnit) {
+			editUnit = next as Unit;
+			return;
+		}
+		const quantity = Number($editFormData.quantity);
+		if (Number.isFinite(quantity) && quantity > 0) {
+			const converted = convertQuantity(quantity, editUnit, next as Unit);
+			if (converted !== null) {
+				$editFormData.quantity = converted;
+			}
+		}
+		editUnit = next as Unit;
+	}
+
 	// svelte-ignore state_referenced_locally
 	const readdForm = superForm(data.readdForm, {
 		validators: zod4Client(readdSchemaCompiled),
@@ -481,6 +562,19 @@
 						<Plus aria-hidden="true" />
 					</button>
 				</form>
+				<!-- Editar cantidad y unidad (#249): abre el modal con la
+				     cantidad y la unidad actuales. En cualquier producto,
+				     también en el agotado: cambiar la unidad deja la memoria
+				     lista para la próxima compra. -->
+				<button
+					type="button"
+					class="btn btn-ghost btn-sm"
+					title={m.pantry_edit()}
+					aria-label={m.pantry_edit()}
+					onclick={() => openEdit(item)}
+				>
+					<Pencil aria-hidden="true" />
+				</button>
 				<!-- Re-añadir a la compra (checklist #74): abre el modal con el
 				     selector de lista y la cantidad. En un agotado es EL botón:
 				     la memoria de «esto se compra» lista para volver. -->
@@ -771,6 +865,92 @@
 			</div>
 		</form>
 	{/if}
+</Modal>
+
+<!-- Editar cantidad y unidad (#249): una modal compartida; el botón de la
+     fila fija a qué producto se refiere antes de abrirla. Al cambiar la
+     unidad, la conversión exacta pre-rellena la cantidad (`convertQuantity`);
+     si no es exacta, la cantidad queda editable a mano. Los fallos del action
+     (producto ya no está, colisión con otro producto, error de servidor) se
+     cuentan aquí dentro. -->
+<Modal
+	bind:this={editModal}
+	type="X"
+	showButton={false}
+	boxClass="modal-box max-w-md"
+	strings={{ close: m.ui_close() }}
+>
+	<h2 class="text-lg font-bold">{m.pantry_edit_title({ name: editItem?.name ?? '' })}</h2>
+	<p class="mt-1 text-sm opacity-70">{m.pantry_edit_description()}</p>
+
+	<form method="POST" action="?/edit" use:editEnhance class="mt-4 flex flex-col gap-4">
+		<!-- El id del producto de despensa viaja con el formulario. -->
+		<input type="hidden" name="pantry" value={editItem?.id ?? ''} />
+
+		<div class="grid grid-cols-2 gap-2">
+			<div class="flex flex-col gap-1">
+				<label class="fieldset-label" for="edit-item-quantity">
+					{m.pantry_edit_quantity_label()}
+				</label>
+				<input
+					bind:value={$editFormData.quantity}
+					aria-invalid={errorMessage($editErrors.quantity) ? 'true' : undefined}
+					id="edit-item-quantity"
+					name="quantity"
+					type="number"
+					class="input w-full"
+					step="any"
+					inputmode="decimal"
+					required
+				/>
+				{#if errorMessage($editErrors.quantity)}
+					<p class="fieldset-label text-error" role="alert">
+						{errorMessage($editErrors.quantity)}
+					</p>
+				{/if}
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<label class="fieldset-label" for="edit-item-unit">{m.schema_items_unit_label()}</label>
+				<select
+					bind:value={$editFormData.unit}
+					onchange={(event) => handleEditUnitChange(event.currentTarget.value)}
+					aria-invalid={errorMessage($editErrors.unit) ? 'true' : undefined}
+					id="edit-item-unit"
+					name="unit"
+					class="select w-full"
+					required
+				>
+					{#each UNITS as unit (unit)}
+						<option value={unit}>{UNIT_LABEL[unit]}</option>
+					{/each}
+				</select>
+				{#if errorMessage($editErrors.unit)}
+					<p class="fieldset-label text-error" role="alert">
+						{errorMessage($editErrors.unit)}
+					</p>
+				{/if}
+			</div>
+		</div>
+
+		{#if $editMessage}
+			<div class="alert alert-error text-sm" role="alert">
+				{$editMessage}
+			</div>
+		{/if}
+
+		<div class="flex justify-end gap-2">
+			<button type="button" class="btn btn-ghost" onclick={() => editModal?.close()}>
+				{m.ui_cancel()}
+			</button>
+			<button type="submit" class="btn btn-primary" disabled={$editDelayed}>
+				{#if $editDelayed}
+					<span class="loading loading-spinner"></span>
+				{/if}
+				{m.items_save()}
+			</button>
+		</div>
+	</form>
 </Modal>
 
 <!-- Quitar de la despensa (#148): una modal compartida; el botón de la fila

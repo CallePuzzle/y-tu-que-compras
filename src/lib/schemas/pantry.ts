@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { quantitySchema } from './item.js';
+import { quantitySchema, UNITS } from './item.js';
 
 /** Textos inyectables del schema de re-añadir. Defaults: ninguno (el consumidor los pasa). */
 export type ReaddSchemaStrings = {
@@ -43,3 +43,40 @@ export type ReaddSchema = ReturnType<typeof readdSchema>;
 
 /** Los datos validados por el schema. */
 export type ReaddData = z.infer<ReaddSchema>;
+
+/** Textos inyectables del schema de edición. Defaults: ninguno (el consumidor los pasa). */
+export type EditSchemaStrings = {
+	quantityError?: string;
+	quantityLabel?: string;
+	unitError?: string;
+	unitLabel?: string;
+};
+
+/**
+ * Factoría del schema de edición de un producto de despensa (#249): cuánto
+ * queda y en qué unidad. El nombre NO se toca (el canónico de la despensa es
+ * el de la primera compra) y el id del producto NO va en el schema: viaja como
+ * el id oculto del FormData, patrón del re-añadido — el FormData se lee UNA
+ * vez y alimenta a superforms y al id a la vez.
+ *
+ * La cantidad lleva el MISMO contrato que el item (`quantitySchema`, issue
+ * #107: mínimo 0.001 — el agotado no va por aquí: se consume hasta 0 y de ahí
+ * se re-añade o se quita —, techo de la columna y múltiplo de la milésima).
+ * La unidad replica el catálogo `UNITS`, el mismo que guarda el enum nativo.
+ * Las etiquetas viajan en `.meta()` para que `zodToFieldsJsonSchema` las
+ * vuelva al `Field`, como en `readdSchema`.
+ */
+export function editSchema(strings?: EditSchemaStrings) {
+	return z.object({
+		quantity: quantitySchema(strings?.quantityError).meta({
+			description: strings?.quantityLabel
+		}),
+		unit: z.enum(UNITS, strings?.unitError).meta({ description: strings?.unitLabel })
+	});
+}
+
+/** El schema (lo que esperan los adaptadores de superforms). */
+export type EditSchema = ReturnType<typeof editSchema>;
+
+/** Los datos validados por el schema. */
+export type EditData = z.infer<EditSchema>;

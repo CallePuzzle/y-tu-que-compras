@@ -1,7 +1,8 @@
+import { Prisma } from '#lib/generated/prisma/client.js';
 import { UNIT_STEP } from '#lib/pantry-steps.js';
 import { normalizeItemName } from '#lib/normalize-name.js';
 import prisma from '#lib/server/prisma.js';
-import type { ReaddData } from '#lib/schemas/pantry.js';
+import type { EditData, ReaddData } from '#lib/schemas/pantry.js';
 import type { Unit } from '#lib/schemas/item.js';
 
 // Consulta y ciclo de vida de la despensa de la familia (issues #44, #72,
@@ -151,6 +152,53 @@ export async function removePantryItem(familyId: string, id: string): Promise<bo
 		where: { id, organizationId: familyId }
 	});
 	return deleted.count > 0;
+}
+
+/** ¿Es el P2002 de Postgres? La tabla `pantryItem` solo tiene un índice único — (familia, nombre normalizado, unidad) —, así que el código basta. */
+function isUniqueViolation(error: unknown): boolean {
+	return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+/** Cómo acabó la edición de cantidad y unidad de un producto de despensa (#249). */
+export type UpdateOutcome =
+	/** El producto quedó con la cantidad y la unidad pedidas. */
+	| 'updated'
+	/** El producto ya no está en esa familia (id ajeno o rancio). */
+	| 'pantry-gone'
+	/** Ya hay otro producto con el mismo nombre normalizado en la unidad destino: no se tocó nada. */
+	| 'duplicate';
+
+/**
+ * Cambia la cantidad y la unidad de UN producto de la despensa (#249):
+ * escritura para cualquier miembro (issue #111), como consumir o re-añadir.
+ * El nombre no se toca — el canónico de la familia es el de la primera
+ * compra — y la pertenencia va en el `where` (id ajeno o rancio es «no
+ * existe», count 0), el mismo criterio de `removePantryItem`.
+ *
+ * La colisión con otro producto NO se pre-chequea: una ventana entre el check
+ * y el write dejaría pasar duplicados, y el índice único (familia, nombre
+ * normalizado, unidad) es el árbitro a prueba de carrera — la edición a una
+ * unidad ocupada muere en P2002 y se traduce a `duplicate`, nunca un 500.
+ * Fusionar los dos productos sería decisión aparte: los enlaces de recetas y
+ * menús apuntan al id, así que aquí no se toca NADA si hay colisión.
+ */
+export async function updatePantryItem(
+	familyId: string,
+	id: string,
+	data: EditData
+): Promise<UpdateOutcome> {
+	try {
+		const updated = await prisma.pantryItem.updateMany({
+			where: { id, organizationId: familyId },
+			data: { quantity: data.quantity, unit: data.unit }
+		});
+		return updated.count > 0 ? 'updated' : 'pantry-gone';
+	} catch (error) {
+		if (isUniqueViolation(error)) {
+			return 'duplicate';
+		}
+		throw error;
+	}
 }
 
 /** Cómo acabó un cambio de categoría de un producto de despensa (#176). */

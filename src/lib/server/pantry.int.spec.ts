@@ -15,7 +15,8 @@ import {
 	listPantryItems,
 	removePantryItem,
 	readdPantryItem,
-	setPantryItemCategory
+	setPantryItemCategory,
+	updatePantryItem
 } from './pantry.js';
 import { createCategory, deleteCategory } from './categories.js';
 import { createItem } from './items.js';
@@ -210,6 +211,78 @@ describe('Quitar un producto de la despensa (#148)', () => {
 	it('un id que no existe devuelve false', async () => {
 		const familyId = await familyRow('Familia Quita Fantasma');
 		await expect(removePantryItem(familyId, 'no-existe')).resolves.toBe(false);
+	});
+});
+
+describe('Editar cantidad y unidad (#249)', () => {
+	it('cambia cantidad y unidad del producto', async () => {
+		const familyId = await familyRow('Familia Editora');
+		const lentejas = await pantryRow(familyId, 'Lentejas', 1, 'package');
+
+		await expect(
+			updatePantryItem(familyId, lentejas.id, { quantity: 1, unit: 'kilogram' })
+		).resolves.toBe('updated');
+
+		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: lentejas.id } });
+		expect(Number(row.quantity)).toBe(1);
+		expect(row.unit).toBe('kilogram');
+		// El nombre canónico no se toca: es el que la familia reconoce.
+		expect(row.name).toBe('Lentejas');
+		expect(row.normalizedName).toBe('lentejas');
+	});
+
+	it('editar solo la cantidad a su misma unidad no colisiona consigo mismo', async () => {
+		const familyId = await familyRow('Familia Reeditora');
+		const lentejas = await pantryRow(familyId, 'Lentejas', 1, 'kilogram');
+
+		await expect(
+			updatePantryItem(familyId, lentejas.id, { quantity: 0.75, unit: 'kilogram' })
+		).resolves.toBe('updated');
+
+		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: lentejas.id } });
+		expect(Number(row.quantity)).toBe(0.75);
+	});
+
+	it('la colisión con otro producto en la unidad destino es duplicate, sin tocar nada', async () => {
+		const familyId = await familyRow('Familia Colisionada');
+		// «Lentejas» en paquete y «lentejas» en kg: mismo nombre canónico y
+		// distinta unidad — exactamente el caso del modal (paquete → kg).
+		const paquete = await pantryRow(familyId, 'Lentejas', 1, 'package');
+		const granel = await pantryRow(familyId, 'lentejas', 0.3, 'kilogram');
+
+		await expect(
+			updatePantryItem(familyId, paquete.id, { quantity: 1, unit: 'kilogram' })
+		).resolves.toBe('duplicate');
+
+		// NINGUNA fila se tocó: ni la editada ni la ocupada.
+		const editada = await prisma.pantryItem.findUniqueOrThrow({ where: { id: paquete.id } });
+		expect(editada.unit).toBe('package');
+		expect(Number(editada.quantity)).toBe(1);
+		const ocupada = await prisma.pantryItem.findUniqueOrThrow({ where: { id: granel.id } });
+		expect(ocupada.unit).toBe('kilogram');
+		expect(Number(ocupada.quantity)).toBe(0.3);
+	});
+
+	it('un producto de otra familia no se puede editar (pantry-gone)', async () => {
+		const ownFamily = await familyRow('Familia Edita Propia');
+		const otherFamily = await familyRow('Familia Edita Ajena');
+		const caviar = await pantryRow(otherFamily, 'Caviar', 1, 'unit');
+
+		await expect(
+			updatePantryItem(ownFamily, caviar.id, { quantity: 2, unit: 'unit' })
+		).resolves.toBe('pantry-gone');
+
+		// La despensa ajena queda intacta.
+		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: caviar.id } });
+		expect(Number(row.quantity)).toBe(1);
+		expect(row.unit).toBe('unit');
+	});
+
+	it('un id que no existe devuelve pantry-gone', async () => {
+		const familyId = await familyRow('Familia Edita Fantasma');
+		await expect(
+			updatePantryItem(familyId, 'no-existe', { quantity: 2, unit: 'unit' })
+		).resolves.toBe('pantry-gone');
 	});
 });
 
