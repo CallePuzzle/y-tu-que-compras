@@ -826,6 +826,124 @@ test('las secciones se colapsan desde su cabecera y el estado sobrevive a la rec
 	expect(JSON.parse(raw ?? '[]')).toEqual([]);
 });
 
+test('editar cantidad y unidad, y el stepper lee la unidad nueva (#249)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// «lentejas 1 paquete» pasa a «1 kg»: el caso de la issue.
+	await createPantryItem({ familyId: family.id, name: 'Lentejas', quantity: 1, unit: 'package' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const lentejas = page.locator('li', { hasText: 'Lentejas' });
+
+	await lentejas.getByRole('button', { name: 'Editar producto' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByRole('heading', { name: 'Editar «Lentejas»' })).toBeVisible();
+	// Precargado lo que hay: 1 paquete.
+	await expect(dialog.locator('#edit-item-quantity')).toHaveValue('1');
+	await expect(dialog.locator('#edit-item-unit')).toHaveValue('package');
+
+	// paquete→kg no convierte: la cantidad queda a mano (sigue 1, sin tocar).
+	await dialog.locator('#edit-item-unit').selectOption('kilogram');
+	await expect(dialog.locator('#edit-item-quantity')).toHaveValue('1');
+
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	// El modal cierra, avisa y la fila pinta la unidad nueva…
+	await expect(page.locator('dialog[open]')).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Producto actualizado.');
+	await expect(lentejas.getByText('1 kg')).toBeVisible();
+	// …y el stepper aplica el paso de la unidad GUARDADA (0,25 kg).
+	await expect(lentejas.getByRole('button', { name: 'Consumir 0,25 kg' })).toBeVisible();
+
+	await expect
+		.poll(async () => {
+			const row = await prisma.pantryItem.findFirst({ where: { name: 'Lentejas' } });
+			return `${row?.unit} ${Number(row?.quantity)}`;
+		})
+		.toBe('kilogram 1');
+});
+
+test('al cambiar a una unidad convertible la cantidad se pre-rellena convertida (#249)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createPantryItem({ familyId: family.id, name: 'Arroz', quantity: 0.5, unit: 'kilogram' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const arroz = page.locator('li', { hasText: 'Arroz' });
+
+	await arroz.getByRole('button', { name: 'Editar producto' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.locator('#edit-item-quantity')).toHaveValue('0.5');
+
+	// 0,5 kg → 500 g: conversión exacta, el input se rellena solo.
+	await dialog.locator('#edit-item-unit').selectOption('gram');
+	await expect(dialog.locator('#edit-item-quantity')).toHaveValue('500');
+
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+	await expect(page.getByRole('status')).toContainText('Producto actualizado.');
+	await expect(arroz.getByText('500 g')).toBeVisible();
+	// El paso del stepper también salta a la unidad nueva: 100 g.
+	await expect(arroz.getByRole('button', { name: 'Consumir 100 g' })).toBeVisible();
+});
+
+test('la colisión con otro producto en la unidad destino avisa y no toca nada (#249)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// Mismo nombre canónico ('lentejas') en dos unidades: el paquete quiere
+	// convertirse a kg, pero el kg ya está ocupado.
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Lentejas paquete',
+		normalizedName: 'lentejas',
+		quantity: 1,
+		unit: 'package'
+	});
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Lentejas granel',
+		normalizedName: 'lentejas',
+		quantity: 0.3,
+		unit: 'kilogram'
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const paquete = page.locator('li', { hasText: 'Lentejas paquete' });
+
+	await paquete.getByRole('button', { name: 'Editar producto' }).click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.locator('#edit-item-unit').selectOption('kilogram');
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	// El aviso vive DENTRO del modal, que queda abierto para corregir…
+	await expect(dialog.getByText('Ya hay otro producto con ese nombre en esa unidad')).toBeVisible();
+	await expect(page.locator('dialog[open]')).toHaveCount(1);
+
+	// …y ninguna fila se tocó.
+	await expect(paquete.getByText('1 paquete')).toBeVisible();
+	await expect(
+		page.locator('li', { hasText: 'Lentejas granel' }).getByText('0,3 kg')
+	).toBeVisible();
+	await expect
+		.poll(async () => {
+			const rows = await prisma.pantryItem.findMany({ where: { normalizedName: 'lentejas' } });
+			return rows
+				.map((row) => `${row.unit}:${Number(row.quantity)}`)
+				.sort()
+				.join(' ');
+		})
+		.toBe('kilogram:0.3 package:1');
+});
+
 test('En casa y Agotados recuerdan su colapsado por separado (#209)', async ({ page }) => {
 	// La misma categoría con producto en casa y agotado: dos secciones con el
 	// mismo título, cada una con SU clave (`casa-<id>` / `fuera-<id>`).

@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit';
 import { message, superValidate } from 'sveltekit-superforms/server';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { m } from '#lib/paraglide/messages.js';
-import { readdSchema } from '#lib/schemas/pantry.js';
+import { editSchema, readdSchema } from '#lib/schemas/pantry.js';
 import { listCategories } from '#lib/server/categories.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
 import { listLists } from '#lib/server/lists.js';
@@ -11,14 +11,16 @@ import {
 	listPantryItems,
 	removePantryItem,
 	readdPantryItem,
-	setPantryItemCategory
+	setPantryItemCategory,
+	updatePantryItem
 } from '#lib/server/pantry.js';
 import logger from '#lib/server/logger.js';
 import type { Actions, PageServerLoad } from './$types';
 
 // La despensa de la familia activa (issues #44, #72, #73 y #74): la consulta
-// trae los productos, la acción `adjust` consume/devuelve un paso por item y
-// la acción `readd` lo manda a la lista de la compra elegida. La familia
+// trae los productos, la acción `adjust` consume/devuelve un paso por item,
+// la acción `readd` lo manda a la lista de la compra elegida y la `edit`
+// (#249) cambia la cantidad y la unidad de un producto. La familia
 // activa es la puerta de la vista (issue #63): `requireActiveFamily` manda a
 // `/families` a quien no tiene o no ha elegido, y su id — ya verificado contra
 // la membresía — es el que filtra la query. Con las categorías (#176), el
@@ -45,6 +47,22 @@ const READD_FORM_ID = 'readd-item';
 /** Valores iniciales del formulario: los reales los fija `openReadd` con el producto pulsado. */
 const EMPTY_READD = { listId: '', quantity: 1 } as const;
 
+function editFormSchema() {
+	return editSchema({
+		quantityError: m.schema_items_quantity_error(),
+		quantityLabel: m.pantry_edit_quantity_label(),
+		unitError: m.schema_items_unit_error(),
+		unitLabel: m.schema_items_unit_label()
+	});
+}
+
+// El modal de editar lleva SU formulario de superforms, con id propio para
+// que el resultado de su acción no pise al `adjust` ni al `readd`.
+const EDIT_FORM_ID = 'edit-item';
+
+/** Valores iniciales del formulario: los reales los fija `openEdit` con el producto pulsado. */
+const EMPTY_EDIT = { quantity: 1, unit: 'unit' } as const;
+
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
 	return {
@@ -56,7 +74,8 @@ export const load: PageServerLoad = async (event) => {
 		// Las listas de la familia alimentan el selector de destino del modal
 		// (#74): la lista puede ser cualquiera de las de la familia.
 		lists: await listLists(family.id),
-		readdForm: await superValidate(EMPTY_READD, zod4(readdFormSchema()), { id: READD_FORM_ID })
+		readdForm: await superValidate(EMPTY_READD, zod4(readdFormSchema()), { id: READD_FORM_ID }),
+		editForm: await superValidate(EMPTY_EDIT, zod4(editFormSchema()), { id: EDIT_FORM_ID })
 	};
 };
 
@@ -202,5 +221,41 @@ export const actions: Actions = {
 		}
 
 		return message(form, m.pantry_readd_success());
+	},
+
+	// Editar cantidad y unidad de un producto (#249): el modal manda ambas y
+	// el id oculto del producto viaja con el FormData (patrón del re-añadido:
+	// se lee UNA vez y alimenta al superforms y al id). La colisión con otro
+	// producto (mismo nombre normalizado en la unidad destino) NO fusiona:
+	// los enlaces de recetas y menús apuntan al id, fusionar sería decisión
+	// aparte — se avisa y no se toca nada. El producto ya no estar (id rancio
+	// o ajeno) es pantry-gone, 404 (issue #110).
+	edit: async (event) => {
+		const family = requireActiveFamily(event);
+		const data = await event.request.formData();
+		const form = await superValidate(data, zod4(editFormSchema()), { id: EDIT_FORM_ID });
+		if (!form.valid) {
+			return fail(400, { editForm: form });
+		}
+
+		const pantryId = pantryIdOf(data);
+		if (!pantryId) {
+			return message(form, m.pantry_gone(), { status: 400 });
+		}
+
+		try {
+			const outcome = await updatePantryItem(family.id, pantryId, form.data);
+			if (outcome === 'pantry-gone') {
+				return message(form, m.pantry_gone(), { status: 404 });
+			}
+			if (outcome === 'duplicate') {
+				return message(form, m.pantry_edit_duplicate(), { status: 409 });
+			}
+		} catch (error) {
+			logger.error({ err: error }, 'Error al editar el producto de la despensa');
+			return message(form, m.pantry_edit_error(), { status: 500 });
+		}
+
+		return message(form, m.pantry_edit_success());
 	}
 };
