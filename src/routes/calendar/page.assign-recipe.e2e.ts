@@ -66,8 +66,11 @@ function modalAbierto(page: Page, dentro: Locator): Locator {
 	return page.locator('dialog[open]').filter({ has: dentro });
 }
 
-/** El modal de crear menú, apilado o solo (`?/create`, nunca en edición). */
-const modalCrear = (page: Page) => modalAbierto(page, page.locator('form[action="?/create"]'));
+/** El modal de crear menú, apilado o solo: por SU heading — el formulario
+ * `?/create` ya no sirve de identificador (#252): solo existe tras elegir
+ * receta, y en familias sin recetas no llega a haber formulario. */
+const modalCrear = (page: Page) =>
+	modalAbierto(page, page.getByRole('heading', { name: 'Crear menú' }));
 
 /** El modal de crear REUTILIZADO en edición (`?/update`, #221). */
 const modalEditar = (page: Page) => modalAbierto(page, page.locator('form[action="?/update"]'));
@@ -123,7 +126,9 @@ test('asignar una receta existente al dia: prefijado, recipeId en BD y despensa 
 	// y marca el origen con el chip.
 	await resultadosRecetas(creacion).getByRole('button', { name: 'Lentejas con verduras' }).click();
 	await expect(creacion.getByText('Desde la receta «Lentejas con verduras»')).toBeVisible();
-	await expect(creacion.locator('#meal-title')).toHaveValue('Lentejas con verduras');
+	// El título NO tiene campo (#252): es el de la receta — viaja en el
+	// snapshot, no se edita aquí.
+	await expect(creacion.locator('#meal-title')).toHaveCount(0);
 	await expect(creacion.locator('#meal-ingredient-name-0')).toHaveValue('Lentejas pardinas');
 	await expect(creacion.locator('#meal-ingredient-quantity-0')).toHaveValue('0.5');
 	await expect(creacion.locator('#meal-ingredient-unit-0')).toHaveValue('kilogram');
@@ -177,33 +182,35 @@ test('asignar una receta existente al dia: prefijado, recipeId en BD y despensa 
 	expect(Number(aceiteTras.quantity)).toBe(2);
 });
 
-test('alta manual sin receta: el menu nace con recipeId en null', async ({ page }) => {
+test('sin recetas en la familia: aviso y enlace al recetario, sin buscador ni formulario', async ({
+	page
+}) => {
 	const user = await createUser();
-	const family = await createFamily({ owner: user });
-	const month = currentMonthKey();
+	await createFamily({ owner: user });
 	await seedSession(page, user);
 
 	await openMenuTab(page);
 
-	// Sin tocar el buscador: título e ingredientes a mano, el camino de
-	// siempre (#222), que sigue siendo válido (#252).
+	// El recetario está VACÍO: el alta desde el calendario nace SIEMPRE de
+	// una receta (#252), así que el modal no ofrece ni buscador ni
+	// formulario — solo el aviso con la salida al recetario.
 	await page.getByRole('button', { name: '8', exact: true }).click();
 	const creacion = modalCrear(page);
-	await creacion.locator('#meal-title').fill('Tostadas de aguacate');
-	await creacion.locator('#meal-ingredient-name-0').fill('Aguacate');
+	await expect(
+		creacion.getByText('Todavía no tienes recetas. Ve a recetas para crear tu primera receta.')
+	).toBeVisible();
+	await expect(buscadorRecetas(creacion)).toHaveCount(0);
+	await expect(creacion.getByRole('button', { name: 'Crear menú' })).toHaveCount(0);
 
-	await creacion.getByRole('button', { name: 'Crear menú' }).click();
-	await expect(creacion).toHaveCount(0);
-	await expect(page.getByRole('status')).toContainText('Menú creado.');
-
-	const menu = await prisma.mealPlan.findFirstOrThrow({
-		where: { organizationId: family.id, title: 'Tostadas de aguacate' }
-	});
-	expect(menu.date.toISOString().slice(0, 10)).toBe(dayKey(month, 8));
-	expect(menu.recipeId).toBeNull();
+	// El enlace del aviso lleva a /recipes: ahí se crea la primera receta.
+	const enlace = creacion.getByRole('link', { name: 'Ir a recetas' });
+	await expect(enlace).toHaveAttribute('href', '/recipes');
+	await enlace.click();
+	await expect(page).toHaveURL(/\/recipes$/);
+	await expect(page.getByRole('heading', { name: 'Tus recetas' })).toBeVisible();
 });
 
-test('quitar el chip de origen: el contenido prefijado se queda y se guarda sin receta', async ({
+test('cambiar de receta: la X del chip devuelve al buscador y el guardado usa la nueva', async ({
 	page
 }) => {
 	const user = await createUser();
@@ -217,6 +224,11 @@ test('quitar el chip de origen: el contenido prefijado se queda y se guarda sin 
 			{ name: 'Cebolla', quantity: 1, unit: 'unit' }
 		]
 	});
+	await createRecipe({
+		familyId: family.id,
+		name: 'Lentejas rapidas',
+		ingredients: [{ name: 'Lentejas pardinas', quantity: 0.5, unit: 'kilogram' }]
+	});
 	await seedSession(page, user);
 
 	await openMenuTab(page);
@@ -227,24 +239,30 @@ test('quitar el chip de origen: el contenido prefijado se queda y se guarda sin 
 	await resultadosRecetas(creacion).getByRole('button', { name: 'Tortilla de patatas' }).click();
 	await expect(creacion.getByText('Desde la receta «Tortilla de patatas»')).toBeVisible();
 
-	// La X del chip suelta solo el ENLACE: el snapshot ya precargado (título
-	// e ingredientes) se queda en el formulario.
-	await creacion.getByRole('button', { name: 'Quitar la receta de origen' }).click();
+	// La X del chip DE VUELTA AL BUSCADOR (#252): sin chip y sin formulario —
+	// el snapshot precargado se retira con ella (ya no hay alta «sin receta»
+	// que lo herede).
+	await creacion.getByRole('button', { name: 'Elegir otra receta' }).click();
 	await expect(creacion.getByText('Desde la receta «Tortilla de patatas»')).toHaveCount(0);
-	await expect(creacion.locator('#meal-title')).toHaveValue('Tortilla de patatas');
-	await expect(creacion.locator('#meal-ingredient-name-0')).toHaveValue('Huevos');
+	await expect(creacion.locator('#meal-ingredient-name-0')).toHaveCount(0);
+	await expect(creacion.getByRole('button', { name: 'Crear menú' })).toHaveCount(0);
 
+	// La otra receta, y guardando: el snapshot sale de la ELEGIDA, con su
+	// recipeId — el menú del día 20 nace de «Lentejas rapidas».
+	await buscadorRecetas(creacion).fill('lentejas');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Lentejas rapidas' }).click();
+	await expect(creacion.getByText('Desde la receta «Lentejas rapidas»')).toBeVisible();
 	await creacion.getByRole('button', { name: 'Crear menú' }).click();
 	await expect(creacion).toHaveCount(0);
 	await expect(page.getByRole('status')).toContainText('Menú creado.');
 
 	const menu = await prisma.mealPlan.findFirstOrThrow({
-		where: { organizationId: family.id, title: 'Tortilla de patatas' }
+		where: { organizationId: family.id, title: 'Lentejas rapidas' }
 	});
 	expect(menu.date.toISOString().slice(0, 10)).toBe(dayKey(month, 20));
-	// Sin chip, sin receta: el guardado sale «sin receta» aunque el contenido
-	// viniera de ella.
-	expect(menu.recipeId).toBeNull();
+	expect(menu.recipeId).toBe(
+		(await prisma.recipe.findFirstOrThrow({ where: { name: 'Lentejas rapidas' } })).id
+	);
 });
 
 test('hueco ocupado: el 409 se pinta dentro del modal y otro tipo guarda con su receta', async ({
@@ -282,7 +300,7 @@ test('hueco ocupado: el 409 se pinta dentro del modal y otro tipo guarda con su 
 	// que sigue abierto para reintentar.
 	await buscadorRecetas(creacion).fill('lentejas');
 	await resultadosRecetas(creacion).getByRole('button', { name: 'Lentejas rapidas' }).click();
-	await expect(creacion.locator('#meal-title')).toHaveValue('Lentejas rapidas');
+	await expect(creacion.getByText('Desde la receta «Lentejas rapidas»')).toBeVisible();
 	await creacion.getByRole('button', { name: 'Crear menú' }).click();
 	await expect(
 		creacion.getByText('Ya hay un menú de ese tipo ese día: elige otro tipo de comida.')
@@ -361,7 +379,9 @@ test('editar un menu nacido de receta: sin buscador y con el recipeId intacto', 
 	expect(guardado.recipeId).toBe(receta.id);
 });
 
-test('busqueda sin coincidencias: estado vacio y el camino manual disponible', async ({ page }) => {
+test('busqueda sin coincidencias: estado vacio, sin formulario, y la receta correcta si guarda', async ({
+	page
+}) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	const month = currentMonthKey();
@@ -381,21 +401,26 @@ test('busqueda sin coincidencias: estado vacio y el camino manual disponible', a
 	await buscadorRecetas(creacion).fill('zzz');
 
 	// El estado vacío del buscador (el texto compartido con lista y
-	// despensa) y NINGUNA coincidencia que elegir.
+	// despensa) y NINGUNA coincidencia que elegir — y sin formulario: sin
+	// receta elegida no hay nada que guardar (#252).
 	await expect(creacion.getByText('Ningún artículo coincide con la búsqueda.')).toBeVisible();
 	await expect(resultadosRecetas(creacion)).toHaveCount(0);
 	await expect(creacion.getByRole('button', { name: 'Paella' })).toHaveCount(0);
+	await expect(creacion.getByRole('button', { name: 'Crear menú' })).toHaveCount(0);
 
-	// El camino manual sigue ahí: menú a mano, sin receta.
-	await creacion.locator('#meal-title').fill('Pizza casera');
-	await creacion.locator('#meal-ingredient-name-0').fill('Masa');
+	// La consulta correcta trae la receta: elegirla y guardar crea el menú
+	// del día con su origen.
+	await buscadorRecetas(creacion).fill('paella');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Paella' }).click();
 	await creacion.getByRole('button', { name: 'Crear menú' }).click();
 	await expect(creacion).toHaveCount(0);
 	await expect(page.getByRole('status')).toContainText('Menú creado.');
 
 	const menu = await prisma.mealPlan.findFirstOrThrow({
-		where: { organizationId: family.id, title: 'Pizza casera' }
+		where: { organizationId: family.id, title: 'Paella' }
 	});
 	expect(menu.date.toISOString().slice(0, 10)).toBe(dayKey(month, 11));
-	expect(menu.recipeId).toBeNull();
+	expect(menu.recipeId).toBe(
+		(await prisma.recipe.findFirstOrThrow({ where: { name: 'Paella' } })).id
+	);
 });
