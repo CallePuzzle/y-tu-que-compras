@@ -17,6 +17,7 @@ import {
 import logger from '#lib/server/logger.js';
 import { listPantryItems } from '#lib/server/pantry.js';
 import { listPurchasesByDay } from '#lib/server/purchases.js';
+import { listRecipes } from '#lib/server/recipes.js';
 import { listLists } from '#lib/server/lists.js';
 import { unitLabels } from '#lib/units.js';
 import {
@@ -27,7 +28,7 @@ import {
 	shiftMonth,
 	weekdayLabels
 } from './grid.js';
-import { dumpFormSchema, mealPlanFormSchema, mealPlanUpdateSchema } from './schemas.js';
+import { dumpFormSchema, mealPlanWithRecipeSchema, mealPlanUpdateSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -144,11 +145,19 @@ export const load: PageServerLoad = async (event) => {
 		categories: await listCategories(family.id),
 		pantryItems,
 		pantryQuantities,
+		// Las recetas de la familia (#252): el buscador del modal de crear
+		// menú filtra este listado EN CLIENTE y, al elegir una, precarga
+		// título e ingredientes y manda su id como trazabilidad — el mismo
+		// payload completo (con ingredientes) que sirve /recipes.
+		recipes: await listRecipes(family.id),
 		// Las listas de la familia: alimentan el selector de destino del
 		// volcado (#245), el mismo contrato que el modal de re-añadir de
 		// despensa — la lista puede ser cualquiera de las de la familia.
 		lists: await listLists(family.id),
-		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanFormSchema())),
+		// El formulario de crear menú, con el schema extendido que valida el
+		// action `create` (el de menú más el `recipeId` opcional, #252): el
+		// mismo reparto que en /recipes entre `menuForm` y su acción.
+		form: await superValidate(EMPTY_MEAL_PLAN, zod4(mealPlanWithRecipeSchema())),
 		// El formulario del volcado (#245), con id propio (ver `DUMP_FORM_ID`).
 		dumpForm: await superValidate(EMPTY_DUMP, zod4(dumpFormSchema()), { id: DUMP_FORM_ID })
 	};
@@ -165,7 +174,12 @@ export const actions: Actions = {
 	// y el grid repinta el menú en su celda.
 	create: async (event) => {
 		const family = requireActiveFamily(event);
-		const form = await superValidate(event.request, zod4(mealPlanFormSchema()));
+		// El schema extendido con `recipeId` (#252): el buscador del modal puede
+		// mandar la receta elegida; sin ella valida exactamente igual que antes
+		// (el alta manual sin receta se conserva). La FK la resuelve el
+		// SERVIDOR dentro de `createMealPlan` (`resolveRecipeId`): un id ajeno
+		// o rancio se guarda «sin receta», sin 500.
+		const form = await superValidate(event.request, zod4(mealPlanWithRecipeSchema()));
 		if (!form.valid) {
 			return fail(400, { form });
 		}

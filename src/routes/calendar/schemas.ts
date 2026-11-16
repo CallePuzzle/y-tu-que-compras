@@ -35,6 +35,20 @@ export function mealPlanFormSchema() {
 }
 
 /**
+ * El contrato de crear menú CON receta de origen (#252): los campos de crear
+ * MÁS el id de la receta elegida en el buscador del modal — el MISMO patrón
+ * `extend` de `mealPlanUpdateSchema` (arriba) y de `recipeMealPlanFormSchema`
+ * (recipes). Va OPCIONAL a propósito: que la FK pertenezca a la familia lo
+ * resuelve el SERVIDOR (`resolveRecipeId` de `mealplans.ts`) — un id ausente,
+ * ajeno o rancio se guarda como «sin receta», sin 500. El alta manual sin
+ * receta sigue siendo un camino válido del mismo formulario: solo viaja si
+ * quien crea eligió una receta del buscador.
+ */
+export function mealPlanWithRecipeSchema() {
+	return mealPlanFormSchema().extend({ recipeId: z.string().optional() });
+}
+
+/**
  * El contrato de EDITAR menú (#221): los campos de crear MÁS el id del menú.
  * El id no va en el schema compartido (crear y editar tienen los mismos
  * campos), así que el modal lo inyecta en el JSON de salida (`onSubmit`,

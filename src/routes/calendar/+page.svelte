@@ -233,6 +233,7 @@
 	form={data.form}
 	categories={data.categories}
 	pantryItems={data.pantryItems}
+	recipes={data.recipes}
 	onSuccess={(message) => (successMessage = message)}
 />
 
