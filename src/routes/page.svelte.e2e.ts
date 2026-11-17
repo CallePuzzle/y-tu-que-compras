@@ -44,21 +44,27 @@ test('con sesion, la portada es el home con saludo y accesos (#161)', async ({ p
 	await expect(page.getByRole('heading', { level: 1, name: 'Hola, Ana' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Cómo funciona' })).toHaveCount(0);
 
-	// Los accesos del home: los seis del menú de sesión. A las listas (el
-	// ancla del tour), historial, categorías (#164) y establecimientos
-	// (#177) se suman ahora despensa y familias; cada tarjeta añade bajo la
-	// etiqueta su línea descriptiva (`home_*_text`).
+	// Los accesos del home: los ocho del menú de sesión (#254). A las listas
+	// (el ancla del tour), historial, categorías (#164) y establecimientos
+	// (#177) se sumaron despensa y familias, y ahora calendario (#218) y
+	// recetas (#241); cada tarjeta añade bajo la etiqueta su línea
+	// descriptiva (`home_*_text`).
 	const quickLinks = [
 		{ name: 'Listas', href: '/lists' },
 		{ name: 'Despensa', href: '/pantry' },
+		{ name: 'Calendario', href: '/calendar' },
+		{ name: 'Recetas', href: '/recipes' },
 		{ name: 'Historial', href: '/history' },
 		{ name: 'Categorías', href: '/categories' },
 		{ name: 'Establecimientos', href: '/stores' },
 		{ name: 'Familias', href: '/families' }
 	];
 	for (const quickLink of quickLinks) {
+		// El nombre accesible incluye la descripción (`home_*_text`) y la de
+		// recetas menciona «calendario»: el match va anclado al principio del
+		// nombre, como en el test client de `Home`.
 		await expect(
-			page.getByRole('main').getByRole('link', { name: quickLink.name })
+			page.getByRole('main').getByRole('link', { name: new RegExp(`^${quickLink.name}`) })
 		).toHaveAttribute('href', quickLink.href);
 	}
 	await expect(page.getByRole('main').getByRole('link', { name: 'Listas' })).toBeVisible();

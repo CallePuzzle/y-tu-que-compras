@@ -41,6 +41,8 @@
 	"home_greeting": "Hola, {name}",
 	"home_lists_text": "Apunta lo que falta y comparte la compra del día a día.",
 	"home_pantry_text": "Lo que hay en casa: lo comprado entra solo al finalizar.",
+	"home_calendar_text": "El mes de un vistazo: cuánto se gastó cada día y qué menús hay.",
+	"home_recipes_text": "Los platos de la casa, listos para asignar a los menús del calendario.",
 	"home_history_text": "Cada compra pasada, con su total y sus artículos, siempre a mano.",
 	"home_categories_text": "Grupos propios del hogar para ordenar lo que compráis.",
 	"home_stores_text": "Dónde se compró cada vez: las compras se agrupan por tienda.",

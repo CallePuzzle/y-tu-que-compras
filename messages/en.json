@@ -41,6 +41,8 @@
 	"home_greeting": "Hi, {name}",
 	"home_lists_text": "Write down what you need and check items off as you shop.",
 	"home_pantry_text": "What you have at home: purchased items move in on their own.",
+	"home_calendar_text": "The month at a glance: what each day cost and which meals are planned.",
+	"home_recipes_text": "Your household's dishes, ready to assign to the calendar's meal plans.",
 	"home_history_text": "Every past purchase with its total and its items, always at hand.",
 	"home_categories_text": "Groups of your own to sort what you buy.",
 	"home_stores_text": "Where you bought each time: purchases are grouped by store.",

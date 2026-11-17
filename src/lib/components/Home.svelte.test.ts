@@ -14,7 +14,7 @@ import Home from './Home.svelte';
 import { firstOf } from './test-utils.js';
 
 describe('Home', () => {
-	it('saluda por su nombre y expone los seis accesos del menú (#161)', async () => {
+	it('saluda por su nombre y expone los ocho accesos del menú (#161)', async () => {
 		const { getByRole } = await render(Home, { user: { name: 'Ana', email: 'ana@example.com' } });
 
 		await expect.element(getByRole('heading', { level: 1, name: 'Hola, Ana' })).toBeVisible();
@@ -22,8 +22,26 @@ describe('Home', () => {
 		// Cada acceso: su href y, para el de listas, el ancla del tour (#142).
 		// El nombre accesible incluye la descripción (`home_*_text`), así que
 		// los localizadores van anclados al principio del nombre.
-		const hrefs = ['/lists', '/pantry', '/history', '/categories', '/stores', '/families'];
-		const names = ['Listas', 'Despensa', 'Historial', 'Categorías', 'Establecimientos', 'Familias'];
+		const hrefs = [
+			'/lists',
+			'/pantry',
+			'/calendar',
+			'/recipes',
+			'/history',
+			'/categories',
+			'/stores',
+			'/families'
+		];
+		const names = [
+			'Listas',
+			'Despensa',
+			'Calendario',
+			'Recetas',
+			'Historial',
+			'Categorías',
+			'Establecimientos',
+			'Familias'
+		];
 		for (const [i, name] of names.entries()) {
 			const link = firstOf(getByRole('link', { name: new RegExp(`^${name}`) }));
 			expect(link?.getAttribute('href'), name).toBe(hrefs[i]);
@@ -41,16 +59,19 @@ describe('Home', () => {
 			.toBeVisible();
 	});
 
-	it('los seis accesos del menú, cada uno con su descripción', async () => {
+	it('los ocho accesos del menú, cada uno con su descripción', async () => {
 		const { getByRole } = await render(Home, { user: { name: 'Ana', email: 'ana@example.com' } });
 
-		// El home ya no es el mínimo de #161: listas, despensa, historial,
-		// categorías (#164), establecimientos (#177) y familias, todos con la
+		// El home ya no es el mínimo de #161: listas, despensa, calendario
+		// (#218), recetas (#241), historial, categorías (#164),
+		// establecimientos (#177) y familias — los ocho (#254), todos con la
 		// línea descriptiva (`home_*_text`) bajo la etiqueta.
-		expect(getByRole('link').elements()).toHaveLength(6);
+		expect(getByRole('link').elements()).toHaveLength(8);
 		for (const name of [
 			'Listas',
 			'Despensa',
+			'Calendario',
+			'Recetas',
 			'Historial',
 			'Categorías',
 			'Establecimientos',
@@ -62,6 +83,10 @@ describe('Home', () => {
 		// El de despensa muestra su descripción (`home_pantry_text`).
 		expect(firstOf(getByRole('link', { name: /^Despensa/ }))?.textContent).toContain(
 			'lo comprado entra solo'
+		);
+		// Y uno de los nuevos, el de calendario la suya (`home_calendar_text`).
+		expect(firstOf(getByRole('link', { name: /^Calendario/ }))?.textContent).toContain(
+			'qué menús hay'
 		);
 	});
 });
