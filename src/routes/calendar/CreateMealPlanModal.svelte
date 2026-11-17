@@ -2,6 +2,8 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import X from '@lucide/svelte/icons/x';
 	import { Modal } from '@callepuzzle/svelte-ui';
+	import { resolve } from '$app/paths';
+	import ItemSearch from '#lib/components/ItemSearch.svelte';
 	import UnitConflictChip from '#lib/components/UnitConflictChip.svelte';
 	import { errorMessage } from '#lib/forms.js';
 	import { mealTypeLabels } from '#lib/meal-types.js';
@@ -12,7 +14,8 @@
 	import type { UnitConversion } from '#lib/unit-convert.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
-	import { mealPlanFormSchema } from './schemas.js';
+	import { matchesItemSearch } from '#lib/components/item-search.js';
+	import { mealPlanWithRecipeSchema } from './schemas.js';
 	import type { PageData } from './$types';
 
 	/**
@@ -45,6 +48,21 @@
 	 * en la unidad del producto, el `upsert` del guardado
 	 * (`ensurePantryProducts`) cae en el producto EXISTENTE y no crea el
 	 * segundo en despensa.
+	 *
+	 * En CREACIÓN el modal es SOLO buscador (#252): el alta desde el
+	 * calendario nace SIEMPRE de una receta — se filtran EN CLIENTE las que
+	 * trae el load (`recipes`, con el mismo `matchesItemSearch` de lista,
+	 * despensa y /recipes) y al elegir una se precargan SU título (no hay
+	 * campo de título: es el de la receta) y SUS ingredientes, editables
+	 * como snapshot (#242), con el chip del origen encima. Sin recetario no
+	 * hay formulario: aviso y enlace a /recipes para crear la primera
+	 * receta. El menú que se guarda es un SNAPSHOT — como en /recipes
+	 * (#242): el `recipeId` solo traza el origen y el action lo valida con
+	 * el schema extendido (`mealPlanWithRecipeSchema`); no va en `$form`
+	 * (crear y editar comparten el mismo contrato) y se inyecta en el JSON
+	 * de salida en `onSubmit`, como el id en edición. En EDICIÓN no hay
+	 * buscador ni chip: la trazabilidad del origen no se toca al editar
+	 * (#242) y el título vuelve a ser campo editable.
 	 */
 	type Props = {
 		form: PageData['form'];
@@ -52,13 +70,18 @@
 		categories: PageData['categories'];
 		/** Los productos de la despensa: id, nombre y unidad — autocompletado y chip. */
 		pantryItems: PageData['pantryItems'];
+		/** Las recetas de la familia (#252): el catálogo del buscador en creación. */
+		recipes: PageData['recipes'];
 		onSuccess: (message: string) => void;
 	};
 
 	/** Un menú del día, tal y como lo trae el load para el detalle (#221). */
 	type DayMealPlan = PageData['mealPlans'][string][number];
 
-	let { form, categories, pantryItems, onSuccess }: Props = $props();
+	/** Una receta del listado de la familia (#252): la que se elige como origen. */
+	type RecipeRow = PageData['recipes'][number];
+
+	let { form, categories, pantryItems, recipes, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
@@ -74,6 +97,33 @@
 	 */
 	let editing: DayMealPlan | undefined = $state();
 
+	// El buscador de recetas (#252): la consulta la posee el modal (se
+	// resetea al abrirse) y el filtro vive en el `$derived` de abajo.
+	let searchQuery = $state('');
+
+	/**
+	 * La receta elegida como origen (#252): `undefined` en el alta manual.
+	 * Mientras vive, su nombre e ingredientes fueron los prefijados y su id
+	 * viaja en el JSON de salida (`recipeId`); quitar el chip la suelta y el
+	 * guardado sale «sin receta». En edición no hay buscador ni chip: la
+	 * trazabilidad del origen no se toca al editar (#242).
+	 */
+	let sourceRecipe: RecipeRow | undefined = $state();
+
+	// Las recetas que casan con la consulta (nombre, normalizado — el MISMO
+	// `matchesItemSearch` de lista, despensa y /recipes), en orden del
+	// listado y capadas a cinco: una lista corta se elige a golpe de pulgar.
+	// Sin consulta (o de solo espacios) no hay lista: el buscador no sugiere
+	// nada hasta que se teclea.
+	const matchingRecipes = $derived.by(() => {
+		if (!searchQuery.trim()) {
+			return [];
+		}
+		return recipes
+			.filter((recipe) => matchesItemSearch({ name: recipe.name, categoryName: null }, searchQuery))
+			.slice(0, 5);
+	});
+
 	// El aviso del modal es solo para FALLOS (400/409/500). En éxito el texto
 	// viaja a la página con `onSuccess`, pero superforms aún aplicará el
 	// resultado DESPUÉS de `onResult` y dejaría `$message` con el texto de
@@ -82,18 +132,25 @@
 
 	// svelte-ignore state_referenced_locally
 	const createForm = superForm(form, {
-		validators: zod4Client(mealPlanFormSchema()),
+		validators: zod4Client(mealPlanWithRecipeSchema()),
 		dataType: 'json',
 		invalidateAll: 'pessimistic',
-		// El id del menú editado no va en `$form` (crear y editar comparten el
-		// MISMO contrato) y con dataType json superforms manda solo los datos
-		// validados: en edición se inyecta aquí, en el JSON de salida. Si la
-		// validación de cliente falla no se manda nada, así que pasar
-		// `$formData` entero es seguro; el action valida el id con el schema
-		// extendido (`mealPlanUpdateSchema`, ver `schemas.ts`).
+		// El id del menú editado y el `recipeId` de la receta elegida (#252)
+		// no van en `$form` (crear y editar comparten el MISMO contrato) y con
+		// dataType json superforms manda solo los datos validados: se inyectan
+		// aquí, en el JSON de salida. Si la validación de cliente falla no se
+		// manda nada, así que pasar `$formData` entero es seguro; el action
+		// valida cada extra con su schema extendido (`mealPlanUpdateSchema` y
+		// `mealPlanWithRecipeSchema`, ver `schemas.ts`). Sin receta elegida el
+		// JSON sale sin `recipeId`: el alta manual de siempre, que el servidor
+		// guarda «sin receta».
 		onSubmit({ jsonData }) {
-			if (editing) {
-				jsonData({ ...$formData, id: editing.id });
+			if (sourceRecipe || editing) {
+				jsonData({
+					...$formData,
+					...(sourceRecipe ? { recipeId: sourceRecipe.id } : {}),
+					...(editing ? { id: editing.id } : {})
+				});
 			}
 		},
 		onResult({ result }) {
@@ -117,6 +174,10 @@
 		message.set(undefined);
 		errors.clear();
 		saveError = false;
+		// El buscador arranca limpio y SIN receta de origen: cada creación
+		// decide de nuevo si nace de una receta o a mano (#252).
+		sourceRecipe = undefined;
+		searchQuery = '';
 		// El resto arranca limpio: comida (la principal del día) y una fila de
 		// ingrediente vacía lista para escribir. El cast, como en editar item:
 		// recupera los literales del enum que el ancho del literal difumina.
@@ -141,6 +202,10 @@
 		message.set(undefined);
 		errors.clear();
 		saveError = false;
+		// Sin buscador ni chip en edición (#252): el origen del menú no se toca
+		// al editar (trazabilidad intacta, #242).
+		sourceRecipe = undefined;
+		searchQuery = '';
 		formData.set({
 			title: meal.title,
 			date: dateKey,
@@ -153,6 +218,61 @@
 			}))
 		} as MealPlanFormData);
 		modal?.showModal();
+	}
+
+	/**
+	 * Elige UNA receta del buscador como origen (#252): la marca (su id
+	 * viajará al guardar) y precarga SU título y sus ingredientes — nombre,
+	 * cantidad, unidad y categoría en su orden, el mismo snapshot editable
+	 * que `AssignRecipeModal.open` en /recipes (#242). El día de la celda y
+	 * el tipo ya fijados se CONSERVAN: la receta solo aporta el contenido.
+	 * La consulta se limpia: elegida la receta, la lista de coincidencias
+	 * sobra — el snapshot (chip, tipo e ingredientes) manda. La categoría
+	 * `null` de la vista va como `''`, el valor del option «Sin categoría»
+	 * — el mismo trato que en editar item. Por `update`, como todo lo que
+	 * toca el store de superforms.
+	 */
+	function pickRecipe(recipe: RecipeRow) {
+		sourceRecipe = recipe;
+		searchQuery = '';
+		message.set(undefined);
+		saveError = false;
+		errors.clear();
+		formData.update(
+			(data) =>
+				({
+					...data,
+					title: recipe.name,
+					ingredients: recipe.ingredients.map((ingredient) => ({
+						name: ingredient.name,
+						quantity: ingredient.quantity,
+						unit: ingredient.unit,
+						categoryId: ingredient.categoryId ?? ''
+					}))
+				}) as typeof data
+		);
+	}
+
+	/**
+	 * Suelta la receta elegida (#252): de vuelta al buscador en limpio — el
+	 * snapshot precargado se RETIRA con ella (ya no hay alta «sin receta»
+	 * que lo herede: el título no tiene campo propio y un formulario
+	 * huérfano no se puede guardar). El error de un intento fallido anterior
+	 * tampoco viaja a la siguiente elección.
+	 */
+	function clearRecipe() {
+		sourceRecipe = undefined;
+		message.set(undefined);
+		saveError = false;
+		errors.clear();
+		formData.update(
+			(data) =>
+				({
+					...data,
+					title: '',
+					ingredients: [{ ...EMPTY_INGREDIENT }]
+				}) as typeof data
+		);
 	}
 
 	/**
@@ -198,208 +318,289 @@
 >
 	<h2 class="text-lg font-bold">{editing ? m.meal_plan_edit() : m.meal_plan_create()}</h2>
 
-	<!-- Crear y editar comparten formulario: la acción (y el título y el
-	     botón) la decide el menú en edición. -->
-	<form
-		method="POST"
-		action={editing ? '?/update' : '?/create'}
-		use:enhance
-		class="mt-4 flex flex-col gap-4"
-	>
-		<!-- El id del menú editado viaja DOS veces según el camino: en el
-		     JSON de salida lo inyecta `onSubmit` (dataType json manda solo
-		     los datos validados del schema, y su parser ignora los campos
-		     planos) y en este input oculto para el submit NATIVO sin
-		     JavaScript, donde el formulario viaja plano y `parseFormData`
-		     lo reconstruye igual que en crear. -->
-		<input type="hidden" name="id" value={editing?.id ?? ''} />
-		<!-- El día del menú viaja como clave `YYYY-MM-DD` (`dayKeySchema`) y se
-		     muestra fijo: lo eligió quien pulsó la celda, aquí no se edita. -->
-		<input type="hidden" name="date" value={$formData.date} />
-		<div class="flex items-center gap-2">
-			<span class="fieldset-label">{m.schema_mealplans_date_label()}</span>
-			<span class="badge badge-outline font-mono">{$formData.date}</span>
-		</div>
+	<!-- El día del menú viaja como clave `YYYY-MM-DD` (`dayKeySchema`) y se
+	     muestra fijo: lo eligió quien pulsó la celda, aquí no se edita. Para
+	     el submit viaja en el input oculto del formulario de abajo. -->
+	<div class="mt-4 flex items-center gap-2">
+		<span class="fieldset-label">{m.schema_mealplans_date_label()}</span>
+		<span class="badge badge-outline font-mono">{$formData.date}</span>
+	</div>
 
-		<div class="flex flex-col gap-1">
-			<label class="fieldset-label" for="meal-title">{m.schema_mealplans_title_label()}</label>
-			<input
-				bind:value={$formData.title}
-				aria-invalid={errorMessage($errors.title) ? 'true' : undefined}
-				id="meal-title"
-				name="title"
-				type="text"
-				class="input w-full"
-				placeholder={m.schema_mealplans_title_placeholder()}
-				required
-				maxlength="100"
-			/>
-			{#if errorMessage($errors.title)}
-				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.title)}</p>
-			{/if}
+	{#if !editing && recipes.length === 0}
+		<!-- Sin recetario no hay alta desde el calendario (#252): el menú del
+		     calendario nace SIEMPRE de una receta, así que sin ninguna la
+		     única salida es ir a crear la primera a su página. -->
+		<div class="mt-4 flex flex-col gap-4">
+			<div class="alert alert-warning text-sm" role="alert">
+				<span>{m.meal_plan_no_recipes()}</span>
+			</div>
+			<a href={resolve('/recipes')} class="btn btn-primary">{m.meal_plan_no_recipes_cta()}</a>
 		</div>
+	{/if}
 
-		<div class="flex flex-col gap-1">
-			<label class="fieldset-label" for="meal-type">{m.schema_mealplans_meal_type_label()}</label>
-			<select
-				bind:value={$formData.mealType}
-				aria-invalid={errorMessage($errors.mealType) ? 'true' : undefined}
-				id="meal-type"
-				name="mealType"
-				class="select w-full"
-				required
-			>
-				<!-- Un menú por comida y día: el único (familia, fecha, tipo) de la
-				     base; un tipo repetido llega como error del action. -->
-				{#each MEAL_TYPES as mealType (mealType)}
-					<option value={mealType}>{MEAL_LABEL[mealType]}</option>
-				{/each}
-			</select>
-			{#if errorMessage($errors.mealType)}
-				<p class="fieldset-label text-error" role="alert">{errorMessage($errors.mealType)}</p>
-			{/if}
-		</div>
-
-		<!-- Filas dinámicas de ingredientes (#222): cada una con su nombre
-		     (autocompletado de despensa), cantidad numérica, unidad del enum y
-		     categoría opcional — los mismos contratos que un item. -->
-		<div class="flex flex-col gap-2">
-			{#each $formData.ingredients as ingredient, index (index)}
-				<div class="bg-base-200 rounded-box flex flex-col gap-2 p-3">
-					<div class="flex items-center justify-between gap-2">
-						<label class="fieldset-label" for={`meal-ingredient-name-${index}`}>
-							{m.schema_mealplans_ingredient_name_label()}
-						</label>
+	{#if !editing && recipes.length > 0}
+		<!-- Buscador de recetas (#252), solo en CREACIÓN y FUERA del
+		     formulario: no es un campo del menú y un Enter en él no ha de
+		     intentar enviar nada. Filtra EN CLIENTE el catálogo de la familia
+		     que trae el load — el MISMO `matchesItemSearch` de lista,
+		     despensa y /recipes. Elegir una receta rellena el formulario de
+		     abajo (título e ingredientes) y marca el origen con el chip; sin
+		     receta elegida no hay formulario que enviar. -->
+		<ItemSearch
+			bind:query={searchQuery}
+			id="meal-recipe-search"
+			label={m.meal_plan_recipe_label()}
+			placeholder={m.meal_plan_recipe_placeholder()}
+		/>
+		{#if matchingRecipes.length > 0}
+			<!-- Hasta cinco coincidencias como botones nativos (patrón de los
+			     `datalist` de la app): pulsar una elige la receta. -->
+			<ul class="mt-4 flex flex-col gap-1" aria-label={m.meal_plan_recipe_results()}>
+				{#each matchingRecipes as recipe (recipe.id)}
+					<li>
 						<button
 							type="button"
-							class="btn btn-ghost btn-xs"
-							aria-label={m.schema_mealplans_ingredient_remove()}
-							onclick={() => removeIngredient(index)}
+							class="btn btn-outline btn-sm w-full justify-start"
+							onclick={() => pickRecipe(recipe)}
 						>
-							<X aria-hidden="true" />
+							{recipe.name}
 						</button>
-					</div>
+					</li>
+				{/each}
+			</ul>
+		{:else if searchQuery.trim()}
+			<!-- Con consulta y SIN coincidencias: el estado vacío del buscador. -->
+			<p class="mt-4 text-sm opacity-70">{m.ui_search_no_results()}</p>
+		{/if}
 
+		{#if sourceRecipe}
+			<!-- El chip de origen (#252): nombra la receta de la que nace el
+			     snapshot y su X la suelta — de vuelta al buscador en limpio,
+			     sin heredar el contenido al siguiente intento. -->
+			<div class="badge badge-outline mt-4 max-w-full gap-1 py-3">
+				<span class="truncate">{m.meal_plan_recipe_from({ name: sourceRecipe.name })}</span>
+				<button
+					type="button"
+					class="btn btn-ghost btn-xs"
+					aria-label={m.meal_plan_recipe_clear()}
+					onclick={clearRecipe}
+				>
+					<X aria-hidden="true" />
+				</button>
+			</div>
+		{/if}
+	{/if}
+
+	{#if editing || sourceRecipe}
+		<!-- Crear (con receta elegida) y editar comparten formulario: la
+		     acción (y el título y el botón) la decide el menú en edición. -->
+		<form
+			method="POST"
+			action={editing ? '?/update' : '?/create'}
+			use:enhance
+			class="mt-4 flex flex-col gap-4"
+		>
+			<!-- El id del menú editado viaja DOS veces según el camino: en el
+			     JSON de salida lo inyecta `onSubmit` (dataType json manda solo
+			     los datos validados del schema, y su parser ignora los campos
+			     planos) y en este input oculto para el submit NATIVO sin
+			     JavaScript, donde el formulario viaja plano y `parseFormData`
+			     lo reconstruye igual que en crear. -->
+			<input type="hidden" name="id" value={editing?.id ?? ''} />
+			<!-- El `recipeId` de la receta de origen (#252), el mismo trato que el
+			     id: en el JSON de salida lo inyecta `onSubmit` (dataType json manda
+			     solo los datos validados del schema) y en este input oculto viaja
+			     para el submit NATIVO sin JavaScript. -->
+			<input type="hidden" name="recipeId" value={sourceRecipe?.id ?? ''} />
+			<input type="hidden" name="date" value={$formData.date} />
+
+			{#if editing}
+				<!-- El título SOLO existe en edición (#252): en creación es el de
+				     la receta elegida — viaja en `$formData.title` con el resto
+				     del snapshot, sin campo que lo edite aquí. -->
+				<div class="flex flex-col gap-1">
+					<label class="fieldset-label" for="meal-title">{m.schema_mealplans_title_label()}</label>
 					<input
-						bind:value={ingredient.name}
-						aria-invalid={errorMessage($errors.ingredients?.[index]?.name) ? 'true' : undefined}
-						id={`meal-ingredient-name-${index}`}
-						name={`ingredients[${index}].name`}
+						bind:value={$formData.title}
+						aria-invalid={errorMessage($errors.title) ? 'true' : undefined}
+						id="meal-title"
+						name="title"
 						type="text"
 						class="input w-full"
-						list="pantry-products"
-						autocomplete="off"
+						placeholder={m.schema_mealplans_title_placeholder()}
+						required
 						maxlength="100"
 					/>
-					{#if errorMessage($errors.ingredients?.[index]?.name)}
-						<p class="fieldset-label text-error" role="alert">
-							{errorMessage($errors.ingredients?.[index]?.name)}
-						</p>
+					{#if errorMessage($errors.title)}
+						<p class="fieldset-label text-error" role="alert">{errorMessage($errors.title)}</p>
 					{/if}
+				</div>
+			{/if}
 
-					<div class="grid grid-cols-2 gap-2">
-						<div class="flex flex-col gap-1">
-							<label class="fieldset-label" for={`meal-ingredient-quantity-${index}`}>
-								{m.schema_items_quantity_label()}
+			<div class="flex flex-col gap-1">
+				<label class="fieldset-label" for="meal-type">{m.schema_mealplans_meal_type_label()}</label>
+				<select
+					bind:value={$formData.mealType}
+					aria-invalid={errorMessage($errors.mealType) ? 'true' : undefined}
+					id="meal-type"
+					name="mealType"
+					class="select w-full"
+					required
+				>
+					<!-- Un menú por comida y día: el único (familia, fecha, tipo) de la
+				     base; un tipo repetido llega como error del action. -->
+					{#each MEAL_TYPES as mealType (mealType)}
+						<option value={mealType}>{MEAL_LABEL[mealType]}</option>
+					{/each}
+				</select>
+				{#if errorMessage($errors.mealType)}
+					<p class="fieldset-label text-error" role="alert">{errorMessage($errors.mealType)}</p>
+				{/if}
+			</div>
+
+			<!-- Filas dinámicas de ingredientes (#222): cada una con su nombre
+		     (autocompletado de despensa), cantidad numérica, unidad del enum y
+		     categoría opcional — los mismos contratos que un item. -->
+			<div class="flex flex-col gap-2">
+				{#each $formData.ingredients as ingredient, index (index)}
+					<div class="bg-base-200 rounded-box flex flex-col gap-2 p-3">
+						<div class="flex items-center justify-between gap-2">
+							<label class="fieldset-label" for={`meal-ingredient-name-${index}`}>
+								{m.schema_mealplans_ingredient_name_label()}
 							</label>
-							<!-- Input numérico con teclado decimal (AC móvil), el mismo
+							<button
+								type="button"
+								class="btn btn-ghost btn-xs"
+								aria-label={m.schema_mealplans_ingredient_remove()}
+								onclick={() => removeIngredient(index)}
+							>
+								<X aria-hidden="true" />
+							</button>
+						</div>
+
+						<input
+							bind:value={ingredient.name}
+							aria-invalid={errorMessage($errors.ingredients?.[index]?.name) ? 'true' : undefined}
+							id={`meal-ingredient-name-${index}`}
+							name={`ingredients[${index}].name`}
+							type="text"
+							class="input w-full"
+							list="pantry-products"
+							autocomplete="off"
+							maxlength="100"
+						/>
+						{#if errorMessage($errors.ingredients?.[index]?.name)}
+							<p class="fieldset-label text-error" role="alert">
+								{errorMessage($errors.ingredients?.[index]?.name)}
+							</p>
+						{/if}
+
+						<div class="grid grid-cols-2 gap-2">
+							<div class="flex flex-col gap-1">
+								<label class="fieldset-label" for={`meal-ingredient-quantity-${index}`}>
+									{m.schema_items_quantity_label()}
+								</label>
+								<!-- Input numérico con teclado decimal (AC móvil), el mismo
 							     trato que la cantidad del item. -->
-							<input
-								bind:value={ingredient.quantity}
-								aria-invalid={errorMessage($errors.ingredients?.[index]?.quantity)
-									? 'true'
-									: undefined}
-								id={`meal-ingredient-quantity-${index}`}
-								name={`ingredients[${index}].quantity`}
-								type="number"
-								class="input w-full"
-								step="any"
-								inputmode="decimal"
-								required
-							/>
-							{#if errorMessage($errors.ingredients?.[index]?.quantity)}
-								<p class="fieldset-label text-error" role="alert">
-									{errorMessage($errors.ingredients?.[index]?.quantity)}
-								</p>
-							{/if}
+								<input
+									bind:value={ingredient.quantity}
+									aria-invalid={errorMessage($errors.ingredients?.[index]?.quantity)
+										? 'true'
+										: undefined}
+									id={`meal-ingredient-quantity-${index}`}
+									name={`ingredients[${index}].quantity`}
+									type="number"
+									class="input w-full"
+									step="any"
+									inputmode="decimal"
+									required
+								/>
+								{#if errorMessage($errors.ingredients?.[index]?.quantity)}
+									<p class="fieldset-label text-error" role="alert">
+										{errorMessage($errors.ingredients?.[index]?.quantity)}
+									</p>
+								{/if}
+							</div>
+
+							<div class="flex flex-col gap-1">
+								<label class="fieldset-label" for={`meal-ingredient-unit-${index}`}>
+									{m.schema_items_unit_label()}
+								</label>
+								<select
+									bind:value={ingredient.unit}
+									aria-invalid={errorMessage($errors.ingredients?.[index]?.unit)
+										? 'true'
+										: undefined}
+									id={`meal-ingredient-unit-${index}`}
+									name={`ingredients[${index}].unit`}
+									class="select w-full"
+									required
+								>
+									{#each UNITS as unit (unit)}
+										<option value={unit}>{UNIT_LABEL[unit]}</option>
+									{/each}
+								</select>
+								{#if errorMessage($errors.ingredients?.[index]?.unit)}
+									<p class="fieldset-label text-error" role="alert">
+										{errorMessage($errors.ingredients?.[index]?.unit)}
+									</p>
+								{/if}
+							</div>
 						</div>
 
 						<div class="flex flex-col gap-1">
-							<label class="fieldset-label" for={`meal-ingredient-unit-${index}`}>
-								{m.schema_items_unit_label()}
+							<label class="fieldset-label" for={`meal-ingredient-category-${index}`}>
+								{m.schema_items_category_label()}
 							</label>
 							<select
-								bind:value={ingredient.unit}
-								aria-invalid={errorMessage($errors.ingredients?.[index]?.unit) ? 'true' : undefined}
-								id={`meal-ingredient-unit-${index}`}
-								name={`ingredients[${index}].unit`}
+								bind:value={ingredient.categoryId}
+								id={`meal-ingredient-category-${index}`}
+								name={`ingredients[${index}].categoryId`}
 								class="select w-full"
-								required
 							>
-								{#each UNITS as unit (unit)}
-									<option value={unit}>{UNIT_LABEL[unit]}</option>
+								<option value="">{m.items_category_none()}</option>
+								{#each categories as category (category.id)}
+									<option value={category.id}>{category.name}</option>
 								{/each}
 							</select>
-							{#if errorMessage($errors.ingredients?.[index]?.unit)}
-								<p class="fieldset-label text-error" role="alert">
-									{errorMessage($errors.ingredients?.[index]?.unit)}
-								</p>
-							{/if}
 						</div>
-					</div>
 
-					<div class="flex flex-col gap-1">
-						<label class="fieldset-label" for={`meal-ingredient-category-${index}`}>
-							{m.schema_items_category_label()}
-						</label>
-						<select
-							bind:value={ingredient.categoryId}
-							id={`meal-ingredient-category-${index}`}
-							name={`ingredients[${index}].categoryId`}
-							class="select w-full"
-						>
-							<option value="">{m.items_category_none()}</option>
-							{#each categories as category (category.id)}
-								<option value={category.id}>{category.name}</option>
-							{/each}
-						</select>
-					</div>
-
-					<!-- Aviso de unidad conflictiva (#243, retrofit del chip de
+						<!-- Aviso de unidad conflictiva (#243, retrofit del chip de
 					     recetas): el nombre tecleado casa con un producto de
 					     despensa en OTRA unidad (por nombre canónico, no solo
 					     visible). El chip propone la conversión exacta y aquí se
 					     aplica a SU fila — por `update`, como todo lo que toca el
 					     store de superforms. -->
-					<UnitConflictChip
-						name={ingredient.name}
-						unit={ingredient.unit}
-						quantity={ingredient.quantity}
-						pantryProducts={pantryItems}
-						onApply={(conversion) => applyConversion(index, conversion)}
-					/>
-				</div>
-			{/each}
+						<UnitConflictChip
+							name={ingredient.name}
+							unit={ingredient.unit}
+							quantity={ingredient.quantity}
+							pantryProducts={pantryItems}
+							onApply={(conversion) => applyConversion(index, conversion)}
+						/>
+					</div>
+				{/each}
 
-			<button type="button" class="btn btn-outline btn-sm" onclick={addIngredient}>
-				<Plus aria-hidden="true" />
-				{m.schema_mealplans_ingredient_add()}
-			</button>
-		</div>
-
-		{#if saveError && $message}
-			<div class="alert alert-error text-sm" role="alert">
-				{$message}
+				<button type="button" class="btn btn-outline btn-sm" onclick={addIngredient}>
+					<Plus aria-hidden="true" />
+					{m.schema_mealplans_ingredient_add()}
+				</button>
 			</div>
-		{/if}
 
-		<button type="submit" class="btn btn-primary" disabled={$delayed}>
-			{#if $delayed}
-				<span class="loading loading-spinner"></span>
+			{#if saveError && $message}
+				<div class="alert alert-error text-sm" role="alert">
+					{$message}
+				</div>
 			{/if}
-			{editing ? m.meal_plan_save() : m.meal_plan_create()}
-		</button>
-	</form>
+
+			<button type="submit" class="btn btn-primary" disabled={$delayed}>
+				{#if $delayed}
+					<span class="loading loading-spinner"></span>
+				{/if}
+				{editing ? m.meal_plan_save() : m.meal_plan_create()}
+			</button>
+		</form>
+	{/if}
 
 	<!-- Sugerencias de despensa (#222): los productos que el load trajo de la
 	     familia, con su unidad junto al nombre. El `datalist` es el

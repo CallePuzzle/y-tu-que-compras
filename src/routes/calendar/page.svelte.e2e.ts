@@ -5,6 +5,7 @@ import {
 	createFamily,
 	createMealPlan,
 	createPantryItem,
+	createRecipe,
 	createUser,
 	resetDb
 } from '../../../e2e/helpers/seed';
@@ -63,14 +64,12 @@ function monthLabel(monthKey: string): string {
 }
 
 /**
- * La vista del calendario en SU pestaña de menús (#222): la vista por defecto
- * es la de Gastos (el esqueleto de #217), así que hay que pulsar la pestaña
- * antes de tocar las celdas — el grid de Gastos no tiene días pulsables.
+ * La vista del calendario en SU pestaña de menús (#222): Menú es la vista
+ * por defecto (#253), así que basta entrar — sin pulsar pestaña alguna.
  */
 async function openMenuTab(page: Page): Promise<void> {
 	await page.goto('/calendar');
 	await waitForHydration(page);
-	await page.getByRole('tab', { name: 'Menú' }).click();
 }
 
 /**
@@ -84,8 +83,11 @@ function modalAbierto(page: Page, dentro: Locator): Locator {
 	return page.locator('dialog[open]').filter({ has: dentro });
 }
 
-/** El modal de crear menú, apilado o solo (`?/create`, nunca en edición). */
-const modalCrear = (page: Page) => modalAbierto(page, page.locator('form[action="?/create"]'));
+/** El modal de crear menú, apilado o solo: por SU heading — el formulario
+ * `?/create` ya no sirve de identificador (#252): solo existe tras elegir
+ * receta, y en familias sin recetas no llega a haber formulario. */
+const modalCrear = (page: Page) =>
+	modalAbierto(page, page.getByRole('heading', { name: 'Crear menú' }));
 
 /** El modal de crear REUTILIZADO en edición (`?/update`, #221). */
 const modalEditar = (page: Page) => modalAbierto(page, page.locator('form[action="?/update"]'));
@@ -97,15 +99,37 @@ const modalBorrar = (page: Page) => modalAbierto(page, page.locator('form[action
 const modalDetalle = (page: Page) =>
 	modalAbierto(page, page.getByRole('heading', { name: 'Menús del día' }));
 
+/** El buscador de recetas del modal de crear (#252), por su id propio. */
+const buscadorRecetas = (dentro: Locator) => dentro.locator('#meal-recipe-search');
+
+/** La lista de coincidencias del buscador (#252), por su aria-label. */
+const resultadosRecetas = (dentro: Locator) =>
+	dentro.getByRole('list', { name: 'Recetas que coinciden' });
+
 test('crear menu desde una celda vacia: chip en la celda y detalle del dia con ingredientes', async ({
 	page
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	const month = currentMonthKey();
+	// La receta de la que nacerá el menú: el alta desde el calendario SIEMPRE
+	// parte del recetario (#252) — el modal ya no pide título.
+	await createRecipe({
+		familyId: family.id,
+		name: 'Lentejas con verduras',
+		servings: 4,
+		ingredients: [
+			{ name: 'Lentejas castellanas', quantity: 0.5, unit: 'kilogram' },
+			{ name: 'Pimiento rojo', quantity: 1, unit: 'unit' }
+		]
+	});
 	await seedSession(page, user);
 
 	await openMenuTab(page);
+
+	// Por defecto al entrar (#253): Menú es la pestaña activa, no Gastos.
+	await expect(page.getByRole('tab', { name: 'Menú' })).toHaveAttribute('aria-selected', 'true');
+	await expect(page.getByRole('tab', { name: 'Gastos' })).toHaveAttribute('aria-selected', 'false');
 
 	// Sin menús aún: el aviso de vacío bajo el grid (#222).
 	await expect(page.getByText('Todavía no hay menús este mes.')).toBeVisible();
@@ -117,15 +141,19 @@ test('crear menu desde una celda vacia: chip en la celda y detalle del dia con i
 	await expect(creacion.getByRole('heading', { name: 'Crear menú' })).toBeVisible();
 	await expect(creacion.getByText(dayKey(month, 15))).toBeVisible();
 
-	// Título, tipo de comida y DOS ingredientes: uno nuevo con cantidad y
-	// unidad, y otro en una segunda fila con su cantidad por defecto (1 ud).
-	await creacion.locator('#meal-title').fill('Lentejas con verduras');
+	// El alta nace de una receta (#252): buscarla y elegirla precarga título
+	// (SIN campo que lo edite: es el de la receta) e ingredientes.
+	await buscadorRecetas(creacion).fill('lentejas');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Lentejas con verduras' }).click();
+	await expect(creacion.getByText('Desde la receta «Lentejas con verduras»')).toBeVisible();
+	await expect(creacion.locator('#meal-title')).toHaveCount(0);
+
+	// Ajuste del snapshot: el tipo de comida y el primer ingrediente, ahora
+	// en gramos. La segunda fila llega de la receta con su cantidad por
+	// defecto (1 ud).
 	await creacion.locator('#meal-type').selectOption({ label: 'Cena' });
-	await creacion.locator('#meal-ingredient-name-0').fill('Lentejas castellanas');
 	await creacion.locator('#meal-ingredient-quantity-0').fill('500');
 	await creacion.locator('#meal-ingredient-unit-0').selectOption({ label: 'g' });
-	await creacion.getByRole('button', { name: 'Añadir ingrediente' }).click();
-	await creacion.locator('#meal-ingredient-name-1').fill('Pimiento rojo');
 
 	await creacion.getByRole('button', { name: 'Crear menú' }).click();
 
@@ -254,18 +282,24 @@ test('guardar un menu crea los productos nuevos en la despensa a cero sin tocar 
 		quantity: 2,
 		unit: 'liter'
 	});
+	// La receta del menú (#252): sus dos ingredientes, el segundo NUEVO en
+	// despensa.
+	await createRecipe({
+		familyId: family.id,
+		name: 'Tostadas de aguacate',
+		ingredients: [
+			{ name: 'Leche entera', quantity: 1, unit: 'liter' },
+			{ name: 'Tempeh', quantity: 1, unit: 'package' }
+		]
+	});
 	await seedSession(page, user);
 
 	await openMenuTab(page);
 
 	await page.getByRole('button', { name: '8', exact: true }).click();
 	const creacion = modalCrear(page);
-	await creacion.locator('#meal-title').fill('Tostadas de aguacate');
-	await creacion.locator('#meal-ingredient-name-0').fill('Leche entera');
-	await creacion.locator('#meal-ingredient-unit-0').selectOption({ label: 'L' });
-	await creacion.getByRole('button', { name: 'Añadir ingrediente' }).click();
-	await creacion.locator('#meal-ingredient-name-1').fill('Tempeh');
-	await creacion.locator('#meal-ingredient-unit-1').selectOption({ label: 'paquete' });
+	await buscadorRecetas(creacion).fill('tostadas');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Tostadas de aguacate' }).click();
 	await creacion.getByRole('button', { name: 'Crear menú' }).click();
 
 	await expect(creacion).toHaveCount(0);
@@ -294,7 +328,7 @@ test('aviso de unidad conflictiva: convierte g a kg, guarda enlazado al producto
 }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
-	// El arroz vive en la despensa en KILOS (#243): teclearlo en el menú en
+	// El arroz vive en la despensa en KILOS (#243): ponerlo en el menú en
 	// gramos ha de avisar y proponer la conversión exacta.
 	const arroz = await createPantryItem({
 		familyId: family.id,
@@ -303,17 +337,25 @@ test('aviso de unidad conflictiva: convierte g a kg, guarda enlazado al producto
 		quantity: 3,
 		unit: 'kilogram'
 	});
+	// La receta del menú (#252), con su ingrediente EN KILOS: al elegirla no
+	// hay chip (misma unidad que la despensa) — el aviso saldrá al poner la
+	// fila en gramos.
+	await createRecipe({
+		familyId: family.id,
+		name: 'Paella',
+		ingredients: [{ name: 'Arroz', quantity: 0.5, unit: 'kilogram' }]
+	});
 	await seedSession(page, user);
 
 	await openMenuTab(page);
 
 	await page.getByRole('button', { name: '11', exact: true }).click();
 	const creacion = modalCrear(page);
+	await buscadorRecetas(creacion).fill('paella');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Paella' }).click();
 
 	// «Arroz» en 300 g: el chip avisa (match por nombre canónico) y ofrece
 	// «usar kg → 0,3 kg».
-	await creacion.locator('#meal-title').fill('Paella');
-	await creacion.locator('#meal-ingredient-name-0').fill('Arroz');
 	await creacion.locator('#meal-ingredient-quantity-0').fill('300');
 	await creacion.locator('#meal-ingredient-unit-0').selectOption({ label: 'g' });
 	await expect(creacion.getByText('está en la despensa en kg')).toBeVisible();
@@ -475,6 +517,13 @@ test('duplicado dia+tipo: el error se queda en el modal y no se crea nada', asyn
 		title: 'Puchero',
 		ingredients: [{ name: 'Garbanzos' }]
 	});
+	// La receta del segundo menú (#252): el alta desde el calendario nace de
+	// ella.
+	await createRecipe({
+		familyId: family.id,
+		name: 'Segundo puchero',
+		ingredients: [{ name: 'Más garbanzos', quantity: 1, unit: 'unit' }]
+	});
 	await seedSession(page, user);
 
 	await openMenuTab(page);
@@ -487,13 +536,12 @@ test('duplicado dia+tipo: el error se queda en el modal y no se crea nada', asyn
 	const creacion = modalCrear(page);
 	await expect(creacion.getByRole('heading', { name: 'Crear menú' })).toBeVisible();
 
-	// El tipo por defecto es «Comida»: el MISMO que ya ocupa el día. La
-	// creación muere en el único (familia, fecha, tipo) y la UI lo traduce
-	// al mensaje genérico, DENTRO del modal, que sigue abierto. (El nombre
-	// del ingrediente ha de ser válido: si no, lo corta antes el schema en
-	// cliente y el error de servidor no llega a verse.)
-	await creacion.locator('#meal-title').fill('Segundo puchero');
-	await creacion.locator('#meal-ingredient-name-0').fill('Más garbanzos');
+	// Elegir la receta y chocar: el tipo por defecto es «Comida», el MISMO
+	// que ya ocupa el día. La creación muere en el único (familia, fecha,
+	// tipo) y la UI lo traduce al mensaje genérico, DENTRO del modal, que
+	// sigue abierto.
+	await buscadorRecetas(creacion).fill('segundo');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Segundo puchero' }).click();
 	await creacion.getByRole('button', { name: 'Crear menú' }).click();
 	await expect(
 		creacion.getByText('Ya hay un menú de ese tipo ese día: elige otro tipo de comida.')
@@ -616,8 +664,9 @@ test('navegar de mes cambia la query y cada celda sigue mostrando SU mes', async
 	await page.getByRole('button', { name: 'Mes siguiente' }).click();
 	await expect(page).toHaveURL(new RegExp(`month=${siguiente}$`));
 	await expect(nav.locator('p')).toHaveText(monthLabel(siguiente));
-	// La pestaña remonta la página y vuelve a Gastos (estado local): tocarla
-	// de nuevo para mirar las celdas del mes en vista.
+	// La navegación remonta la página y el estado local vuelve al por
+	// defecto, Menú (#253): el clic re-selecciona la vista — inocuo —
+	// antes de mirar las celdas del mes en vista.
 	await page.getByRole('tab', { name: 'Menú' }).click();
 	await expect(page.getByRole('button', { name: 'Menu del mes que viene' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Menu de este mes' })).toHaveCount(0);

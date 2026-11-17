@@ -10,12 +10,23 @@
 	 * `$derived` de la página) y ofrece el botón de limpiar. La consulta la
 	 * posee la página vía `bind:query`; el match (nombre o categoría,
 	 * normalizado) está en `item-search.ts`.
+	 *
+	 * El texto del label, el placeholder y el id son INYECTABLES (#252): el
+	 * modal de crear menú del calendario reutiliza el componente para buscar
+	 * RECETAS y necesita sus propios textos y su id propio (convive en el
+	 * DOM con el resto de la página). Los defaults mantienen el buscador de
+	 * artículos tal cual lo usan lista y despensa.
 	 */
-	let { query = $bindable('') }: { query?: string } = $props();
+	let {
+		query = $bindable(''),
+		label = m.ui_search_label(),
+		placeholder = m.ui_search_placeholder(),
+		id = 'item-search'
+	}: { query?: string; label?: string; placeholder?: string; id?: string } = $props();
 </script>
 
 <div class="mt-4 flex flex-col gap-1">
-	<label class="fieldset-label" for="item-search">{m.ui_search_label()}</label>
+	<label class="fieldset-label" for={id}>{label}</label>
 	<!-- La lupa, dentro del campo (posición absoluta); el X de limpiar solo
 	     aparece con algo escrito — sin consulta no hay nada que limpiar. -->
 	<div class="relative">
@@ -24,10 +35,10 @@
 			class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 opacity-60"
 		/>
 		<input
-			id="item-search"
+			{id}
 			type="text"
 			class="input w-full pr-9 pl-9"
-			placeholder={m.ui_search_placeholder()}
+			{placeholder}
 			autocomplete="off"
 			bind:value={query}
 		/>

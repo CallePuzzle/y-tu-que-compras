@@ -79,13 +79,13 @@ function madridInstant(wall: string): Date {
 }
 
 /**
- * La vista del calendario en SU pestaña de gastos (#220): la vista por
- * defecto de /calendar es la de gastos (esqueleto #217), así que basta
- * entrar — sin pulsar pestaña alguna.
+ * La vista del calendario en SU pestaña de gastos (#220): Menú es la vista
+ * por defecto (#253), así que tras entrar hay que pulsar el tab de Gastos.
  */
 async function openExpenses(page: Page): Promise<void> {
 	await page.goto('/calendar');
 	await waitForHydration(page);
+	await page.getByRole('tab', { name: 'Gastos' }).click();
 }
 
 /** El modal de gastos del día (#220): el único con SU heading. */
@@ -148,7 +148,13 @@ test('el tab de gastos pinta el total del mes y la cifra de cada dia con compras
 	});
 	await seedSession(page, user);
 
-	await openExpenses(page);
+	// Al entrar (#253) la activa es Menú y Gastos NO; el tab de gastos se
+	// pulsa a mano para el resto del test, que necesita el estado EN Gastos.
+	await page.goto('/calendar');
+	await waitForHydration(page);
+	await expect(page.getByRole('tab', { name: 'Menú' })).toHaveAttribute('aria-selected', 'true');
+	await expect(page.getByRole('tab', { name: 'Gastos' })).toHaveAttribute('aria-selected', 'false');
+	await page.getByRole('tab', { name: 'Gastos' }).click();
 
 	// La cabecera del tab: el total del mes es la suma de SUS días (23,45 +
 	// 16,50 + 1234,56), no la del contiguo.
