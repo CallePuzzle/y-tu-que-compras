@@ -2,7 +2,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
 import {
+	createCategory,
 	createFamily,
+	createItem,
+	createList,
 	createMealPlan,
 	createPantryItem,
 	createRecipe,
@@ -418,6 +421,93 @@ test('aviso de unidad conflictiva: convierte g a kg, guarda enlazado al producto
 	]);
 	expect(ingredientesTras.map((row) => row.pantryItemId)).toEqual([arroz.id]);
 	expect(await prisma.pantryItem.count()).toBe(1);
+});
+
+test('autocompletado de ingredientes: sugiere todo el catálogo, casa por canónico y hereda unidad y categoría', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// Tres fuentes (#285): la despensa (su unidad hace que el guardado enlace
+	// el producto existente), una lista (nombre, unidad y categoría) y las
+	// recetas (la del menú también presta sus nombres).
+	const tomate = await createPantryItem({
+		familyId: family.id,
+		name: 'Tomate frito',
+		normalizedName: 'tomate frito',
+		quantity: 2,
+		unit: 'can'
+	});
+	const verdura = await createCategory({ familyId: family.id, name: 'Verdura' });
+	const lista = await createList({ familyId: family.id });
+	await createItem({
+		listId: lista.id,
+		name: 'Patatas',
+		unit: 'kilogram',
+		categoryId: verdura.id
+	});
+	await createRecipe({
+		familyId: family.id,
+		name: 'Guiso',
+		ingredients: [{ name: 'Huevos', quantity: 2, unit: 'unit' }]
+	});
+	await seedSession(page, user);
+
+	await openMenuTab(page);
+	await page.getByRole('button', { name: '12', exact: true }).click();
+	const creacion = modalCrear(page);
+	await buscadorRecetas(creacion).fill('guiso');
+	await resultadosRecetas(creacion).getByRole('button', { name: 'Guiso' }).click();
+
+	// El datalist ofrece TODO el catálogo de la familia, no solo la despensa.
+	await expect(creacion.locator('#meal-ingredient-name-0')).toHaveAttribute(
+		'list',
+		'meal-name-suggestions'
+	);
+	for (const nombre of ['Huevos', 'Patatas', 'Tomate frito']) {
+		await expect(page.locator(`#meal-name-suggestions option[value="${nombre}"]`)).toHaveCount(1);
+	}
+
+	// «patatas» (otra capitalización) casa con el item de la lista: hereda kg
+	// y su categoría; dejar de casar las retira (vuelve a la fila de la receta).
+	await creacion.locator('#meal-ingredient-name-0').fill('patatas');
+	await expect(creacion.locator('#meal-ingredient-unit-0')).toHaveValue('kilogram');
+	await expect(creacion.locator('#meal-ingredient-category-0')).toHaveValue(verdura.id);
+	await creacion.locator('#meal-ingredient-name-0').fill('patatas nuevas');
+	await expect(creacion.locator('#meal-ingredient-unit-0')).toHaveValue('unit');
+	await expect(creacion.locator('#meal-ingredient-category-0')).toHaveValue('');
+	await creacion.locator('#meal-ingredient-name-0').fill('patatas');
+	await expect(creacion.locator('#meal-ingredient-unit-0')).toHaveValue('kilogram');
+
+	// Una fila nueva con un producto de despensa: hereda su unidad (latas).
+	await creacion.getByRole('button', { name: 'Añadir ingrediente' }).click();
+	await creacion.locator('#meal-ingredient-name-1').fill('TOMATE FRITO');
+	await expect(creacion.locator('#meal-ingredient-unit-1')).toHaveValue('can');
+
+	// La unidad elegida a mano manda: casar después no la pisa.
+	await creacion.getByRole('button', { name: 'Añadir ingrediente' }).click();
+	await creacion.locator('#meal-ingredient-unit-2').selectOption({ label: 'g' });
+	await creacion.locator('#meal-ingredient-name-2').fill('huevos');
+	await expect(creacion.locator('#meal-ingredient-unit-2')).toHaveValue('gram');
+	await creacion.getByRole('button', { name: 'Quitar ingrediente' }).nth(2).click();
+
+	await creacion.getByRole('button', { name: 'Crear menú' }).click();
+	await expect(creacion).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Menú creado.');
+
+	// En la BD: las patatas con su kg y su categoría, y el tomate ENLAZADO al
+	// producto de despensa existente (misma unidad: sin segundo producto).
+	const menu = await prisma.mealPlan.findFirstOrThrow({ where: { organizationId: family.id } });
+	const ingredientes = await prisma.mealPlanIngredient.findMany({
+		where: { mealPlanId: menu.id },
+		orderBy: { position: 'asc' }
+	});
+	expect(ingredientes.map((row) => [row.name, row.unit, row.categoryId])).toEqual([
+		['patatas', 'kilogram', verdura.id],
+		['TOMATE FRITO', 'can', null]
+	]);
+	expect(ingredientes[1].pantryItemId).toBe(tomate.id);
+	expect(await prisma.pantryItem.count({ where: { unit: 'can' } })).toBe(1);
 });
 
 test('editar precarga el modal, guarda los cambios y los pinta al instante en celda y detalle', async ({

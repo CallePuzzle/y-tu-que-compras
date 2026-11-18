@@ -13,7 +13,7 @@ import {
 } from '#lib/server/items.js';
 import { getList } from '#lib/server/lists.js';
 import { finalizePurchase } from '#lib/server/purchases.js';
-import { listCategorySuggestions } from '#lib/server/suggestions.js';
+import { listProductNameSuggestions } from '#lib/server/suggestions.js';
 import { listStores } from '#lib/server/stores.js';
 import logger from '#lib/server/logger.js';
 import { itemFormSchema, purchaseFormSchema } from './schemas.js';
@@ -53,9 +53,14 @@ export const load: PageServerLoad = async (event) => {
 		// Los establecimientos de la familia (#185): el select del modal de
 		// finalizar ofrece exactamente estos, en su orden de creación.
 		stores: await listStores(family.id),
-		// El mapa nombre canónico -> categoría para la sugerencia del alta
-		// rápida (#173): despensa + items de todas las listas de la familia.
-		categorySuggestions: await listCategorySuggestions(family.id),
+		// Los nombres que la familia ya conoce (#283): despensa, items de
+		// todas sus listas e ingredientes de recetas, uno por canónico. Son el
+		// `datalist` del alta rápida y de editar, y la ÚNICA fuente del
+		// pre-relleno de unidad y categoría — también de la sugerencia de
+		// categoría de #173, que antes viajaba en un mapa aparte
+		// (`categorySuggestions`): su `categoryId` sale de la misma
+		// resolución, así que no hay dos verdades que puedan discrepar.
+		nameSuggestions: await listProductNameSuggestions(family.id),
 		form: await superValidate(EMPTY_ITEM, zod4(itemFormSchema())),
 		editForm: await superValidate(EMPTY_ITEM, zod4(itemFormSchema()), { id: EDIT_FORM_ID }),
 		finalizeForm: await superValidate(zod4(purchaseFormSchema()), { id: FINALIZE_FORM_ID })

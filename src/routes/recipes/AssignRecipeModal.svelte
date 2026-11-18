@@ -5,6 +5,12 @@
 	import UnitConflictChip from '#lib/components/UnitConflictChip.svelte';
 	import { errorMessage } from '#lib/forms.js';
 	import { mealTypeLabels } from '#lib/meal-types.js';
+	import {
+		indexNameSuggestions,
+		mealIngredientPrefillState,
+		prefillMealIngredient,
+		type MealIngredientPrefillState
+	} from '#lib/name-suggestions.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS } from '#lib/schemas/item.js';
 	import { MEAL_TYPES, type MealPlanFormData } from '#lib/schemas/mealplan.js';
@@ -45,24 +51,47 @@
 	 * exacta — con la fila ya en la unidad del producto, el `upsert` del
 	 * guardado (`ensurePantryProducts`) cae en el producto EXISTENTE y no
 	 * crea el segundo en despensa.
+	 *
+	 * El nombre se autocompleta con TODOS los nombres que la familia ya
+	 * conoce (#285: despensa, listas y recetas) y, al casar uno por nombre
+	 * canónico, la fila hereda su unidad (sin pisar la elegida a mano, regla
+	 * de #173) y su categoría — que aquí no tiene select, pero viaja con el
+	 * snapshot: renombrar la fila no arrastra la del ingrediente anterior
+	 * (fuera del nombre de la receta, la categoría es la de la sugerencia o
+	 * ninguna; `hiddenCategory` de `prefillMealIngredient`). Para la unidad,
+	 * misma regla que el modal del calendario; la categoría difiere porque
+	 * allí hay select y lo que muestra lo decide la persona.
 	 */
 	type Props = {
 		menuForm: PageData['menuForm'];
-		/** Los productos de la despensa: id, nombre y unidad — autocompletado y chip. */
+		/** Los productos de la despensa: id, nombre y unidad — el chip de unidad. */
 		pantryItems: PageData['pantryItems'];
+		/** Los nombres conocidos de la familia (#285): el `datalist` y el pre-relleno. */
+		nameSuggestions: PageData['nameSuggestions'];
 		onSuccess: (message: string) => void;
 	};
 
 	/** Una receta del listado, tal y como la trae el load (la que se asigna). */
 	type RecipeRow = PageData['recipes'][number];
 
-	let { menuForm, pantryItems, onSuccess }: Props = $props();
+	let { menuForm, pantryItems, nameSuggestions, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
 
 	/** Una fila de ingrediente vacía: como el item del alta rápida, cantidad 1 y «ud». */
 	const EMPTY_INGREDIENT = { name: '', quantity: 1, unit: 'unit' } as const;
+
+	/** Las sugerencias indexadas por canónico: cada tecla es una búsqueda directa. */
+	const suggestionIndex = $derived(indexNameSuggestions(nameSuggestions));
+
+	/**
+	 * El pre-relleno de cada fila (#285), en paralelo a `$formData.ingredients`
+	 * (mismo índice): su base es el ingrediente de la receta y si su unidad y
+	 * su categoría las puso la sugerencia. No se pinta, así que no necesita
+	 * ser reactivo; se mantiene alineado en abrir, añadir y quitar filas.
+	 */
+	let prefill: MealIngredientPrefillState[] = [];
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
 
@@ -137,6 +166,7 @@
 				categoryId: ingredient.categoryId ?? ''
 			}))
 		} as MealPlanFormData);
+		prefill = $formData.ingredients.map((ingredient) => mealIngredientPrefillState(ingredient));
 		modal?.showModal();
 	}
 
@@ -161,16 +191,57 @@
 			row.unit = conversion.unit;
 			return data;
 		});
+		markUnitManual(index);
+	}
+
+	/** El estado de pre-relleno de la fila, creándolo si faltara. */
+	function prefillOf(index: number) {
+		return (prefill[index] ??= mealIngredientPrefillState(EMPTY_INGREDIENT));
+	}
+
+	/**
+	 * El nombre tecleado, sincronizado con su fila (#285): la regla de
+	 * `prefillMealIngredient` (`#lib/name-suggestions.ts`), como en el modal
+	 * del calendario salvo la categoría, que aquí no se ve (`hiddenCategory`:
+	 * sigue al nombre). Por `update()`: una mutación anidada directa del store
+	 * de superforms no repinta el select de la unidad.
+	 */
+	function syncIngredientName(index: number, name: string) {
+		formData.update((data) => {
+			const row = data.ingredients[index];
+			if (!row) {
+				return data;
+			}
+			const result = prefillMealIngredient({ ...row, name }, prefillOf(index), suggestionIndex, {
+				hiddenCategory: true
+			});
+			row.unit = result.unit;
+			row.categoryId = result.categoryId;
+			prefill[index] = result.state;
+			return data;
+		});
+	}
+
+	/**
+	 * La unidad elegida a mano (el select o la conversión del chip): desde
+	 * ahí, teclear el nombre ya no la pisa (regla de #173).
+	 */
+	function markUnitManual(index: number) {
+		const state = prefillOf(index);
+		state.unitManual = true;
+		state.unitSuggested = false;
 	}
 
 	/** Añade una fila de ingrediente al final, en blanco. */
 	function addIngredient() {
 		$formData.ingredients = [...$formData.ingredients, { ...EMPTY_INGREDIENT }];
+		prefill = [...prefill, mealIngredientPrefillState(EMPTY_INGREDIENT)];
 	}
 
 	/** Quita la fila del índice: puede quedarse en cero, el schema lo permite. */
 	function removeIngredient(index: number) {
 		$formData.ingredients = $formData.ingredients.filter((_, i) => i !== index);
+		prefill = prefill.filter((_, i) => i !== index);
 	}
 </script>
 
@@ -246,7 +317,7 @@
 		</div>
 
 		<!-- Filas dinámicas de ingredientes: prefijadas desde la receta y
-		     editables — nombre (autocompletado de despensa), cantidad numérica
+		     editables — nombre (autocompletado, #285), cantidad numérica
 		     y unidad del enum, los mismos contratos que un item. Al guardar,
 		     cada ingrediente crea su producto de despensa a cantidad 0 si
 		     faltaba (`ensurePantryProducts`, intacto de fase 1). -->
@@ -269,12 +340,13 @@
 
 					<input
 						bind:value={ingredient.name}
+						oninput={(event) => syncIngredientName(index, event.currentTarget.value)}
 						aria-invalid={errorMessage($errors.ingredients?.[index]?.name) ? 'true' : undefined}
 						id={`assign-ingredient-name-${index}`}
 						name={`ingredients[${index}].name`}
 						type="text"
 						class="input w-full"
-						list="assign-pantry-products"
+						list="assign-name-suggestions"
 						autocomplete="off"
 						maxlength="100"
 					/>
@@ -317,6 +389,7 @@
 							</label>
 							<select
 								bind:value={ingredient.unit}
+								onchange={() => markUnitManual(index)}
 								aria-invalid={errorMessage($errors.ingredients?.[index]?.unit) ? 'true' : undefined}
 								id={`assign-ingredient-unit-${index}`}
 								name={`ingredients[${index}].unit`}
@@ -372,16 +445,16 @@
 		</button>
 	</form>
 
-	<!-- Sugerencias de despensa: los productos que el load trajo de la
-	     familia, con su unidad junto al nombre. El `datalist` es el
-	     autocompletado NATIVO del navegador — filtra mientras se escribe y no
-	     pisa lo tecleado; un nombre nuevo simplemente no sugiere nada, y su
-	     producto lo crea la despensa al guardar (`createMealPlan`, cantidad
-	     0). Id propio: el modal de recetas de esta misma página ya pinta su
-	     `datalist`. -->
-	<datalist id="assign-pantry-products">
-		{#each pantryItems as product (product.id)}
-			<option value={product.name}>{UNIT_LABEL[product.unit]}</option>
+	<!-- Sugerencias de nombre (ampliadas en #285): los nombres que la familia
+	     ya conoce — despensa, listas y recetas, uno por canónico —, con su
+	     unidad junto al nombre. El `datalist` es el autocompletado NATIVO del
+	     navegador — filtra mientras se escribe y no pisa lo tecleado; un
+	     nombre nuevo simplemente no sugiere nada, y su producto lo crea la
+	     despensa al guardar (`createMealPlan`, cantidad 0). Id propio: el
+	     modal de recetas de esta misma página ya pinta su `datalist`. -->
+	<datalist id="assign-name-suggestions">
+		{#each nameSuggestions as suggestion (suggestion.name)}
+			<option value={suggestion.name}>{UNIT_LABEL[suggestion.unit]}</option>
 		{/each}
 	</datalist>
 </Modal>

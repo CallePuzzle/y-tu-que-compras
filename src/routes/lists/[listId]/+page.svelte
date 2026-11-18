@@ -180,7 +180,7 @@
 		bind:this={quickAdd}
 		form={data.form}
 		categories={data.categories}
-		suggestions={data.categorySuggestions}
+		suggestions={data.nameSuggestions}
 	/>
 
 	{#if data.items.length === 0}
@@ -265,6 +265,7 @@
 	bind:this={editModal}
 	form={data.editForm}
 	categories={data.categories}
+	suggestions={data.nameSuggestions}
 	onSuccess={(message) => (successMessage = message)}
 />
 

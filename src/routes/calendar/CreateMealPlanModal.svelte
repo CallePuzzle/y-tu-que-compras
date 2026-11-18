@@ -7,6 +7,12 @@
 	import UnitConflictChip from '#lib/components/UnitConflictChip.svelte';
 	import { errorMessage } from '#lib/forms.js';
 	import { mealTypeLabels } from '#lib/meal-types.js';
+	import {
+		indexNameSuggestions,
+		mealIngredientPrefillState,
+		prefillMealIngredient,
+		type MealIngredientPrefillState
+	} from '#lib/name-suggestions.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { UNITS } from '#lib/schemas/item.js';
 	import { MEAL_TYPES, type MealPlanFormData } from '#lib/schemas/mealplan.js';
@@ -24,8 +30,12 @@
 	 * existente (`#lib/schemas/mealplan.ts`, #225) vía `mealPlanFormSchema`
 	 * de la ruta — el mismo que validan las acciones de crear y editar, como
 	 * en las listas. Los ingredientes son FILAS DINÁMICAS (añadir/quitar) y
-	 * el nombre se autocompleta con los productos de la despensa que trae el
-	 * load (`datalist` nativo: en móvil, sugerencias sin JavaScript propio).
+	 * el nombre se autocompleta con TODOS los nombres que la familia ya
+	 * conoce (#285: despensa, listas y recetas; `datalist` nativo: en móvil,
+	 * sugerencias sin JavaScript propio). Al teclear uno — por nombre
+	 * canónico —, la fila hereda su unidad y su categoría sin pisar lo
+	 * elegido a mano (regla de #173); con la unidad del producto de despensa,
+	 * el guardado (`ensurePantryProducts`) lo enlaza en vez de crear otro.
 	 * El éxito cierra el modal y pasa el aviso a la página; el grid se
 	 * refresca con el load pesimista.
 	 *
@@ -68,8 +78,10 @@
 		form: PageData['form'];
 		/** Las categorías de la familia (el select opcional de cada ingrediente). */
 		categories: PageData['categories'];
-		/** Los productos de la despensa: id, nombre y unidad — autocompletado y chip. */
+		/** Los productos de la despensa: id, nombre y unidad — el chip de unidad. */
 		pantryItems: PageData['pantryItems'];
+		/** Los nombres conocidos de la familia (#285): el `datalist` y el pre-relleno. */
+		nameSuggestions: PageData['nameSuggestions'];
 		/** Las recetas de la familia (#252): el catálogo del buscador en creación. */
 		recipes: PageData['recipes'];
 		onSuccess: (message: string) => void;
@@ -81,13 +93,25 @@
 	/** Una receta del listado de la familia (#252): la que se elige como origen. */
 	type RecipeRow = PageData['recipes'][number];
 
-	let { form, categories, pantryItems, recipes, onSuccess }: Props = $props();
+	let { form, categories, pantryItems, nameSuggestions, recipes, onSuccess }: Props = $props();
 
 	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
 
 	/** Una fila de ingrediente vacía: como el item del alta rápida, cantidad 1 y «ud». */
 	const EMPTY_INGREDIENT = { name: '', quantity: 1, unit: 'unit', categoryId: '' } as const;
+
+	/** Las sugerencias indexadas por canónico: cada tecla es una búsqueda directa. */
+	const suggestionIndex = $derived(indexNameSuggestions(nameSuggestions));
+
+	/**
+	 * El pre-relleno de cada fila (#285), en paralelo a `$formData.ingredients`
+	 * (mismo índice): su base al abrirse (o al precargar una receta) y si su
+	 * unidad y su categoría las puso la sugerencia o la persona. No se pinta,
+	 * así que no necesita ser reactivo; se mantiene alineado en abrir, elegir
+	 * o soltar receta, añadir y quitar filas.
+	 */
+	let prefill: MealIngredientPrefillState[] = [];
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
 
@@ -187,6 +211,7 @@
 			mealType: 'lunch',
 			ingredients: [{ ...EMPTY_INGREDIENT }]
 		} as MealPlanFormData);
+		prefill = [mealIngredientPrefillState(EMPTY_INGREDIENT)];
 		modal?.showModal();
 	}
 
@@ -217,6 +242,7 @@
 				categoryId: ingredient.categoryId ?? ''
 			}))
 		} as MealPlanFormData);
+		prefill = $formData.ingredients.map((ingredient) => mealIngredientPrefillState(ingredient));
 		modal?.showModal();
 	}
 
@@ -251,6 +277,7 @@
 					}))
 				}) as typeof data
 		);
+		prefill = $formData.ingredients.map((ingredient) => mealIngredientPrefillState(ingredient));
 	}
 
 	/**
@@ -273,6 +300,7 @@
 					ingredients: [{ ...EMPTY_INGREDIENT }]
 				}) as typeof data
 		);
+		prefill = [mealIngredientPrefillState(EMPTY_INGREDIENT)];
 	}
 
 	/**
@@ -296,16 +324,62 @@
 			row.unit = conversion.unit;
 			return data;
 		});
+		markManual(index, 'unit');
+	}
+
+	/** El estado de pre-relleno de la fila, creándolo si faltara. */
+	function prefillOf(index: number) {
+		return (prefill[index] ??= mealIngredientPrefillState(EMPTY_INGREDIENT));
+	}
+
+	/**
+	 * El nombre tecleado, sincronizado con su fila (#285): casa por nombre
+	 * CANÓNICO con las sugerencias de la familia y la fila hereda su unidad
+	 * y su categoría salvo las elegidas a mano; dejar de casar retira lo que
+	 * puso la sugerencia. La regla vive en `prefillMealIngredient`
+	 * (`#lib/name-suggestions.ts`), la misma que las recetas. Por `update()`,
+	 * como todo lo que toca el store de superforms: una mutación anidada
+	 * directa no repinta los selects.
+	 */
+	function syncIngredientName(index: number, name: string) {
+		formData.update((data) => {
+			const row = data.ingredients[index];
+			if (!row) {
+				return data;
+			}
+			const result = prefillMealIngredient({ ...row, name }, prefillOf(index), suggestionIndex);
+			row.unit = result.unit;
+			row.categoryId = result.categoryId;
+			prefill[index] = result.state;
+			return data;
+		});
+	}
+
+	/**
+	 * La unidad o la categoría elegidas a mano (su select, o la conversión
+	 * del chip para la unidad): desde ahí, teclear el nombre ya no las pisa.
+	 */
+	function markManual(index: number, field: 'unit' | 'category') {
+		const state = prefillOf(index);
+		if (field === 'unit') {
+			state.unitManual = true;
+			state.unitSuggested = false;
+		} else {
+			state.categoryManual = true;
+			state.categorySuggested = false;
+		}
 	}
 
 	/** Añade una fila de ingrediente al final, en blanco. */
 	function addIngredient() {
 		$formData.ingredients = [...$formData.ingredients, { ...EMPTY_INGREDIENT }];
+		prefill = [...prefill, mealIngredientPrefillState(EMPTY_INGREDIENT)];
 	}
 
 	/** Quita la fila del índice: puede quedarse en cero, el schema lo permite. */
 	function removeIngredient(index: number) {
 		$formData.ingredients = $formData.ingredients.filter((_, i) => i !== index);
+		prefill = prefill.filter((_, i) => i !== index);
 	}
 </script>
 
@@ -480,12 +554,13 @@
 
 						<input
 							bind:value={ingredient.name}
+							oninput={(event) => syncIngredientName(index, event.currentTarget.value)}
 							aria-invalid={errorMessage($errors.ingredients?.[index]?.name) ? 'true' : undefined}
 							id={`meal-ingredient-name-${index}`}
 							name={`ingredients[${index}].name`}
 							type="text"
 							class="input w-full"
-							list="pantry-products"
+							list="meal-name-suggestions"
 							autocomplete="off"
 							maxlength="100"
 						/>
@@ -528,6 +603,7 @@
 								</label>
 								<select
 									bind:value={ingredient.unit}
+									onchange={() => markManual(index, 'unit')}
 									aria-invalid={errorMessage($errors.ingredients?.[index]?.unit)
 										? 'true'
 										: undefined}
@@ -554,6 +630,7 @@
 							</label>
 							<select
 								bind:value={ingredient.categoryId}
+								onchange={() => markManual(index, 'category')}
 								id={`meal-ingredient-category-${index}`}
 								name={`ingredients[${index}].categoryId`}
 								class="select w-full"
@@ -602,15 +679,16 @@
 		</form>
 	{/if}
 
-	<!-- Sugerencias de despensa (#222): los productos que el load trajo de la
-	     familia, con su unidad junto al nombre. El `datalist` es el
-	     autocompletado NATIVO del navegador — filtra mientras se escribe y no
-	     pisa lo tecleado; un nombre nuevo simplemente no sugiere nada, y su
-	     producto lo crea la despensa al guardar (`createMealPlan`, cantidad
-	     0). -->
-	<datalist id="pantry-products">
-		{#each pantryItems as product (product.id)}
-			<option value={product.name}>{UNIT_LABEL[product.unit]}</option>
+	<!-- Sugerencias de nombre (#222, ampliadas en #285): los nombres que la
+	     familia ya conoce — despensa, listas y recetas, uno por canónico —,
+	     con su unidad junto al nombre (la que hereda la fila al elegirlo). El
+	     `datalist` es el autocompletado NATIVO del navegador — filtra mientras
+	     se escribe y no pisa lo tecleado; un nombre nuevo simplemente no
+	     sugiere nada, y su producto lo crea la despensa al guardar
+	     (`createMealPlan`, cantidad 0). -->
+	<datalist id="meal-name-suggestions">
+		{#each nameSuggestions as suggestion (suggestion.name)}
+			<option value={suggestion.name}>{UNIT_LABEL[suggestion.unit]}</option>
 		{/each}
 	</datalist>
 </Modal>

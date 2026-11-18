@@ -18,6 +18,7 @@ import logger from '#lib/server/logger.js';
 import { listPantryItems } from '#lib/server/pantry.js';
 import { listPurchasesByDay } from '#lib/server/purchases.js';
 import { listRecipes } from '#lib/server/recipes.js';
+import { listProductNameSuggestions } from '#lib/server/suggestions.js';
 import { listLists } from '#lib/server/lists.js';
 import { unitLabels } from '#lib/units.js';
 import {
@@ -105,10 +106,9 @@ export const load: PageServerLoad = async (event) => {
 	const expensesMonthTotal =
 		Object.values(purchasesByDay).reduce((sum, day) => sum + Math.round(day.total * 100), 0) / 100;
 
-	// Los productos de la despensa: el autocompletado del nombre del
-	// ingrediente (`datalist`) se alimenta de ellos y el chip de unidad
-	// conflictiva del modal los busca (#243) — id (trazabilidad de la
-	// sugerencia), nombre y unidad (la que el chip compara). El mismo nombre
+	// Los productos de la despensa: el chip de unidad conflictiva del modal
+	// los busca (#243) — id, nombre y unidad (la que el chip compara). El
+	// autocompletado del nombre va aparte (`nameSuggestions`, #285). El mismo nombre
 	// puede salir DOS veces con unidades distintas (un producto por fila de
 	// despensa): es justo lo que el chip necesita para avisar.
 	const pantryRows = await listPantryItems(family.id);
@@ -144,6 +144,11 @@ export const load: PageServerLoad = async (event) => {
 		// ofrece exactamente estas, como en el alta de items.
 		categories: await listCategories(family.id),
 		pantryItems,
+		// Los nombres que la familia ya conoce (#285): despensa, items de sus
+		// listas e ingredientes de recetas, uno por canónico. Son el `datalist`
+		// de ingredientes del modal de menú y lo que hereda la fila al casar
+		// uno (unidad y categoría).
+		nameSuggestions: await listProductNameSuggestions(family.id),
 		pantryQuantities,
 		// Las recetas de la familia (#252): el buscador del modal de crear
 		// menú filtra este listado EN CLIENTE y, al elegir una, precarga

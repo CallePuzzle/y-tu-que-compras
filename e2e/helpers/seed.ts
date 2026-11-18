@@ -415,6 +415,8 @@ export async function createRecipe(options: {
 		unit?: Unit;
 		/** El producto de despensa al que enlaza (FK directa, sin resolución). */
 		pantryItemId?: string;
+		/** La categoría del ingrediente (FK directa). */
+		categoryId?: string;
 	}>;
 }): Promise<Recipe> {
 	const now = new Date();
@@ -437,7 +439,8 @@ export async function createRecipe(options: {
 					name: ingredient.name ?? `Ingrediente E2E ${randomUUID().slice(0, 8)}`,
 					quantity: ingredient.quantity ?? 1,
 					unit: ingredient.unit ?? 'unit',
-					pantryItemId: ingredient.pantryItemId ?? null
+					pantryItemId: ingredient.pantryItemId ?? null,
+					categoryId: ingredient.categoryId ?? null
 				}))
 			},
 			createdAt: now,

@@ -8,6 +8,7 @@ import {
 	createItem,
 	createList,
 	createPantryItem,
+	createRecipe,
 	createStore,
 	createUser,
 	resetDb
@@ -233,6 +234,154 @@ test('la sugerencia nunca impide elegir otra categoria (#173): lo manual manda',
 	await expect(row.getByText('Limpieza')).toBeVisible();
 	expect(await prisma.item.findFirstOrThrow({ where: { listId: list.id } })).toMatchObject({
 		categoryId: limpieza.id
+	});
+
+	// «Sin categoría» elegida a mano también es una elección: la siguiente
+	// tecla en un nombre conocido no vuelve a aplicar la sugerencia.
+	await page.locator('#add-name').fill('Leche entera');
+	await expect(page.locator('#add-category')).toHaveValue(dairy.id);
+	await page.locator('#add-category').selectOption({ label: 'Sin categoría' });
+	await page.locator('#add-name').fill('Leche entera ');
+	await expect(page.locator('#add-category')).toHaveValue('');
+});
+
+test('autocompletado de nombres en el alta rapida (#283): sugiere y pre-rellena unidad y categoria', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const verdura = await createCategory({ familyId: family.id, name: 'Verdura' });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	// Tres fuentes: despensa, item de otra lista e ingrediente de receta.
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Patatas',
+		normalizedName: 'patatas',
+		unit: 'kilogram',
+		categoryId: verdura.id
+	});
+	const other = await createList({ familyId: family.id, name: 'Desayunos' });
+	await createItem({ listId: other.id, name: 'Leche', unit: 'liter', categoryId: dairy.id });
+	await createRecipe({
+		familyId: family.id,
+		name: 'Tortilla',
+		ingredients: [{ name: 'Huevos', unit: 'dozen' }]
+	});
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${list.id}`);
+	await waitForHydration(page);
+
+	// El datalist ofrece lo que la familia ya conoce, uno por nombre.
+	await expect(page.locator('#add-name')).toHaveAttribute('list', 'add-name-suggestions');
+	await expect(page.locator('#add-name-suggestions option')).toHaveCount(3);
+	await expect(page.locator('#add-name-suggestions option[value="Patatas"]')).toHaveCount(1);
+
+	// Elegir (o teclear, con otras mayúsculas) un nombre conocido rellena
+	// unidad y categoría.
+	await page.locator('#add-name').fill('patatas');
+	await expect(page.locator('#add-unit')).toHaveValue('kilogram');
+	await expect(page.locator('#add-category')).toHaveValue(verdura.id);
+
+	// Otro conocido sustituye la sugerencia; uno de receta (sin categoría)
+	// trae su unidad y retira la categoría sugerida.
+	await page.locator('#add-name').fill('Leche');
+	await expect(page.locator('#add-unit')).toHaveValue('liter');
+	await expect(page.locator('#add-category')).toHaveValue(dairy.id);
+	await page.locator('#add-name').fill('Huevos');
+	await expect(page.locator('#add-unit')).toHaveValue('dozen');
+	await expect(page.locator('#add-category')).toHaveValue('');
+
+	// Un nombre nuevo: todo vuelve a los valores por defecto del alta.
+	await page.locator('#add-name').fill('Yogur griego');
+	await expect(page.locator('#add-unit')).toHaveValue('unit');
+	await expect(page.locator('#add-category')).toHaveValue('');
+
+	// La unidad elegida a mano manda: un nombre conocido ya no la cambia
+	// (la categoría, libre, sí se rellena).
+	await page.locator('#add-unit').selectOption('package');
+	await page.locator('#add-name').fill('Patatas');
+	await expect(page.locator('#add-unit')).toHaveValue('package');
+	await expect(page.locator('#add-category')).toHaveValue(verdura.id);
+	await page.getByRole('button', { name: 'Añadir' }).first().click();
+	await expect(page.locator('li', { hasText: 'Patatas' })).toBeVisible();
+	expect(await prisma.item.findFirstOrThrow({ where: { listId: list.id } })).toMatchObject({
+		name: 'Patatas',
+		unit: 'package',
+		categoryId: verdura.id
+	});
+
+	// Tras el alta, la marca de «a mano» no sobrevive: el siguiente nombre
+	// conocido vuelve a pre-rellenar la unidad.
+	await page.locator('#add-name').fill('Leche');
+	await expect(page.locator('#add-unit')).toHaveValue('liter');
+
+	// Y un nombre nuevo se da de alta suelto, como siempre.
+	await page.locator('#add-name').fill('Kombucha');
+	await page.getByRole('button', { name: 'Añadir' }).first().click();
+	await expect(page.locator('li', { hasText: 'Kombucha' })).toBeVisible();
+	expect(
+		await prisma.item.findFirstOrThrow({ where: { listId: list.id, name: 'Kombucha' } })
+	).toMatchObject({ unit: 'unit', categoryId: null });
+});
+
+test('autocompletado al editar (#283): renombrar a un conocido pre-rellena sin pisar lo manual', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const list = await createList({ familyId: family.id, name: 'Frutería' });
+	const verdura = await createCategory({ familyId: family.id, name: 'Verdura' });
+	const dairy = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Patatas',
+		normalizedName: 'patatas',
+		unit: 'kilogram',
+		categoryId: verdura.id
+	});
+	const item = await createItem({
+		listId: list.id,
+		name: 'Patata',
+		unit: 'can',
+		categoryId: dairy.id
+	});
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${list.id}`);
+	await waitForHydration(page);
+
+	await page
+		.locator('li', { hasText: 'Patata' })
+		.getByRole('button', { name: 'Editar item' })
+		.click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.locator('#edit-name')).toHaveAttribute('list', 'edit-name-suggestions');
+	await expect(page.locator('#edit-name-suggestions option[value="Patatas"]')).toHaveCount(1);
+
+	// Renombrar al producto conocido trae su unidad y su categoría…
+	await dialog.locator('#edit-name').fill('Patatas');
+	await expect(dialog.locator('#edit-unit')).toHaveValue('kilogram');
+	await expect(dialog.locator('#edit-category')).toHaveValue(verdura.id);
+
+	// …y volver al nombre propio del item devuelve sus datos.
+	await dialog.locator('#edit-name').fill('Patata');
+	await expect(dialog.locator('#edit-unit')).toHaveValue('can');
+	await expect(dialog.locator('#edit-category')).toHaveValue(dairy.id);
+
+	// Lo elegido a mano en el modal nunca se pisa.
+	await dialog.locator('#edit-unit').selectOption('gram');
+	await dialog.locator('#edit-name').fill('patatas');
+	await expect(dialog.locator('#edit-unit')).toHaveValue('gram');
+	await expect(dialog.locator('#edit-category')).toHaveValue(verdura.id);
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	await expect(page.getByRole('status')).toContainText('Item actualizado.');
+	expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
+		name: 'patatas',
+		unit: 'gram',
+		categoryId: verdura.id
 	});
 });
 
