@@ -11,7 +11,8 @@ describe('apiError (envelope de errores de /api/v1, #274)', () => {
 		const response = apiError(401, 'unauthorized', 'Missing or invalid API key');
 
 		expect(response.status).toBe(401);
-		expect(response.headers.get('content-type')).toContain('application/json');
+		expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+		expect(response.headers.get('cache-control')).toBe('no-store');
 		expect(await response.json()).toEqual({
 			error: { code: 'unauthorized', message: 'Missing or invalid API key' }
 		});
