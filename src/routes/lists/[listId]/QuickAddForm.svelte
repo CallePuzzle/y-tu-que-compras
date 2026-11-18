@@ -7,7 +7,7 @@
 	import { unitLabels } from '#lib/units.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
-	import { indexNameSuggestions, prefillField } from './name-suggestions.js';
+	import { indexNameSuggestions, prefillField } from '#lib/name-suggestions.js';
 	import { itemFormSchema } from './schemas.js';
 	import type { PageData } from './$types';
 

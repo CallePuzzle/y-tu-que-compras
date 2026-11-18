@@ -174,6 +174,7 @@
 	bind:this={createModal}
 	form={data.form}
 	pantryItems={data.pantryItems}
+	nameSuggestions={data.nameSuggestions}
 	onSuccess={(message) => (successMessage = message)}
 />
 

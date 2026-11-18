@@ -3,6 +3,8 @@ import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
 import {
 	createFamily,
+	createItem,
+	createList,
 	createMealPlan,
 	createPantryItem,
 	createRecipe,
@@ -114,6 +116,76 @@ test('crear con autocompletado: hereda la unidad, enlaza el producto y no crea n
 	expect(Number(lecheTrasGuardar.quantity)).toBe(2);
 });
 
+test('sugiere nombres de listas y recetas, casa por canónico y no pisa la unidad elegida a mano', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// Tres fuentes (#284): la despensa (enlaza), una lista y otra receta (solo
+	// prestan nombre y unidad).
+	const tomate = await createPantryItem({
+		familyId: family.id,
+		name: 'Tomate frito',
+		normalizedName: 'tomate frito',
+		quantity: 1,
+		unit: 'can'
+	});
+	const lista = await createList({ familyId: family.id });
+	await createItem({ listId: lista.id, name: 'Patatas', unit: 'kilogram' });
+	await createRecipe({
+		familyId: family.id,
+		name: 'Gazpacho',
+		ingredients: [{ name: 'Pepino', quantity: 1, unit: 'unit' }]
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+	await page.getByRole('button', { name: 'Nueva receta' }).first().click();
+	const creacion = modalCrear(page);
+
+	// El datalist ofrece TODO el catálogo de la familia, no solo la despensa.
+	await expect(creacion.locator('#recipe-ingredient-name-0')).toHaveAttribute(
+		'list',
+		'recipe-name-suggestions'
+	);
+	for (const nombre of ['Patatas', 'Pepino', 'Tomate frito']) {
+		await expect(page.locator(`#recipe-name-suggestions option[value="${nombre}"]`)).toHaveCount(1);
+	}
+
+	// «patatas» (otra capitalización) casa con el item de la lista: hereda kg.
+	await creacion.locator('#recipe-name').fill('Guiso');
+	await creacion.locator('#recipe-ingredient-name-0').fill('patatas');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('kilogram');
+	// Un nombre que deja de casar retira la unidad sugerida.
+	await creacion.locator('#recipe-ingredient-name-0').fill('patatas nuevas');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('unit');
+	await creacion.locator('#recipe-ingredient-name-0').fill('patatas');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('kilogram');
+
+	// La unidad elegida a mano manda: casar después no la pisa.
+	await creacion.getByRole('button', { name: 'Añadir ingrediente' }).click();
+	await creacion.locator('#recipe-ingredient-unit-1').selectOption({ label: 'g' });
+	await creacion.locator('#recipe-ingredient-name-1').fill('TOMATE FRITO');
+	await expect(creacion.locator('#recipe-ingredient-unit-1')).toHaveValue('gram');
+
+	await creacion.getByRole('button', { name: 'Nueva receta' }).click();
+	await expect(creacion).toHaveCount(0);
+
+	// En la BD: las patatas sueltas (no son de despensa) y el tomate ENLAZADO
+	// a su producto aunque vaya en otra unidad (eso lo avisa el chip, #240).
+	const receta = await prisma.recipe.findFirstOrThrow({
+		where: { organizationId: family.id, name: 'Guiso' }
+	});
+	const ingredientes = await prisma.recipeIngredient.findMany({
+		where: { recipeId: receta.id },
+		orderBy: { position: 'asc' }
+	});
+	expect(ingredientes.map((row) => [row.name, row.unit, row.pantryItemId])).toEqual([
+		['patatas', 'kilogram', null],
+		['TOMATE FRITO', 'gram', tomate.id]
+	]);
+});
+
 test('aviso de unidad conflictiva: propone la conversión exacta y la aplica al pulsar', async ({
 	page
 }) => {
@@ -135,10 +207,11 @@ test('aviso de unidad conflictiva: propone la conversión exacta y la aplica al 
 	await page.getByRole('button', { name: 'Nueva receta' }).first().click();
 	const creacion = modalCrear(page);
 
-	// «arroz» en MINÚSCULAS: no casan los nombres visibles (no hereda la
-	// unidad del autocompletado) y la fila va a mano — 300 g.
+	// «arroz» en MINÚSCULAS casa por canónico (#284): hereda el kilo del
+	// producto; luego la fila va a mano — 300 g.
 	await creacion.locator('#recipe-name').fill('Paella');
 	await creacion.locator('#recipe-ingredient-name-0').fill('arroz');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('kilogram');
 	await creacion.locator('#recipe-ingredient-quantity-0').fill('300');
 	await creacion.locator('#recipe-ingredient-unit-0').selectOption({ label: 'g' });
 
