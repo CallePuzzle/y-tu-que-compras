@@ -121,7 +121,7 @@ describe('listProductNameSuggestions (#282)', () => {
 		const dairy = await categoryRow(familyId, 'Lácteos');
 		const veggies = await categoryRow(familyId, 'Verduras');
 
-		const milkId = await pantryRow({
+		await pantryRow({
 			familyId,
 			name: 'Leche Entera',
 			normalizedName: 'leche entera',
@@ -144,10 +144,10 @@ describe('listProductNameSuggestions (#282)', () => {
 		]);
 
 		expect(await listProductNameSuggestions(familyId)).toEqual([
-			{ name: 'Huevos', unit: 'dozen', categoryId: null, pantryItemId: null },
-			{ name: 'Leche Entera', unit: 'liter', categoryId: dairy, pantryItemId: milkId },
+			{ name: 'Huevos', unit: 'dozen', categoryId: null },
+			{ name: 'Leche Entera', unit: 'liter', categoryId: dairy },
 			// «Patatas» (item) manda sobre «patatas» (receta): UNA sugerencia.
-			{ name: 'Patatas', unit: 'kilogram', categoryId: veggies, pantryItemId: null }
+			{ name: 'Patatas', unit: 'kilogram', categoryId: veggies }
 		]);
 	});
 
@@ -163,7 +163,7 @@ describe('listProductNameSuggestions (#282)', () => {
 		await createItemOrFail(ownFamily, ownList.id, { name: 'Yogur', quantity: 1, unit: 'unit' });
 
 		expect(await listProductNameSuggestions(ownFamily)).toEqual([
-			{ name: 'Yogur', unit: 'unit', categoryId: null, pantryItemId: null }
+			{ name: 'Yogur', unit: 'unit', categoryId: null }
 		]);
 		expect((await listProductNameSuggestions(otherFamily)).map(({ name }) => name)).toEqual([
 			'Pan',
@@ -181,7 +181,7 @@ describe('listProductNameSuggestions (#282)', () => {
 		// «Leche entera» está en la despensa (Lácteos) y en un item (Limpieza,
 		// creado después): manda la despensa, que es la fuente asentada — la
 		// recencia solo desempata DENTRO de una fuente.
-		const milkId = await pantryRow({
+		await pantryRow({
 			familyId,
 			name: 'Leche entera',
 			normalizedName: 'leche entera',
@@ -220,8 +220,8 @@ describe('listProductNameSuggestions (#282)', () => {
 		});
 
 		expect(await listProductNameSuggestions(familyId)).toEqual([
-			{ name: 'Detergente', unit: 'liter', categoryId: cleaning, pantryItemId: null },
-			{ name: 'Leche entera', unit: 'liter', categoryId: dairy, pantryItemId: milkId }
+			{ name: 'Detergente', unit: 'liter', categoryId: cleaning },
+			{ name: 'Leche entera', unit: 'liter', categoryId: dairy }
 		]);
 	});
 

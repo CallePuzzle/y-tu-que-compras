@@ -119,9 +119,7 @@ describe('resolveProductNameSuggestions (#282)', () => {
 			nameRow({ name: '  PATATAS ', source: SOURCE_RECIPE, updatedAt: new Date('2026-03-01') })
 		]);
 		// Gana el item más reciente (la receta es la fuente de menor prioridad).
-		expect(suggestions).toEqual([
-			{ name: 'patatas', unit: 'kilogram', categoryId: null, pantryItemId: null }
-		]);
+		expect(suggestions).toEqual([{ name: 'patatas', unit: 'kilogram', categoryId: null }]);
 	});
 
 	it('la despensa manda sobre listas y recetas, aunque sea más antigua', () => {
@@ -130,7 +128,6 @@ describe('resolveProductNameSuggestions (#282)', () => {
 				name: 'Leche Entera',
 				normalizedName: 'leche entera',
 				unit: 'liter',
-				pantryItemId: 'pantry-1',
 				source: SOURCE_PANTRY,
 				updatedAt: new Date('2026-01-01')
 			}),
@@ -142,9 +139,7 @@ describe('resolveProductNameSuggestions (#282)', () => {
 				updatedAt: new Date('2026-07-01')
 			})
 		]);
-		expect(suggestions).toEqual([
-			{ name: 'Leche Entera', unit: 'liter', categoryId: null, pantryItemId: 'pantry-1' }
-		]);
+		expect(suggestions).toEqual([{ name: 'Leche Entera', unit: 'liter', categoryId: null }]);
 	});
 
 	it('los items de listas mandan sobre los ingredientes de recetas', () => {
@@ -162,9 +157,7 @@ describe('resolveProductNameSuggestions (#282)', () => {
 				updatedAt: new Date('2026-01-01')
 			})
 		]);
-		expect(suggestions).toEqual([
-			{ name: 'arroz', unit: 'package', categoryId: null, pantryItemId: null }
-		]);
+		expect(suggestions).toEqual([{ name: 'arroz', unit: 'package', categoryId: null }]);
 	});
 
 	it('a igual fuente gana la más reciente: varias unidades en despensa colapsan en una', () => {
@@ -173,7 +166,6 @@ describe('resolveProductNameSuggestions (#282)', () => {
 				name: 'Tomate',
 				normalizedName: 'tomate',
 				unit: 'unit',
-				pantryItemId: 'pantry-ud',
 				source: SOURCE_PANTRY,
 				updatedAt: new Date('2026-01-01')
 			}),
@@ -181,14 +173,11 @@ describe('resolveProductNameSuggestions (#282)', () => {
 				name: 'Tomate',
 				normalizedName: 'tomate',
 				unit: 'kilogram',
-				pantryItemId: 'pantry-kg',
 				source: SOURCE_PANTRY,
 				updatedAt: new Date('2026-04-01')
 			})
 		]);
-		expect(suggestions).toEqual([
-			{ name: 'Tomate', unit: 'kilogram', categoryId: null, pantryItemId: 'pantry-kg' }
-		]);
+		expect(suggestions).toEqual([{ name: 'Tomate', unit: 'kilogram', categoryId: null }]);
 	});
 
 	it('la categoría sigue la regla de #173: solo cuentan las filas con categoría', () => {
@@ -198,16 +187,13 @@ describe('resolveProductNameSuggestions (#282)', () => {
 				name: 'Lejía',
 				normalizedName: 'lejia',
 				unit: 'liter',
-				pantryItemId: 'pantry-1',
 				source: SOURCE_PANTRY,
 				categoryId: null
 			}),
 			nameRow({ name: 'lejia', unit: 'unit', categoryId: 'cat-limpieza' }),
 			nameRow({ name: 'LEJÍA', source: SOURCE_RECIPE, categoryId: 'cat-receta' })
 		]);
-		expect(suggestions).toEqual([
-			{ name: 'Lejía', unit: 'liter', categoryId: 'cat-limpieza', pantryItemId: 'pantry-1' }
-		]);
+		expect(suggestions).toEqual([{ name: 'Lejía', unit: 'liter', categoryId: 'cat-limpieza' }]);
 	});
 
 	it('nombres que el canónico deja vacíos no sugieren nada', () => {

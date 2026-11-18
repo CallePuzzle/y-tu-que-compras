@@ -89,12 +89,10 @@ export function resolveCategorySuggestions(rows: SuggestionRow[]): Record<string
 /** Tercera fuente, solo para nombres: los ingredientes de las recetas. */
 export const SOURCE_RECIPE = 2;
 
-/** Una fila candidata a sugerir nombre: la de categoría más su unidad y enlace. */
+/** Una fila candidata a sugerir nombre: la de categoría más su unidad. */
 export interface ProductNameRow extends SuggestionRow {
 	/** La unidad con la que la familia escribió ese producto en esa fuente. */
 	unit: Unit;
-	/** Id del producto de despensa; solo lo traen las filas de despensa. */
-	pantryItemId?: string | null;
 }
 
 /** Una sugerencia de nombre, lista para un `<option>` y para pre-rellenar. */
@@ -110,8 +108,6 @@ export interface ProductNameSuggestion {
 	 * de otra fuente. `null` = ninguna fila del canónico tiene categoría.
 	 */
 	categoryId: string | null;
-	/** Producto de despensa a enlazar (recetas/menús); `null` si no ganó la despensa. */
-	pantryItemId: string | null;
 }
 
 /**
@@ -121,8 +117,9 @@ export interface ProductNameSuggestion {
  *
  * 1. Nombres que el canónico deja vacíos no sugieren nada.
  * 2. Fuente: despensa (0) sobre items de listas (1) sobre ingredientes de
- *    recetas (2). La fila ganadora da nombre visible, unidad y `pantryItemId`
- *    (este último solo si ganó la despensa).
+ *    recetas (2). La fila ganadora da nombre visible y unidad. El enlace a
+ *    despensa no viaja aquí: el cliente lo resuelve contra `pantryItems` por
+ *    canónico + unidad final de la fila (`findPantryProduct`).
  * 3. Recencia: a igual fuente, el `updatedAt` más nuevo. Así un mismo
  *    canónico con varias unidades en despensa (el único de PantryItem es
  *    familia + canónico + unidad) colapsa en la fila más reciente.
@@ -152,8 +149,7 @@ export function resolveProductNameSuggestions(rows: ProductNameRow[]): ProductNa
 		.map(([key, row]) => ({
 			name: row.name.trim(),
 			unit: row.unit,
-			categoryId: categories[key] ?? null,
-			pantryItemId: row.source === SOURCE_PANTRY ? (row.pantryItemId ?? null) : null
+			categoryId: categories[key] ?? null
 		}))
 		.sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
@@ -170,14 +166,7 @@ export async function listProductNameSuggestions(
 	const [pantryRows, itemRows, ingredientRows] = await Promise.all([
 		prisma.pantryItem.findMany({
 			where: { organizationId: familyId },
-			select: {
-				id: true,
-				name: true,
-				normalizedName: true,
-				unit: true,
-				categoryId: true,
-				updatedAt: true
-			}
+			select: { name: true, normalizedName: true, unit: true, categoryId: true, updatedAt: true }
 		}),
 		prisma.item.findMany({
 			where: { list: { organizationId: familyId } },
@@ -190,12 +179,11 @@ export async function listProductNameSuggestions(
 	]);
 
 	return resolveProductNameSuggestions([
-		...pantryRows.map(({ id, name, normalizedName, unit, categoryId, updatedAt }) => ({
+		...pantryRows.map(({ name, normalizedName, unit, categoryId, updatedAt }) => ({
 			name,
 			normalizedName,
 			unit,
 			categoryId,
-			pantryItemId: id,
 			source: SOURCE_PANTRY,
 			updatedAt
 		})),

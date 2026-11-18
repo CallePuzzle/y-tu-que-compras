@@ -58,8 +58,8 @@ describe('prefillField', () => {
 
 describe('prefillIngredient', () => {
 	const index = indexNameSuggestions([
-		{ name: 'Leche entera', unit: 'liter' as const, categoryId: null, pantryItemId: 'p1' },
-		{ name: 'Patatas', unit: 'kilogram' as const, categoryId: null, pantryItemId: null }
+		{ name: 'Leche entera', unit: 'liter' as const, categoryId: null },
+		{ name: 'Patatas', unit: 'kilogram' as const, categoryId: null }
 	]);
 	const pantry = [
 		{ id: 'p1', name: 'Leche entera', unit: 'liter' as const },
@@ -162,8 +162,8 @@ describe('resolvePantryLink', () => {
 
 describe('prefillMealIngredient', () => {
 	const index = indexNameSuggestions([
-		{ name: 'Leche entera', unit: 'liter' as const, categoryId: 'dairy', pantryItemId: 'p1' },
-		{ name: 'Patatas', unit: 'kilogram' as const, categoryId: null, pantryItemId: null }
+		{ name: 'Leche entera', unit: 'liter' as const, categoryId: 'dairy' },
+		{ name: 'Patatas', unit: 'kilogram' as const, categoryId: null }
 	]);
 	const fresh = mealIngredientPrefillState({ name: '', unit: 'unit', categoryId: '' });
 
