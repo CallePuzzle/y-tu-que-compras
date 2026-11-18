@@ -6,8 +6,14 @@ import { describe, expect, it } from 'vitest';
 // contrato: qué nombres sugieren, cuál gana cuando un nombre se clasificó de
 // varias maneras y qué hace el canónico con acentos y mayúsculas.
 import { normalizeItemName } from '#lib/normalize-name.js';
-import { resolveCategorySuggestions, SOURCE_ITEM, SOURCE_PANTRY } from './suggestions.js';
-import type { SuggestionRow } from './suggestions.js';
+import {
+	resolveCategorySuggestions,
+	resolveProductNameSuggestions,
+	SOURCE_ITEM,
+	SOURCE_PANTRY,
+	SOURCE_RECIPE
+} from './suggestions.js';
+import type { ProductNameRow, SuggestionRow } from './suggestions.js';
 
 /** Atajo para filas de prueba: los valores que no importan, puestos. */
 function row(overrides: Partial<SuggestionRow>): SuggestionRow {
@@ -90,5 +96,131 @@ describe('resolveCategorySuggestions (#173)', () => {
 			'pan de molde': 'cat-panaderia',
 			lejia: 'cat-limpieza'
 		});
+	});
+});
+
+/** Atajo para filas de nombre: como `row`, más la unidad. */
+function nameRow(overrides: Partial<ProductNameRow>): ProductNameRow {
+	return {
+		name: 'Patatas',
+		unit: 'kilogram',
+		categoryId: null,
+		source: SOURCE_ITEM,
+		updatedAt: new Date('2026-01-01T10:00:00Z'),
+		...overrides
+	};
+}
+
+describe('resolveProductNameSuggestions (#282)', () => {
+	it('colapsa por canónico: «Patatas» y «patatas» son UNA sugerencia', () => {
+		const suggestions = resolveProductNameSuggestions([
+			nameRow({ name: 'Patatas', updatedAt: new Date('2026-01-01') }),
+			nameRow({ name: 'patatas', updatedAt: new Date('2026-02-01') }),
+			nameRow({ name: '  PATATAS ', source: SOURCE_RECIPE, updatedAt: new Date('2026-03-01') })
+		]);
+		// Gana el item más reciente (la receta es la fuente de menor prioridad).
+		expect(suggestions).toEqual([
+			{ name: 'patatas', unit: 'kilogram', categoryId: null, pantryItemId: null }
+		]);
+	});
+
+	it('la despensa manda sobre listas y recetas, aunque sea más antigua', () => {
+		const suggestions = resolveProductNameSuggestions([
+			nameRow({
+				name: 'Leche Entera',
+				normalizedName: 'leche entera',
+				unit: 'liter',
+				pantryItemId: 'pantry-1',
+				source: SOURCE_PANTRY,
+				updatedAt: new Date('2026-01-01')
+			}),
+			nameRow({ name: 'leche entera', unit: 'unit', updatedAt: new Date('2026-06-01') }),
+			nameRow({
+				name: 'LECHE ENTERA',
+				unit: 'milliliter',
+				source: SOURCE_RECIPE,
+				updatedAt: new Date('2026-07-01')
+			})
+		]);
+		expect(suggestions).toEqual([
+			{ name: 'Leche Entera', unit: 'liter', categoryId: null, pantryItemId: 'pantry-1' }
+		]);
+	});
+
+	it('los items de listas mandan sobre los ingredientes de recetas', () => {
+		const suggestions = resolveProductNameSuggestions([
+			nameRow({
+				name: 'Arroz',
+				unit: 'gram',
+				source: SOURCE_RECIPE,
+				updatedAt: new Date('2026-09-01')
+			}),
+			nameRow({
+				name: 'arroz',
+				unit: 'package',
+				source: SOURCE_ITEM,
+				updatedAt: new Date('2026-01-01')
+			})
+		]);
+		expect(suggestions).toEqual([
+			{ name: 'arroz', unit: 'package', categoryId: null, pantryItemId: null }
+		]);
+	});
+
+	it('a igual fuente gana la más reciente: varias unidades en despensa colapsan en una', () => {
+		const suggestions = resolveProductNameSuggestions([
+			nameRow({
+				name: 'Tomate',
+				normalizedName: 'tomate',
+				unit: 'unit',
+				pantryItemId: 'pantry-ud',
+				source: SOURCE_PANTRY,
+				updatedAt: new Date('2026-01-01')
+			}),
+			nameRow({
+				name: 'Tomate',
+				normalizedName: 'tomate',
+				unit: 'kilogram',
+				pantryItemId: 'pantry-kg',
+				source: SOURCE_PANTRY,
+				updatedAt: new Date('2026-04-01')
+			})
+		]);
+		expect(suggestions).toEqual([
+			{ name: 'Tomate', unit: 'kilogram', categoryId: null, pantryItemId: 'pantry-kg' }
+		]);
+	});
+
+	it('la categoría sigue la regla de #173: solo cuentan las filas con categoría', () => {
+		// La despensa gana el nombre pero no tiene categoría: la sugiere el item.
+		const suggestions = resolveProductNameSuggestions([
+			nameRow({
+				name: 'Lejía',
+				normalizedName: 'lejia',
+				unit: 'liter',
+				pantryItemId: 'pantry-1',
+				source: SOURCE_PANTRY,
+				categoryId: null
+			}),
+			nameRow({ name: 'lejia', unit: 'unit', categoryId: 'cat-limpieza' }),
+			nameRow({ name: 'LEJÍA', source: SOURCE_RECIPE, categoryId: 'cat-receta' })
+		]);
+		expect(suggestions).toEqual([
+			{ name: 'Lejía', unit: 'liter', categoryId: 'cat-limpieza', pantryItemId: 'pantry-1' }
+		]);
+	});
+
+	it('nombres que el canónico deja vacíos no sugieren nada', () => {
+		expect(resolveProductNameSuggestions([nameRow({ name: '   ' })])).toEqual([]);
+		expect(resolveProductNameSuggestions([])).toEqual([]);
+	});
+
+	it('nombres distintos conviven, ordenados por nombre visible', () => {
+		const suggestions = resolveProductNameSuggestions([
+			nameRow({ name: 'Pan', unit: 'unit' }),
+			nameRow({ name: 'aceite', unit: 'liter', source: SOURCE_RECIPE }),
+			nameRow({ name: 'Leche', unit: 'liter' })
+		]);
+		expect(suggestions.map(({ name }) => name)).toEqual(['aceite', 'Leche', 'Pan']);
 	});
 });

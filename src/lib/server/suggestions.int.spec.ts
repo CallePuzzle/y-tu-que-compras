@@ -10,10 +10,10 @@ import { describe, expect, it } from 'vitest';
 // recencia) está unitariamente en `suggestions.spec.ts`; aquí se comprueba
 // que la consulta le pasa a la resolución las filas correctas.
 import prisma from './prisma.js';
-import type { ItemData } from '#lib/schemas/item.js';
+import type { ItemData, Unit } from '#lib/schemas/item.js';
 import { createItem } from './items.js';
 import { createList } from './lists.js';
-import { listCategorySuggestions } from './suggestions.js';
+import { listCategorySuggestions, listProductNameSuggestions } from './suggestions.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
 async function familyRow(prefix: string): Promise<string> {
@@ -73,15 +73,41 @@ async function pantryRow(options: {
 	name: string;
 	normalizedName?: string;
 	categoryId?: string | null;
-}): Promise<void> {
-	await prisma.pantryItem.create({
+	unit?: Unit;
+}): Promise<string> {
+	const { id } = await prisma.pantryItem.create({
 		data: {
 			organizationId: options.familyId,
 			name: options.name,
 			normalizedName: options.normalizedName ?? options.name.trim().toLowerCase(),
 			quantity: 1,
-			unit: 'unit',
+			unit: options.unit ?? 'unit',
 			categoryId: options.categoryId ?? null
+		}
+	});
+	return id;
+}
+
+/** Una receta con sus ingredientes directamente en la base (sin enlazar despensa). */
+async function recipeRow(
+	familyId: string,
+	name: string,
+	ingredients: { name: string; unit: Unit; categoryId?: string | null }[]
+): Promise<void> {
+	await prisma.recipe.create({
+		data: {
+			organizationId: familyId,
+			name,
+			normalizedName: name.trim().toLowerCase(),
+			ingredients: {
+				create: ingredients.map((ingredient, position) => ({
+					position,
+					name: ingredient.name,
+					quantity: 1,
+					unit: ingredient.unit,
+					categoryId: ingredient.categoryId ?? null
+				}))
+			}
 		}
 	});
 }
@@ -228,5 +254,70 @@ describe('listCategorySuggestions (#173)', () => {
 		const familyId = await familyRow('Familia Novata');
 		await createList(familyId, LIST);
 		expect(await listCategorySuggestions(familyId)).toEqual({});
+	});
+});
+
+describe('listProductNameSuggestions (#282)', () => {
+	it('agrega despensa, items de todas las listas e ingredientes de recetas, por canónico', async () => {
+		const familyId = await familyRow('Familia Autocompletada');
+		const listA = await createList(familyId, LIST);
+		const listB = await createList(familyId, { ...LIST, name: 'Otra lista' });
+		const dairy = await categoryRow(familyId, 'Lácteos');
+		const veggies = await categoryRow(familyId, 'Verduras');
+
+		const milkId = await pantryRow({
+			familyId,
+			name: 'Leche Entera',
+			normalizedName: 'leche entera',
+			unit: 'liter'
+		});
+		// El mismo canónico en un item (con categoría) y en una receta: una
+		// sola sugerencia, con nombre/unidad/enlace de la despensa y la
+		// categoría del item (la despensa no la tiene).
+		await createItemOrFail(familyId, listA.id, {
+			name: 'LECHE ENTERA',
+			quantity: 1,
+			unit: 'unit',
+			categoryId: dairy
+		});
+		await createItemOrFail(familyId, listB.id, { name: 'Patatas', quantity: 2, unit: 'kilogram' });
+		await recipeRow(familyId, 'Tortilla', [
+			{ name: 'patatas', unit: 'gram', categoryId: veggies },
+			{ name: 'Leche entera', unit: 'milliliter' },
+			{ name: 'Huevos', unit: 'dozen' }
+		]);
+
+		expect(await listProductNameSuggestions(familyId)).toEqual([
+			{ name: 'Huevos', unit: 'dozen', categoryId: null, pantryItemId: null },
+			{ name: 'Leche Entera', unit: 'liter', categoryId: dairy, pantryItemId: milkId },
+			// «Patatas» (item) manda sobre «patatas» (receta): UNA sugerencia.
+			{ name: 'Patatas', unit: 'kilogram', categoryId: veggies, pantryItemId: null }
+		]);
+	});
+
+	it('una familia solo ve sus propios nombres', async () => {
+		const ownFamily = await familyRow('Familia Propia Nombres');
+		const otherFamily = await familyRow('Familia Ajena Nombres');
+		const ownList = await createList(ownFamily, LIST);
+		const otherList = await createList(otherFamily, LIST);
+
+		await pantryRow({ familyId: otherFamily, name: 'Sal' });
+		await createItemOrFail(otherFamily, otherList.id, { name: 'Pan', quantity: 1, unit: 'unit' });
+		await recipeRow(otherFamily, 'Gazpacho', [{ name: 'Pepino', unit: 'unit' }]);
+		await createItemOrFail(ownFamily, ownList.id, { name: 'Yogur', quantity: 1, unit: 'unit' });
+
+		expect(await listProductNameSuggestions(ownFamily)).toEqual([
+			{ name: 'Yogur', unit: 'unit', categoryId: null, pantryItemId: null }
+		]);
+		expect((await listProductNameSuggestions(otherFamily)).map(({ name }) => name)).toEqual([
+			'Pan',
+			'Pepino',
+			'Sal'
+		]);
+	});
+
+	it('una familia sin nada conocido no sugiere nada', async () => {
+		const familyId = await familyRow('Familia Novata Nombres');
+		expect(await listProductNameSuggestions(familyId)).toEqual([]);
 	});
 });
