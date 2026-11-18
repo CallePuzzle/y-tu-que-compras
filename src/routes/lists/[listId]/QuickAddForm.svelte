@@ -3,10 +3,11 @@
 	import { normalizeItemName } from '#lib/normalize-name.js';
 	import { errorMessage } from '#lib/forms.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { UNITS } from '#lib/schemas/item.js';
+	import { UNITS, type Unit } from '#lib/schemas/item.js';
 	import { unitLabels } from '#lib/units.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
+	import { indexNameSuggestions, prefillField } from './name-suggestions.js';
 	import { itemFormSchema } from './schemas.js';
 	import type { PageData } from './$types';
 
@@ -17,7 +18,9 @@
 	 * familia y «Sin categoría» no envía nada que clasificar. Con la
 	 * sugerencia (#173): un nombre que la familia ya conoce rellena el select
 	 * con su categoría — SIEMPRE editable, que es una sugerencia, no una
-	 * imposición.
+	 * imposición. Con el autocompletado (#283): un `datalist` ofrece los
+	 * nombres que la familia ya conoce y casar uno rellena también la unidad,
+	 * con la misma regla (lo manual manda).
 	 */
 	let {
 		form,
@@ -26,10 +29,13 @@
 	}: {
 		form: PageData['form'];
 		categories: PageData['categories'];
-		suggestions: PageData['categorySuggestions'];
+		suggestions: PageData['nameSuggestions'];
 	} = $props();
 
 	const UNIT_LABEL = unitLabels();
+
+	/** Las sugerencias indexadas por canónico: cada tecla es una búsqueda directa. */
+	const suggestionIndex = $derived(indexNameSuggestions(suggestions));
 
 	// Con `invalidateAll: 'pessimistic'`, tras crear superforms espera al load
 	// y el `resetForm` por defecto lo deja VACÍO: queda listo para encadenar
@@ -47,27 +53,42 @@
 	// rojo solo para errores.
 	let altaOk = $state(false);
 
-	// Sugerencia de categoría por nombre (#173): `sugerida` marca si la
-	// categoría que muestra el select la PUSO la sugerencia — y no quien
-	// escribe. La regla del checklist: autocompletar al detectar coincidencia
-	// SIN bloquear la edición manual, así que la sugerencia solo rellena un
-	// select vacío o sustituye a OTRA sugerencia (nunca lo elegido a mano),
-	// y el nombre dejando de casar retira la sugerencia anterior.
+	// Sugerencia por nombre (#173, ampliada a la unidad en #283): `suggested`
+	// marca si la categoría que muestra el select la PUSO la sugerencia — y no
+	// quien escribe. La regla del checklist: autocompletar al detectar
+	// coincidencia SIN bloquear la edición manual, así que la sugerencia solo
+	// rellena un select vacío o sustituye a OTRA sugerencia (nunca lo elegido a
+	// mano), y el nombre dejando de casar retira la sugerencia anterior.
 	let suggested = $state(false);
+
+	// La unidad sigue la misma regla, pero su select nunca está «vacío» (arranca
+	// en «ud»): por eso lleva su propia marca de elección manual. Retirar la
+	// sugerencia la devuelve a la unidad por defecto del alta.
+	const DEFAULT_UNIT: Unit = 'unit';
+	let unitSuggested = $state(false);
+	let unitManual = $state(false);
 
 	/** Cada tecla en el nombre: aplica o retira la sugerencia, sin pisar lo manual. */
 	function onNameInput() {
-		const suggestion = suggestions[normalizeItemName($formData.name)];
-		if (suggestion && (suggested || !$formData.categoryId)) {
-			$formData.categoryId = suggestion;
-			suggested = true;
-		} else if (!suggestion && suggested) {
-			// El nombre dejó de casar (se vació o cambió a uno desconocido): la
-			// categoría sugerida ya no responde a lo escrito y se retira. La
-			// elegida a mano se queda: no la puso la sugerencia.
-			$formData.categoryId = '';
-			suggested = false;
-		}
+		const suggestion = suggestionIndex.get(normalizeItemName($formData.name));
+
+		const category = prefillField(
+			{ value: $formData.categoryId ?? '', suggested },
+			suggestion?.categoryId,
+			// Un select vacío está libre; uno con categoría que no puso la
+			// sugerencia es elección manual.
+			{ locked: !suggested && !!$formData.categoryId, fallback: '' }
+		);
+		$formData.categoryId = category.value;
+		suggested = category.suggested;
+
+		const unit = prefillField(
+			{ value: $formData.unit, suggested: unitSuggested },
+			suggestion?.unit,
+			{ locked: unitManual, fallback: DEFAULT_UNIT }
+		);
+		$formData.unit = unit.value;
+		unitSuggested = unit.suggested;
 	}
 
 	// svelte-ignore state_referenced_locally
@@ -81,6 +102,8 @@
 			// sugerencia tampoco sobrevive — el siguiente nombre empieza de cero.
 			if (result.type === 'success') {
 				suggested = false;
+				unitSuggested = false;
+				unitManual = false;
 			}
 		}
 	});
@@ -111,6 +134,8 @@
 			name="name"
 			type="text"
 			class="input w-full"
+			list="add-name-suggestions"
+			autocomplete="off"
 			placeholder={m.schema_items_name_placeholder()}
 			required
 			maxlength="100"
@@ -118,6 +143,17 @@
 		{#if errorMessage($errors.name)}
 			<p class="fieldset-label text-error" role="alert">{errorMessage($errors.name)}</p>
 		{/if}
+		<!-- Autocompletado de nombres (#283): los que la familia ya conoce, con
+		     su unidad junto al nombre (el patrón de recetas, #239). El
+		     `datalist` es el autocompletado NATIVO — filtra mientras se escribe
+		     y no pisa lo tecleado —; elegir una opción dispara `input` y con él
+		     el pre-relleno. Un nombre nuevo no sugiere nada y se da de alta tal
+		     cual. Id propio: el modal de editar lleva el suyo en la misma página. -->
+		<datalist id="add-name-suggestions">
+			{#each suggestions as suggestion (suggestion.name)}
+				<option value={suggestion.name}>{UNIT_LABEL[suggestion.unit]}</option>
+			{/each}
+		</datalist>
 	</div>
 
 	<!-- `flex-wrap` (#114): a 360px los tres no caben en una línea y el
@@ -147,6 +183,10 @@
 			     UNITS con sus etiquetas traducidas. -->
 			<select
 				bind:value={$formData.unit}
+				onchange={() => {
+					unitManual = true;
+					unitSuggested = false;
+				}}
 				aria-invalid={errorMessage($errors.unit) ? 'true' : undefined}
 				id="add-unit"
 				name="unit"
