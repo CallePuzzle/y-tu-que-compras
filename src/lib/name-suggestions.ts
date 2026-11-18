@@ -7,7 +7,8 @@ import type { Unit } from '#lib/schemas/item.js';
 // uno de ellos, pre-rellenan lo que corresponda (unidad, categoría, enlace a
 // despensa). Aquí vive la parte pura (sin Svelte) que comparten: buscar la
 // sugerencia por nombre canónico y la regla de #173 para cada campo
-// pre-rellenable. La usan el detalle de lista (#283) y las recetas (#284).
+// pre-rellenable. La usan el detalle de lista (#283), las recetas (#284) y los
+// menús (#285: crear menú en /calendar y asignar receta en /recipes).
 
 /** Lo que un formulario usa de una sugerencia de nombre. */
 export interface NameSuggestion {
@@ -115,5 +116,65 @@ export function prefillIngredient<T extends NameSuggestion & { pantryItemId: str
 		unit: unit.value,
 		pantryItemId: isBase ? state.basePantryItemId : (suggestion?.pantryItemId ?? ''),
 		state: { ...state, unitSuggested: unit.suggested }
+	};
+}
+
+/**
+ * El estado de pre-relleno de UNA fila de ingrediente de menú (#285): el de
+ * receta más su categoría, que el formulario de menú sí lleva (y no lleva
+ * enlace a despensa: lo resuelve el servidor al guardar, por nombre y unidad,
+ * en `ensurePantryProducts`).
+ */
+export interface MealIngredientPrefillState extends IngredientPrefillState {
+	/** Categoría con la que se abrió la fila (`''` = sin categoría). */
+	baseCategoryId: string;
+	categorySuggested: boolean;
+	/** La categoría se eligió a mano en su select: no se pisa. */
+	categoryManual: boolean;
+}
+
+/** Una fila de ingrediente de menú tal y como la lleva el formulario. */
+export interface MealIngredientRow {
+	name: string;
+	unit: Unit;
+	categoryId?: string;
+}
+
+/** El estado inicial de una fila de menú: su contenido actual es su base. */
+export function mealIngredientPrefillState(row: MealIngredientRow): MealIngredientPrefillState {
+	return {
+		...ingredientPrefillState(row),
+		baseCategoryId: row.categoryId ?? '',
+		categorySuggested: false,
+		categoryManual: false
+	};
+}
+
+/**
+ * Cada tecla en el nombre de un ingrediente de menú: la unidad sigue la regla
+ * de `prefillIngredient` y la categoría, la misma regla de #173 por separado
+ * (una sugerencia sin categoría retira la que ella misma hubiera puesto).
+ */
+export function prefillMealIngredient<T extends NameSuggestion & { pantryItemId: string | null }>(
+	row: MealIngredientRow,
+	state: MealIngredientPrefillState,
+	index: Map<string, T>
+): { unit: Unit; categoryId: string; state: MealIngredientPrefillState } {
+	const ingredient = prefillIngredient(row, state, index);
+	const key = normalizeItemName(row.name);
+	const suggestion = key === state.baseName ? undefined : index.get(key);
+	const category = prefillField(
+		{ value: row.categoryId ?? '', suggested: state.categorySuggested },
+		suggestion?.categoryId,
+		{ locked: state.categoryManual, fallback: state.baseCategoryId }
+	);
+	return {
+		unit: ingredient.unit,
+		categoryId: category.value,
+		state: {
+			...state,
+			unitSuggested: ingredient.state.unitSuggested,
+			categorySuggested: category.suggested
+		}
 	};
 }

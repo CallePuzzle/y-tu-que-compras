@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	indexNameSuggestions,
 	ingredientPrefillState,
+	mealIngredientPrefillState,
 	prefillField,
-	prefillIngredient
+	prefillIngredient,
+	prefillMealIngredient
 } from './name-suggestions.js';
 
 describe('indexNameSuggestions', () => {
@@ -94,5 +96,64 @@ describe('prefillIngredient', () => {
 		expect(away).toMatchObject({ unit: 'liter', pantryItemId: 'p1' });
 		const back = prefillIngredient({ name: 'patatas', unit: away.unit }, away.state, index);
 		expect(back).toMatchObject({ unit: 'gram', pantryItemId: 'old' });
+	});
+});
+
+describe('prefillMealIngredient', () => {
+	const index = indexNameSuggestions([
+		{ name: 'Leche entera', unit: 'liter' as const, categoryId: 'dairy', pantryItemId: 'p1' },
+		{ name: 'Patatas', unit: 'kilogram' as const, categoryId: null, pantryItemId: null }
+	]);
+	const fresh = mealIngredientPrefillState({ name: '', unit: 'unit', categoryId: '' });
+
+	it('casa por canónico: hereda unidad y categoría', () => {
+		const result = prefillMealIngredient(
+			{ name: 'leche ENTERA', unit: 'unit', categoryId: '' },
+			fresh,
+			index
+		);
+		expect(result).toMatchObject({ unit: 'liter', categoryId: 'dairy' });
+		expect(result.state).toMatchObject({ unitSuggested: true, categorySuggested: true });
+	});
+
+	it('lo elegido a mano no se pisa', () => {
+		const manual = { ...fresh, unitManual: true, categoryManual: true };
+		const result = prefillMealIngredient(
+			{ name: 'Leche entera', unit: 'milliliter', categoryId: 'other' },
+			manual,
+			index
+		);
+		expect(result).toMatchObject({ unit: 'milliliter', categoryId: 'other' });
+	});
+
+	it('una sugerencia sin categoría retira la sugerida antes', () => {
+		const away = prefillMealIngredient(
+			{ name: 'Leche entera', unit: 'unit', categoryId: '' },
+			fresh,
+			index
+		);
+		const result = prefillMealIngredient(
+			{ name: 'Patatas', unit: away.unit, categoryId: away.categoryId },
+			away.state,
+			index
+		);
+		expect(result).toMatchObject({ unit: 'kilogram', categoryId: '' });
+		expect(result.state.categorySuggested).toBe(false);
+	});
+
+	it('volver al nombre de la base restaura su unidad y su categoría', () => {
+		const base = mealIngredientPrefillState({ name: 'Huevos', unit: 'unit', categoryId: 'eggs' });
+		const away = prefillMealIngredient(
+			{ name: 'Leche entera', unit: 'unit', categoryId: 'eggs' },
+			base,
+			index
+		);
+		expect(away).toMatchObject({ unit: 'liter', categoryId: 'dairy' });
+		const back = prefillMealIngredient(
+			{ name: 'huevos', unit: away.unit, categoryId: away.categoryId },
+			away.state,
+			index
+		);
+		expect(back).toMatchObject({ unit: 'unit', categoryId: 'eggs' });
 	});
 });
