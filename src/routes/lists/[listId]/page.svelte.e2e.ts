@@ -235,6 +235,14 @@ test('la sugerencia nunca impide elegir otra categoria (#173): lo manual manda',
 	expect(await prisma.item.findFirstOrThrow({ where: { listId: list.id } })).toMatchObject({
 		categoryId: limpieza.id
 	});
+
+	// «Sin categoría» elegida a mano también es una elección: la siguiente
+	// tecla en un nombre conocido no vuelve a aplicar la sugerencia.
+	await page.locator('#add-name').fill('Leche entera');
+	await expect(page.locator('#add-category')).toHaveValue(dairy.id);
+	await page.locator('#add-category').selectOption({ label: 'Sin categoría' });
+	await page.locator('#add-name').fill('Leche entera ');
+	await expect(page.locator('#add-category')).toHaveValue('');
 });
 
 test('autocompletado de nombres en el alta rapida (#283): sugiere y pre-rellena unidad y categoria', async ({

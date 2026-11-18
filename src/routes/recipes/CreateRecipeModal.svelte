@@ -8,10 +8,11 @@
 		indexNameSuggestions,
 		ingredientPrefillState,
 		prefillIngredient,
+		resolvePantryLink,
 		type IngredientPrefillState
 	} from '#lib/name-suggestions.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { UNITS } from '#lib/schemas/item.js';
+	import { UNITS, type Unit } from '#lib/schemas/item.js';
 	import type { RecipeFormData } from '#lib/schemas/recipe.js';
 	import { unitLabels } from '#lib/units.js';
 	import type { UnitConversion } from '#lib/unit-convert.js';
@@ -28,9 +29,9 @@
 	 * patrón CreateMealPlanModal) y el nombre se autocompleta con TODOS los
 	 * nombres que la familia ya conoce (#284: despensa, listas y recetas;
 	 * `datalist` nativo): al teclear uno — por nombre canónico —, la fila
-	 * HEREDA su unidad (sin pisar la elegida a mano, regla de #173) y, si es
-	 * un producto de despensa, lo ENLAZA (`pantryItemId`); un nombre inventado
-	 * no sugiere nada
+	 * HEREDA su unidad (sin pisar la elegida a mano, regla de #173) y, si
+	 * nombre y unidad finales son un producto de despensa, lo ENLAZA
+	 * (`pantryItemId`); un nombre inventado no sugiere nada
 	 * y queda suelto — el servidor lo guarda sin FK y NADA se crea en la
 	 * despensa (decisión de fase 2). Si lo tecleado casa con un producto en
 	 * OTRA unidad, el chip por fila (`UnitConflictChip`, #240) avisa y propone
@@ -49,7 +50,11 @@
 	 */
 	type Props = {
 		form: PageData['form'];
-		/** Los productos de la despensa: id, nombre y unidad para el autocompletado. */
+		/**
+		 * Los productos de la despensa (id, nombre y unidad): contra ellos se
+		 * resuelve el enlace de cada fila (`resolvePantryLink`, por nombre
+		 * canónico y unidad) y los consulta el chip de unidad conflictiva.
+		 */
 		pantryItems: PageData['pantryItems'];
 		/** Los nombres conocidos de la familia (#284): el `datalist` y el pre-relleno. */
 		nameSuggestions: PageData['nameSuggestions'];
@@ -173,10 +178,11 @@
 	 * El nombre tecleado, sincronizado con su fila (#284): casa por nombre
 	 * CANÓNICO con las sugerencias de la familia («tortilla» casa con
 	 * «Tortilla»). La fila hereda la unidad de la sugerencia salvo que la
-	 * persona la haya elegido a mano, y la ENLAZA (`pantryItemId`) solo si la
-	 * sugerencia es un producto de despensa; al editar el nombre hacia uno
-	 * desconocido, la unidad sugerida y el enlace se retiran (cadena vacía,
-	 * que el servidor guarda como `null`). La regla vive en
+	 * persona la haya elegido a mano, y la ENLAZA (`pantryItemId`) al producto
+	 * de despensa con ese canónico en la unidad FINAL de la fila — así el
+	 * enlace nunca contradice la unidad, tampoco tras el chip; al editar el
+	 * nombre hacia uno desconocido, la unidad sugerida y el enlace se retiran
+	 * (cadena vacía, que el servidor guarda como `null`). La regla vive en
 	 * `prefillIngredient` (`#lib/name-suggestions.ts`). El nombre mismo lo pone
 	 * el `bind:value`; aquí llega el valor YA tecleado del evento. Se pasa por
 	 * `form.update()` y no por una mutación directa de la fila: el estado de
@@ -192,7 +198,7 @@
 				return data;
 			}
 			const state = (prefill[index] ??= ingredientPrefillState(EMPTY_INGREDIENT));
-			const result = prefillIngredient({ ...row, name }, state, suggestionIndex);
+			const result = prefillIngredient({ ...row, name }, state, suggestionIndex, pantryItems);
 			row.unit = result.unit;
 			row.pantryItemId = result.pantryItemId;
 			prefill[index] = result.state;
@@ -211,10 +217,30 @@
 	}
 
 	/**
+	 * La unidad cambiada en el select: queda bloqueada y el enlace se
+	 * recalcula con ella (el producto de despensa en ESA unidad, o ninguno y
+	 * el chip avisa), para que nunca apunte a un producto en otra unidad.
+	 */
+	function changeUnit(index: number, unit: Unit) {
+		markUnitManual(index);
+		formData.update((data) => {
+			const row = data.ingredients[index];
+			if (row) {
+				// La unidad va explícita (no se fía del orden entre el
+				// `bind:value` y este handler).
+				row.unit = unit;
+				row.pantryItemId = resolvePantryLink(row, prefill[index], pantryItems);
+			}
+			return data;
+		});
+	}
+
+	/**
 	 * La conversión que el chip propuso (tarea #240), aplicada a su fila:
 	 * cantidad y unidad convertidas, y el producto de despensa ENLAZADO — el
-	 * mismo trato que `syncIngredientName` da al nombre visible exacto, ahora
-	 * que la fila ha acabado en la unidad del producto. Mismo `update()` que
+	 * mismo que `resolvePantryLink` encontraría ahora que la fila ha acabado
+	 * en la unidad del producto, así que teclear después en el nombre (sin
+	 * cambiar su canónico) conserva el enlace del chip. Mismo `update()` que
 	 * allí: sin él, la mutación anidada no repinta el select ni retira el
 	 * chip (que desaparece solo: la unidad queda igualada a la del producto).
 	 */
@@ -391,7 +417,7 @@
 							     conflicto que avisa la #240). -->
 							<select
 								bind:value={ingredient.unit}
-								onchange={() => markUnitManual(index)}
+								onchange={(event) => changeUnit(index, event.currentTarget.value as Unit)}
 								aria-invalid={errorMessage($errors.ingredients?.[index]?.unit) ? 'true' : undefined}
 								id={`recipe-ingredient-unit-${index}`}
 								name={`ingredients[${index}].unit`}

@@ -123,7 +123,7 @@ test('sugiere nombres de listas y recetas, casa por canónico y no pisa la unida
 	const family = await createFamily({ owner: user });
 	// Tres fuentes (#284): la despensa (enlaza), una lista y otra receta (solo
 	// prestan nombre y unidad).
-	const tomate = await createPantryItem({
+	await createPantryItem({
 		familyId: family.id,
 		name: 'Tomate frito',
 		normalizedName: 'tomate frito',
@@ -167,12 +167,15 @@ test('sugiere nombres de listas y recetas, casa por canónico y no pisa la unida
 	await creacion.locator('#recipe-ingredient-unit-1').selectOption({ label: 'g' });
 	await creacion.locator('#recipe-ingredient-name-1').fill('TOMATE FRITO');
 	await expect(creacion.locator('#recipe-ingredient-unit-1')).toHaveValue('gram');
+	// Casa con la despensa en OTRA unidad: el chip lo avisa.
+	await expect(creacion.getByText('está en la despensa en lata')).toBeVisible();
 
 	await creacion.getByRole('button', { name: 'Nueva receta' }).click();
 	await expect(creacion).toHaveCount(0);
 
-	// En la BD: las patatas sueltas (no son de despensa) y el tomate ENLAZADO
-	// a su producto aunque vaya en otra unidad (eso lo avisa el chip, #240).
+	// En la BD: las patatas sueltas (no son de despensa) y el tomate TAMBIÉN
+	// suelto: la despensa lo tiene en latas y la fila va en gramos, así que
+	// enlazarlo contradiría la unidad (el conflicto lo avisa el chip, #240).
 	const receta = await prisma.recipe.findFirstOrThrow({
 		where: { organizationId: family.id, name: 'Guiso' }
 	});
@@ -182,7 +185,7 @@ test('sugiere nombres de listas y recetas, casa por canónico y no pisa la unida
 	});
 	expect(ingredientes.map((row) => [row.name, row.unit, row.pantryItemId])).toEqual([
 		['patatas', 'kilogram', null],
-		['TOMATE FRITO', 'gram', tomate.id]
+		['TOMATE FRITO', 'gram', null]
 	]);
 });
 
@@ -253,6 +256,67 @@ test('aviso de unidad conflictiva: propone la conversión exacta y la aplica al 
 		['arroz', 0.3, 'kilogram']
 	]);
 	expect(ingredientes.map((row) => row.pantryItemId)).toEqual([arroz.id]);
+});
+
+test('el enlace sigue a la unidad final: el chip enlaza y teclear después no lo pisa', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// La misma leche en dos unidades (dos productos de despensa). La de ml es
+	// la más reciente, así que es la que sugiere el autocompletado.
+	const lecheL = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		normalizedName: 'leche entera',
+		unit: 'liter'
+	});
+	const lecheMl = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		normalizedName: 'leche entera',
+		unit: 'milliliter'
+	});
+	await prisma.pantryItem.update({
+		where: { id: lecheL.id },
+		data: { updatedAt: new Date('2026-01-01T00:00:00Z') }
+	});
+	await prisma.pantryItem.update({
+		where: { id: lecheMl.id },
+		data: { updatedAt: new Date('2026-02-01T00:00:00Z') }
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+	await page.getByRole('button', { name: 'Nueva receta' }).first().click();
+	const creacion = modalCrear(page);
+	await creacion.locator('#recipe-name').fill('Natillas');
+
+	// Casa con la sugerencia (ml) y el chip ofrece la otra unidad: pasar a L.
+	await creacion.locator('#recipe-ingredient-name-0').fill('leche entera');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('milliliter');
+	await creacion.locator('#recipe-ingredient-quantity-0').fill('500');
+	const usarL = creacion.getByRole('button', { name: 'usar L → 0,5 L' });
+	await expect(usarL).toBeVisible();
+	await usarL.click();
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('liter');
+	await expect(creacion.locator('#recipe-ingredient-quantity-0')).toHaveValue('0.5');
+
+	// Seguir tecleando sin cambiar el canónico (mayúscula inicial): ni la
+	// unidad ni el enlace del chip vuelven a los de la sugerencia.
+	await creacion.locator('#recipe-ingredient-name-0').fill('Leche entera');
+	await expect(creacion.locator('#recipe-ingredient-unit-0')).toHaveValue('liter');
+
+	await creacion.getByRole('button', { name: 'Nueva receta' }).click();
+	await expect(creacion).toHaveCount(0);
+
+	const receta = await prisma.recipe.findFirstOrThrow({
+		where: { organizationId: family.id, name: 'Natillas' }
+	});
+	const ingredientes = await prisma.recipeIngredient.findMany({ where: { recipeId: receta.id } });
+	expect(ingredientes.map((row) => [Number(row.quantity), row.unit, row.pantryItemId])).toEqual([
+		[0.5, 'liter', lecheL.id]
+	]);
 });
 
 test('editar precarga el modal, sustituye los ingredientes y acepta quitar las raciones', async ({

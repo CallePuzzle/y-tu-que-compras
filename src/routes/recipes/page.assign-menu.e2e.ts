@@ -2,7 +2,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { seedSession, waitForHydration } from '../../../e2e/helpers/auth';
 import { prisma } from '../../../e2e/helpers/db';
 import {
+	createCategory,
 	createFamily,
+	createItem,
+	createList,
 	createMealPlan,
 	createPantryItem,
 	createRecipe,
@@ -316,6 +319,77 @@ test('aviso de unidad conflictiva al asignar: convierte y guarda enlazado al pro
 	expect(await prisma.pantryItem.count()).toBe(1);
 	const arrozTras = await prisma.pantryItem.findUniqueOrThrow({ where: { id: arroz.id } });
 	expect(Number(arrozTras.quantity)).toBe(3);
+});
+
+test('autocompletado al asignar (#285): hereda unidad y categoría, sin arrastrar la del ingrediente anterior', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const lacteos = await createCategory({ familyId: family.id, name: 'Lácteos' });
+	const verduras = await createCategory({ familyId: family.id, name: 'Verduras' });
+	// Nombres conocidos de tres fuentes: la despensa (leche, con categoría),
+	// una lista (patatas) y la propia receta.
+	await createPantryItem({
+		familyId: family.id,
+		name: 'Leche entera',
+		normalizedName: 'leche entera',
+		quantity: 1,
+		unit: 'liter',
+		categoryId: lacteos.id
+	});
+	const lista = await createList({ familyId: family.id });
+	await createItem({ listId: lista.id, name: 'Patatas', unit: 'kilogram' });
+	await createRecipe({
+		familyId: family.id,
+		name: 'Crema de verduras',
+		ingredients: [
+			{ name: 'Calabacín', quantity: 2, unit: 'unit', categoryId: verduras.id },
+			{ name: 'Puerro', quantity: 1, unit: 'unit', categoryId: verduras.id },
+			{ name: 'Nata', quantity: 200, unit: 'milliliter' }
+		]
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+	await filaDe(page, 'Crema de verduras').getByRole('button', { name: 'Añadir al menú' }).click();
+	const asignacion = modalAsignar(page);
+
+	// El datalist ofrece el catálogo entero de la familia.
+	await expect(asignacion.locator('#assign-ingredient-name-0')).toHaveAttribute(
+		'list',
+		'assign-name-suggestions'
+	);
+	for (const nombre of ['Leche entera', 'Patatas', 'Puerro']) {
+		await expect(page.locator(`#assign-name-suggestions option[value="${nombre}"]`)).toHaveCount(1);
+	}
+
+	// Calabacín → «leche ENTERA» (por canónico): hereda litros y Lácteos.
+	await asignacion.locator('#assign-ingredient-name-0').fill('leche ENTERA');
+	await expect(asignacion.locator('#assign-ingredient-unit-0')).toHaveValue('liter');
+	// Puerro → un nombre desconocido: ni sugerencia ni la categoría de Verduras
+	// del puerro (la categoría no tiene select: no se arrastra a escondidas).
+	await asignacion.locator('#assign-ingredient-name-1').fill('Apio');
+	await expect(asignacion.locator('#assign-ingredient-unit-1')).toHaveValue('unit');
+	// Nata con la unidad elegida a mano: casar «patatas» no la pisa.
+	await asignacion.locator('#assign-ingredient-unit-2').selectOption({ label: 'g' });
+	await asignacion.locator('#assign-ingredient-name-2').fill('patatas');
+	await expect(asignacion.locator('#assign-ingredient-unit-2')).toHaveValue('gram');
+
+	await asignacion.getByRole('button', { name: 'Añadir al menú' }).click();
+	await expect(asignacion).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Menú creado.');
+
+	const menu = await prisma.mealPlan.findFirstOrThrow({ where: { organizationId: family.id } });
+	const ingredientes = await prisma.mealPlanIngredient.findMany({
+		where: { mealPlanId: menu.id },
+		orderBy: { position: 'asc' }
+	});
+	expect(ingredientes.map((row) => [row.name, row.unit, row.categoryId])).toEqual([
+		['leche ENTERA', 'liter', lacteos.id],
+		['Apio', 'unit', null],
+		['patatas', 'gram', null]
+	]);
 });
 
 test('hueco ocupado: el 409 se pinta dentro del modal y otro tipo guarda', async ({ page }) => {

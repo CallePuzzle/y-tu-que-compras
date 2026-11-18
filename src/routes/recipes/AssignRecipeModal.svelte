@@ -56,9 +56,11 @@
 	 * conoce (#285: despensa, listas y recetas) y, al casar uno por nombre
 	 * canónico, la fila hereda su unidad (sin pisar la elegida a mano, regla
 	 * de #173) y su categoría — que aquí no tiene select, pero viaja con el
-	 * snapshot: renombrar la fila no debe arrastrar la del ingrediente
-	 * anterior. Misma regla que el modal del calendario
-	 * (`prefillMealIngredient`).
+	 * snapshot: renombrar la fila no arrastra la del ingrediente anterior
+	 * (fuera del nombre de la receta, la categoría es la de la sugerencia o
+	 * ninguna; `hiddenCategory` de `prefillMealIngredient`). Para la unidad,
+	 * misma regla que el modal del calendario; la categoría difiere porque
+	 * allí hay select y lo que muestra lo decide la persona.
 	 */
 	type Props = {
 		menuForm: PageData['menuForm'];
@@ -200,7 +202,8 @@
 	/**
 	 * El nombre tecleado, sincronizado con su fila (#285): la regla de
 	 * `prefillMealIngredient` (`#lib/name-suggestions.ts`), como en el modal
-	 * del calendario. Por `update()`: una mutación anidada directa del store
+	 * del calendario salvo la categoría, que aquí no se ve (`hiddenCategory`:
+	 * sigue al nombre). Por `update()`: una mutación anidada directa del store
 	 * de superforms no repinta el select de la unidad.
 	 */
 	function syncIngredientName(index: number, name: string) {
@@ -209,7 +212,9 @@
 			if (!row) {
 				return data;
 			}
-			const result = prefillMealIngredient({ ...row, name }, prefillOf(index), suggestionIndex);
+			const result = prefillMealIngredient({ ...row, name }, prefillOf(index), suggestionIndex, {
+				hiddenCategory: true
+			});
 			row.unit = result.unit;
 			row.categoryId = result.categoryId;
 			prefill[index] = result.state;

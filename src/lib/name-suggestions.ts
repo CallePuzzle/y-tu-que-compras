@@ -1,5 +1,6 @@
 import { normalizeItemName } from '#lib/normalize-name.js';
 import type { Unit } from '#lib/schemas/item.js';
+import { findPantryProduct, type PantryProduct } from '#lib/unit-convert.js';
 
 // Autocompletado de nombres de producto (épica #286): los formularios donde se
 // escribe un nombre de producto ofrecen en un `<datalist>` los nombres que la
@@ -90,32 +91,68 @@ export function ingredientPrefillState(row: IngredientRow): IngredientPrefillSta
 }
 
 /**
- * Cada tecla en el nombre de un ingrediente: casa por nombre canónico con las
- * sugerencias y devuelve la unidad y el enlace a despensa que tocan.
- *
- * - Unidad: la regla de #173 (`prefillField`), con la unidad de la base como
- *   valor al que volver; la elegida a mano nunca se pisa.
- * - Enlace: el `pantryItemId` de la sugerencia, que solo existe si ganó la
- *   despensa (un nombre que solo sale de listas o recetas queda suelto).
- * - Volver al nombre con el que se abrió la fila (corregir una errata al
- *   editar) no sugiere nada y restaura su enlace: la fila ya es ese producto.
+ * La unidad de una fila de ingrediente tras una tecla en su nombre: la regla
+ * de #173 (`prefillField`) con la sugerencia que casa por canónico y la
+ * unidad de la base como valor al que volver; la elegida a mano nunca se
+ * pisa. Volver al nombre con el que se abrió la fila (corregir una errata al
+ * editar) no sugiere nada: la fila ya es ese producto.
  */
-export function prefillIngredient<T extends NameSuggestion & { pantryItemId: string | null }>(
+function prefillIngredientUnit<T extends NameSuggestion>(
 	row: IngredientRow,
 	state: IngredientPrefillState,
 	index: Map<string, T>
-): { unit: Unit; pantryItemId: string; state: IngredientPrefillState } {
+): { unit: Unit; state: IngredientPrefillState } {
 	const key = normalizeItemName(row.name);
-	const isBase = key === state.baseName;
-	const suggestion = isBase ? undefined : index.get(key);
+	const suggestion = key === state.baseName ? undefined : index.get(key);
 	const unit = prefillField({ value: row.unit, suggested: state.unitSuggested }, suggestion?.unit, {
 		locked: state.unitManual,
 		fallback: state.baseUnit
 	});
+	return { unit: unit.value, state: { ...state, unitSuggested: unit.suggested } };
+}
+
+/**
+ * El enlace a despensa de una fila con su nombre y su unidad FINALES: el
+ * producto de despensa con el mismo canónico y la misma unidad
+ * (`findPantryProduct`, el casamiento del chip de conflicto), o ninguno
+ * (`''`). Así el enlace es siempre coherente con la unidad que se guarda: con
+ * la unidad bloqueada en ml, «Leche» enlaza la leche en ml de la despensa (o
+ * nada, y el chip avisa del conflicto), nunca la de litros que trajera la
+ * sugerencia. Única excepción: la fila en su nombre y unidad de base
+ * conserva su enlace aunque la despensa ya no case (producto renombrado):
+ * la fila ya es ese producto.
+ */
+export function resolvePantryLink(
+	row: IngredientRow,
+	state: IngredientPrefillState,
+	pantryProducts: readonly PantryProduct[]
+): string {
+	const product = findPantryProduct(row.name, row.unit, pantryProducts);
+	if (product) {
+		return product.id;
+	}
+	const isBase = normalizeItemName(row.name) === state.baseName && row.unit === state.baseUnit;
+	return isBase ? state.basePantryItemId : '';
+}
+
+/**
+ * Cada tecla en el nombre de un ingrediente de receta: la unidad que toca
+ * (`prefillIngredientUnit`) y, con ella ya decidida, el enlace a despensa
+ * (`resolvePantryLink`). El enlace no sale de la sugerencia: un nombre que
+ * solo existe en listas o recetas queda suelto, y uno de despensa enlaza el
+ * producto en la unidad final de la fila.
+ */
+export function prefillIngredient<T extends NameSuggestion>(
+	row: IngredientRow,
+	state: IngredientPrefillState,
+	index: Map<string, T>,
+	pantryProducts: readonly PantryProduct[]
+): { unit: Unit; pantryItemId: string; state: IngredientPrefillState } {
+	const result = prefillIngredientUnit(row, state, index);
 	return {
-		unit: unit.value,
-		pantryItemId: isBase ? state.basePantryItemId : (suggestion?.pantryItemId ?? ''),
-		state: { ...state, unitSuggested: unit.suggested }
+		unit: result.unit,
+		pantryItemId: resolvePantryLink({ ...row, unit: result.unit }, state, pantryProducts),
+		state: result.state
 	};
 }
 
@@ -152,22 +189,38 @@ export function mealIngredientPrefillState(row: MealIngredientRow): MealIngredie
 
 /**
  * Cada tecla en el nombre de un ingrediente de menú: la unidad sigue la regla
- * de `prefillIngredient` y la categoría, la misma regla de #173 por separado
- * (una sugerencia sin categoría retira la que ella misma hubiera puesto).
+ * de las recetas (`prefillIngredientUnit`) y la categoría, la misma regla de
+ * #173 por separado (una sugerencia sin categoría retira la que ella misma
+ * hubiera puesto).
+ *
+ * Con `hiddenCategory` (formularios SIN select de categoría, como asignar
+ * receta en /recipes) la categoría no es una elección visible que haya que
+ * respetar sino un dato que acompaña al nombre: en el nombre de la base es
+ * la de la base, en otro nombre la de su sugerencia y, si no hay, ninguna.
+ * Así renombrar la fila no arrastra a escondidas la categoría del
+ * ingrediente anterior. Con select (calendario) se queda la regla de #173:
+ * lo que muestra el select y no puso la sugerencia lo decide la persona.
  */
-export function prefillMealIngredient<T extends NameSuggestion & { pantryItemId: string | null }>(
+export function prefillMealIngredient<T extends NameSuggestion>(
 	row: MealIngredientRow,
 	state: MealIngredientPrefillState,
-	index: Map<string, T>
+	index: Map<string, T>,
+	options: { hiddenCategory?: boolean } = {}
 ): { unit: Unit; categoryId: string; state: MealIngredientPrefillState } {
-	const ingredient = prefillIngredient(row, state, index);
+	const ingredient = prefillIngredientUnit(row, state, index);
 	const key = normalizeItemName(row.name);
-	const suggestion = key === state.baseName ? undefined : index.get(key);
-	const category = prefillField(
-		{ value: row.categoryId ?? '', suggested: state.categorySuggested },
-		suggestion?.categoryId,
-		{ locked: state.categoryManual, fallback: state.baseCategoryId }
-	);
+	const isBase = key === state.baseName;
+	const suggestion = isBase ? undefined : index.get(key);
+	const category: PrefillField<string> = options.hiddenCategory
+		? {
+				value: isBase ? state.baseCategoryId : (suggestion?.categoryId ?? ''),
+				suggested: Boolean(suggestion?.categoryId)
+			}
+		: prefillField(
+				{ value: row.categoryId ?? '', suggested: state.categorySuggested },
+				suggestion?.categoryId,
+				{ locked: state.categoryManual, fallback: state.baseCategoryId }
+			);
 	return {
 		unit: ingredient.unit,
 		categoryId: category.value,

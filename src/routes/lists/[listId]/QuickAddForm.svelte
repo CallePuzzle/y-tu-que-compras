@@ -60,6 +60,10 @@
 	// rellena un select vacío o sustituye a OTRA sugerencia (nunca lo elegido a
 	// mano), y el nombre dejando de casar retira la sugerencia anterior.
 	let suggested = $state(false);
+	// Elegir en el select (incluido «Sin categoría») bloquea la categoría: sin
+	// esta marca, un select vacío elegido a mano parecería libre y la
+	// siguiente tecla volvería a aplicar la sugerencia.
+	let categoryManual = $state(false);
 
 	// La unidad sigue la misma regla, pero su select nunca está «vacío» (arranca
 	// en «ud»): por eso lleva su propia marca de elección manual. Retirar la
@@ -75,9 +79,8 @@
 		const category = prefillField(
 			{ value: $formData.categoryId ?? '', suggested },
 			suggestion?.categoryId,
-			// Un select vacío está libre; uno con categoría que no puso la
-			// sugerencia es elección manual.
-			{ locked: !suggested && !!$formData.categoryId, fallback: '' }
+			// Lo elegido en el select (incluso «Sin categoría») es manual.
+			{ locked: categoryManual, fallback: '' }
 		);
 		$formData.categoryId = category.value;
 		suggested = category.suggested;
@@ -102,6 +105,7 @@
 			// sugerencia tampoco sobrevive — el siguiente nombre empieza de cero.
 			if (result.type === 'success') {
 				suggested = false;
+				categoryManual = false;
 				unitSuggested = false;
 				unitManual = false;
 			}
@@ -222,7 +226,10 @@
 		<label class="fieldset-label" for="add-category">{m.schema_items_category_label()}</label>
 		<select
 			bind:value={$formData.categoryId}
-			onchange={() => (suggested = false)}
+			onchange={() => {
+				categoryManual = true;
+				suggested = false;
+			}}
 			id="add-category"
 			name="categoryId"
 			class="select w-full"

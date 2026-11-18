@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { UNITS } from '#lib/schemas/item.js';
-import { convertQuantity, findUnitConflicts, type PantryProduct } from './unit-convert.js';
+import {
+	convertQuantity,
+	findPantryProduct,
+	findUnitConflicts,
+	type PantryProduct
+} from './unit-convert.js';
 
 describe('convertQuantity (#240)', () => {
 	it('escala kg↔g y L↔ml en los DOS sentidos', () => {
@@ -120,5 +125,27 @@ describe('findUnitConflicts (#240)', () => {
 
 	it('despensa vacía: sin conflictos, sin aviso', () => {
 		expect(findUnitConflicts('arroz', 'gram', [])).toEqual([]);
+	});
+});
+
+describe('findPantryProduct (#286)', () => {
+	const despensa: PantryProduct[] = [
+		{ id: 'leche-l', name: 'Leche', unit: 'liter' },
+		{ id: 'leche-ml', name: 'leche', unit: 'milliliter' }
+	];
+
+	it('casa por nombre canónico Y unidad: cada unidad es un producto distinto', () => {
+		expect(findPantryProduct('LECHE', 'liter', despensa)?.id).toBe('leche-l');
+		expect(findPantryProduct('Leche ', 'milliliter', despensa)?.id).toBe('leche-ml');
+	});
+
+	it('en una unidad que la despensa no tiene no hay producto (hay conflicto)', () => {
+		expect(findPantryProduct('leche', 'unit', despensa)).toBeUndefined();
+		expect(findUnitConflicts('leche', 'unit', despensa)).toHaveLength(2);
+	});
+
+	it('nombre vacío u otro nombre no casan', () => {
+		expect(findPantryProduct('  ', 'liter', despensa)).toBeUndefined();
+		expect(findPantryProduct('leche de avena', 'liter', despensa)).toBeUndefined();
 	});
 });
