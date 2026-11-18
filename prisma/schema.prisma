@@ -20,6 +20,7 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+  apiKeys       Apikey[]
   members       Member[]
 
   // Grants/denies recibidos (userId) y concedidos/denegados por el usuario
@@ -94,6 +95,58 @@ model RateLimit {
 
   @@unique([key])
   @@map("rateLimit")
+}
+
+// ============================================================================
+// Plugin @better-auth/api-key (épica #260, tarea #270): claves de API para
+// consumir la API pública de la familia. El plugin dejó el core de better-auth
+// en la 1.5 y vive en el paquete `@better-auth/api-key` (instalado en la misma
+// versión que better-auth). El esquema replica el que genera
+// `npx @better-auth/cli generate` para ese plugin (verificado con auth@1.7.26
+// contra una instancia con el plugin); el nombre Prisma es el delegate que el
+// adaptador de Prisma busca por la clave del schema del plugin — `apikey`, en
+// minúsculas: un modelo `ApiKey` (delegate `prisma.apiKey`) no lo encontraría.
+//
+// El hashing lo hace el plugin (SHA-256 → base64url sin padding): la columna
+// `key` guarda SOLO el hash, la clave en claro se muestra una única vez al
+// crearla. `start` guarda los primeros caracteres (prefijo incluido) para
+// poder identificar la clave en la UI sin revelarla. El dueño de la clave es
+// `referenceId` — el plugin lo llama así porque puede apuntar a usuario
+// (`references: "user"`, el default que usamos) o a organización
+// (`references: "organization"`); aquí siempre es el usuario que la crea. El
+// rate limit del plugin es POR CLAVE (columnas `rateLimit*` y `requestCount`,
+// contadores que el propio plugin actualiza), independiente del rate limit
+// global de better-auth de la tabla `rateLimit`.
+// ============================================================================
+model Apikey {
+  id                  String    @id
+  configId            String    @default("default")
+  name                String?
+  start               String?
+  referenceId         String
+  prefix              String?
+  key                 String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean?  @default(true)
+  rateLimitEnabled    Boolean?  @default(true)
+  rateLimitTimeWindow Int?      @default(86400000)
+  rateLimitMax        Int?      @default(10)
+  requestCount        Int?      @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime
+  updatedAt           DateTime
+  permissions         String?
+  metadata            String?
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
+  @@map("apikey")
 }
 
 // ============================================================================

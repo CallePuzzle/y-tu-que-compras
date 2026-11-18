@@ -65,6 +65,7 @@
 		"vitest-browser-svelte": "^2.1.1"
 	},
 	"dependencies": {
+		"@better-auth/api-key": "1.7.10",
 		"@callepuzzle/auth": "^2.0.0",
 		"@callepuzzle/core": "^1.0.1",
 		"@callepuzzle/svelte-ui": "^2.1.0",

@@ -1,4 +1,5 @@
 import prisma from '#lib/server/prisma.js';
+import { apiKey } from '@better-auth/api-key';
 import { emailOtpPreset, emailOtpRateLimitRules, getBetterAuth } from '@callepuzzle/auth/server';
 import type { SendVerificationOtp } from '@callepuzzle/auth/server';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
@@ -58,6 +59,33 @@ function createAuth() {
 			// (defaults de better-auth, dejados explícitos para que el límite sea
 			// visible; al agotarse el código queda invalidado).
 			emailOtpPreset(sendVerificationOtp, { expiresIn: 300, allowedAttempts: 3 }),
+			// Claves de API de la familia (épica #260, tarea #270): endpoints de
+			// creación, listado, actualización y borrado de claves. El plugin dejó
+			// el core de better-auth en la 1.5 y vive en `@better-auth/api-key`
+			// (versión clavada a la de better-auth). El hashing de la clave lo hace
+			// el plugin (SHA-256): en la BD solo va el hash y la clave en claro se
+			// devuelve una única vez al crearla. El modelo Apikey del esquema
+			// Prisma replica el schema del plugin (tabla `apikey`, en minúsculas).
+			apiKey({
+				// Caducidad POR CLAVE: sin expiración por defecto (null), pero quien
+				// crea la clave puede pedir entre 1 y 365 días. Defaults del plugin,
+				// dejados explícitos para que el contrato sea visible.
+				keyExpiration: {
+					defaultExpiresIn: null,
+					minExpiresIn: 1,
+					maxExpiresIn: 365
+				},
+				// Límite de peticiones POR CLAVE (columnas `rateLimit*` de Apikey),
+				// distinto del rate limit global de arriba: este limita el uso de la
+				// clave contra la API pública — semántica de la clave, no defensa del
+				// login — así que sigue activo también en dev. Defaults del plugin
+				// (10 peticiones al día), dejados explícitos por lo mismo.
+				rateLimit: {
+					enabled: true,
+					timeWindow: 1000 * 60 * 60 * 24, // 1 día, en ms
+					maxRequests: 10
+				}
+			}),
 			// Familias (familia = organization): endpoints de organizaciones, roles,
 			// miembros e invitaciones. La configuración (i18n `es`, filtro de
 			// familias por pertenencia y seed de roles al crear) vive en
