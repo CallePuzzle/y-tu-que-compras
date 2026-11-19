@@ -4,7 +4,7 @@ import { apiError } from '#lib/server/api-error.js';
 import { requireApiFamilyMember } from '#lib/server/api-family.js';
 import { apiJson } from '#lib/server/api-response.js';
 import { requireApiUser } from '#lib/server/api-user.js';
-import { listItems } from '#lib/server/items.js';
+import { listApiItems } from '#lib/server/items.js';
 import { deleteList, getList, updateList } from '#lib/server/lists.js';
 import { listSchema, type ListData } from '#lib/schemas/list.js';
 
@@ -18,7 +18,7 @@ function listNotFound(): Response {
 // visual que la UI (pendientes → comprados; dentro, `order` y antigüedad).
 // 401 sin token válido, 403 sin pertenencia (o familia inexistente), 404 si
 // la lista no existe o es de otra familia (no se revela cuál de las dos);
-// 200 con `ListView & { items: ItemView[] }`.
+// 200 con `ListView & { items: ApiItemView[] }`.
 export const GET: RequestHandler = async (event) => {
 	const auth = await requireApiUser(event);
 	if (!auth.ok) return auth.response;
@@ -30,7 +30,7 @@ export const GET: RequestHandler = async (event) => {
 	const list = await getList(familyId, listId);
 	if (!list) return listNotFound();
 
-	return apiJson({ ...list, items: await listItems(familyId, listId) });
+	return apiJson({ ...list, items: await listApiItems(familyId, listId) });
 };
 
 /**

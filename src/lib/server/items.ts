@@ -46,25 +46,73 @@ function toItem(row: {
 }
 
 /**
- * Los items de la lista, en su orden visual: primero los pendientes, luego
- * los comprados (#69: separación de comprados vs pendientes también sin JS);
- * dentro de cada grupo manda el `order` y después la antigüedad.
+ * Un item tal y como lo devuelve la API pública (tarea #268): la vista de la
+ * UI más su `order`, que la API deja escribir en el PATCH y por tanto expone
+ * al leer. La UI no lo usa (no reordena items), así que `ItemView` no lo lleva.
  */
-export async function listItems(familyId: string, listId: string): Promise<ItemView[]> {
-	const rows = await prisma.item.findMany({
+export interface ApiItemView extends ItemView {
+	/** Posición dentro de su grupo (pendientes/comprados) de la lista. */
+	order: number;
+}
+
+/** Columnas de un item para las vistas: las de `ItemView` más el `order`. */
+const ITEM_SELECT = {
+	id: true,
+	name: true,
+	quantity: true,
+	unit: true,
+	categoryId: true,
+	category: { select: { name: true } },
+	purchased: true,
+	order: true
+} as const;
+
+/** De la fila de Prisma a la vista de la API: la de la UI más el `order`. */
+function toApiItem(row: Parameters<typeof toItem>[0] & { order: number }): ApiItemView {
+	return { ...toItem(row), order: row.order };
+}
+
+/**
+ * Las filas de los items de la lista, en su orden visual: primero los
+ * pendientes, luego los comprados (#69: separación de comprados vs pendientes
+ * también sin JS); dentro de cada grupo manda el `order` y después la
+ * antigüedad.
+ */
+function findListItems(familyId: string, listId: string) {
+	return prisma.item.findMany({
 		where: { listId, list: { organizationId: familyId } },
 		orderBy: [{ purchased: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
-		select: {
-			id: true,
-			name: true,
-			quantity: true,
-			unit: true,
-			categoryId: true,
-			category: { select: { name: true } },
-			purchased: true
-		}
+		select: ITEM_SELECT
 	});
-	return rows.map(toItem);
+}
+
+/** Los items de la lista para la UI, en su orden visual (ver `findListItems`). */
+export async function listItems(familyId: string, listId: string): Promise<ItemView[]> {
+	return (await findListItems(familyId, listId)).map(toItem);
+}
+
+/** Los items de la lista para la API (con `order`), en el mismo orden visual. */
+export async function listApiItems(familyId: string, listId: string): Promise<ApiItemView[]> {
+	return (await findListItems(familyId, listId)).map(toApiItem);
+}
+
+/**
+ * Un item de la lista por id, con su `order` (API pública, tarea #268): `null`
+ * si no hay item con ese id EN ESA LISTA y la lista no es de la familia —
+ * mismo `where` que `updateItem`, así que un id ajeno es «como si no
+ * existiera». La API lo usa para mezclar el PATCH parcial con lo guardado y
+ * para devolver el item tras crearlo o editarlo.
+ */
+export async function getItem(
+	familyId: string,
+	listId: string,
+	id: string
+): Promise<ApiItemView | null> {
+	const row = await prisma.item.findFirst({
+		where: { id, listId, list: { organizationId: familyId } },
+		select: ITEM_SELECT
+	});
+	return row ? toApiItem(row) : null;
 }
 
 /**
@@ -101,7 +149,7 @@ export async function createItem(
 	familyId: string,
 	listId: string,
 	data: ItemData
-): Promise<ItemView | null> {
+): Promise<ApiItemView | null> {
 	return prisma.$transaction(async (tx) => {
 		// La lista PRIMERO y CON LOCK (issue #108): dos altas concurrentes en
 		// la misma lista se serializan, así que el `max(order) + 1` de abajo
@@ -137,17 +185,9 @@ export async function createItem(
 				categoryId,
 				order: (_max.order ?? -1) + 1
 			},
-			select: {
-				id: true,
-				name: true,
-				quantity: true,
-				unit: true,
-				categoryId: true,
-				category: { select: { name: true } },
-				purchased: true
-			}
+			select: ITEM_SELECT
 		});
-		return toItem(row);
+		return toApiItem(row);
 	});
 }
 
@@ -201,6 +241,27 @@ export async function setItemPurchased(
 	const result = await prisma.item.updateMany({
 		where: { id, listId, list: { organizationId: familyId } },
 		data: { purchased }
+	});
+	return result.count > 0;
+}
+
+/**
+ * Fija la posición (`order`) de un item dentro de su lista (API pública,
+ * tarea #268): la UI no reordena items, pero la API deja a una integración
+ * colocarlos. El valor viaja explícito y se escribe tal cual — sin reescribir
+ * el resto de la lista: dos items con el mismo `order` se desempatan por
+ * antigüedad, igual que en `listItems`. `false` si no hay item con ese id EN
+ * ESA LISTA (y la lista, en esa familia), con la pertenencia en el `where`.
+ */
+export async function setItemOrder(
+	familyId: string,
+	listId: string,
+	id: string,
+	order: number
+): Promise<boolean> {
+	const result = await prisma.item.updateMany({
+		where: { id, listId, list: { organizationId: familyId } },
+		data: { order }
 	});
 	return result.count > 0;
 }
