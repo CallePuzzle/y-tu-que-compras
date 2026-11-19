@@ -20,8 +20,8 @@ import {
 // (US4 #264, tarea #278) contra el stack completo: dev server real, BD de
 // test y tokens REALES del plugin apiKey. Las peticiones a la API van con el
 // fixture `request` (sin cookies): la única credencial es el Bearer. El
-// plugin limita cada clave a 10 peticiones al día; con `resetDb` por test
-// cada uno estrena las suyas.
+// plugin limita cada clave a 60 peticiones por minuto (#271); con `resetDb`
+// por test cada uno estrena las suyas y no se acerca al límite.
 //
 // Al final, el ciclo completo por API (crear → editar → comprar → borrar),
 // con cada paso comprobado en el GET y en la web.
@@ -140,7 +140,7 @@ test('un item de otra lista, de otra familia o inexistente responde 404 y sigue 
 		expect(await patch.json(), label).toEqual(NOT_FOUND);
 	}
 
-	// El DELETE corta igual (dos casos: la clave tiene 10 peticiones al día).
+	// El DELETE corta igual en los dos casos.
 	for (const url of [urls.otherList, urls.crossFamily]) {
 		const del = await request.delete(url, { headers: bearer(token) });
 		expect(del.status(), url).toBe(404);

@@ -11,7 +11,7 @@ vi.mock('./auth.js', () => ({
 }));
 
 import { auth } from './auth.js';
-import { requireApiUser, type ApiUserResult } from './api-user.js';
+import { requireApiUser, retryAfterSeconds, type ApiUserResult } from './api-user.js';
 
 const verifyApiKey = auth.api.verifyApiKey as unknown as ReturnType<typeof vi.fn>;
 
@@ -203,5 +203,70 @@ describe('requireApiUser: verificación del plugin (#274)', () => {
 		await expect(requireApiUser(eventOf({ authorization: 'Bearer la-que-sea' }))).rejects.toThrow(
 			'conexión a la BD rechazada'
 		);
+	});
+});
+
+describe('requireApiUser: límite de peticiones por clave (#271)', () => {
+	it('una clave que agota su límite (RATE_LIMITED) responde 429 con Retry-After y el envelope', async () => {
+		verifyApiKey.mockResolvedValue({
+			valid: false,
+			error: {
+				message: 'Rate limit exceeded.',
+				code: 'RATE_LIMITED',
+				details: { tryAgainIn: 41_250 }
+			},
+			key: null
+		});
+
+		const response = await failureOf(
+			requireApiUser(eventOf({ authorization: 'Bearer clave-agotada' }))
+		);
+
+		expect(response.status).toBe(429);
+		// 41,25 s → 42: reintentar antes de tiempo volvería a dar 429.
+		expect(response.headers.get('retry-after')).toBe('42');
+		expect(await response.json()).toEqual({
+			error: {
+				code: 'rate_limited',
+				message: 'Rate limit exceeded for this API key',
+				details: { retryAfter: 42 }
+			}
+		});
+	});
+
+	it('el agotamiento de cuota (USAGE_EXCEEDED, no se usa) sigue siendo 401', async () => {
+		// Sin `remaining` configurado no debería llegar nunca; si llegara, la
+		// clave no tiene ventana que esperar y no merece un Retry-After.
+		verifyApiKey.mockResolvedValue({
+			valid: false,
+			error: { message: 'API Key has reached its usage limit', code: 'USAGE_EXCEEDED' },
+			key: null
+		});
+
+		const response = await failureOf(
+			requireApiUser(eventOf({ authorization: 'Bearer sin-cuota' }))
+		);
+
+		expect(response.status).toBe(401);
+		expect(await response.json()).toEqual(ENVELOPE);
+	});
+});
+
+describe('retryAfterSeconds (#271)', () => {
+	it('redondea los ms del plugin hacia arriba a segundos enteros', () => {
+		expect(retryAfterSeconds(60_000)).toBe(60);
+		expect(retryAfterSeconds(1_001)).toBe(2);
+	});
+
+	it('nunca baja de 1 segundo', () => {
+		expect(retryAfterSeconds(0)).toBe(1);
+		expect(retryAfterSeconds(-5)).toBe(1);
+		expect(retryAfterSeconds(3)).toBe(1);
+	});
+
+	it('sin un número usable cae a 60 segundos', () => {
+		expect(retryAfterSeconds(undefined)).toBe(60);
+		expect(retryAfterSeconds('10')).toBe(60);
+		expect(retryAfterSeconds(Number.NaN)).toBe(60);
 	});
 });

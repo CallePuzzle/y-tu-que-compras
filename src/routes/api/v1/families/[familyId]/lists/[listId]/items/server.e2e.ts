@@ -20,7 +20,8 @@ import {
 // contra el stack completo: dev server real, BD de test y tokens REALES del
 // plugin apiKey. Las peticiones a la API van con el fixture `request` (sin
 // cookies): la única credencial es el Bearer. El plugin limita cada clave a
-// 10 peticiones al día; con `resetDb` por test cada uno estrena las suyas.
+// 60 peticiones por minuto (#271); con `resetDb` por test cada uno estrena
+// las suyas y no se acerca al límite.
 //
 // PATCH y DELETE del item viven en `[itemId]/server.e2e.ts`.
 
