@@ -39,7 +39,7 @@ function itemNotFound(): Response {
 // Todas filtran por item + lista + familia en su propio `where`: si el item
 // desaparece entre la lectura y la escritura, el mismo 404. Sin check de rol
 // (#111). 401 / 403 / 404 como el resto de /api/v1; 400 si el body no es JSON,
-// 422 si no valida; 200 con el `ItemView` actualizado.
+// 422 si no valida; 200 con el `ApiItemView` actualizado.
 export const PATCH: RequestHandler = async (event) => {
 	const auth = await requireApiUser(event);
 	if (!auth.ok) return auth.response;

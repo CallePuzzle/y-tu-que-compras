@@ -115,7 +115,9 @@ describe('PATCH /api/v1/families/:familyId/lists/:listId/items/:itemId (#268)', 
 			// Sin categoría en el body: se conserva la que tenía.
 			categoryId: lacteos.id,
 			categoryName: 'Lácteos',
-			purchased: false
+			purchased: false,
+			// Segundo item de la lista (tras el «Leche» de `setup`).
+			order: 1
 		};
 		expect(await response.json()).toEqual(expected);
 		expect(await getItem(familyId, listId, itemId)).toEqual(expected);
@@ -165,8 +167,7 @@ describe('PATCH /api/v1/families/:familyId/lists/:listId/items/:itemId (#268)', 
 		);
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toMatchObject({ name: 'Leche entera' });
-		expect((await prisma.item.findUniqueOrThrow({ where: { id: itemId } })).order).toBe(10);
+		expect(await response.json()).toMatchObject({ name: 'Leche entera', order: 10 });
 		expect((await listItems(familyId, listId)).map((item) => item.id)).toEqual([
 			pan,
 			huevos,

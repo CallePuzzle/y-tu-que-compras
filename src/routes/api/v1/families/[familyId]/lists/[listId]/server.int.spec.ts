@@ -84,14 +84,22 @@ describe('GET /api/v1/families/:familyId/lists/:listId (#275)', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
 		expect(response.headers.get('cache-control')).toBe('no-store');
-		const item = (id: string, name: string, quantity: number, unit: string, purchased = false) => ({
+		const item = (
+			id: string,
+			name: string,
+			quantity: number,
+			unit: string,
+			order: number,
+			purchased = false
+		) => ({
 			id,
 			name,
 			quantity,
 			unit,
 			categoryId: null,
 			categoryName: null,
-			purchased
+			purchased,
+			order
 		});
 		expect(await response.json()).toEqual({
 			id: listId,
@@ -101,9 +109,9 @@ describe('GET /api/v1/families/:familyId/lists/:listId (#275)', () => {
 			itemCount: 3,
 			pendingCount: 2,
 			items: [
-				item(pan!.id, 'Pan', 1, 'unit'),
-				item(huevos!.id, 'Huevos', 1, 'dozen'),
-				item(leche!.id, 'Leche', 2, 'liter', true)
+				item(pan!.id, 'Pan', 1, 'unit', 1),
+				item(huevos!.id, 'Huevos', 1, 'dozen', 2),
+				item(leche!.id, 'Leche', 2, 'liter', 0, true)
 			]
 		});
 	});

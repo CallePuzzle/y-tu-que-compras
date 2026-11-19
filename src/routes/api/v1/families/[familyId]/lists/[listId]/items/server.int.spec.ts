@@ -103,11 +103,10 @@ describe('POST /api/v1/families/:familyId/lists/:listId/items (#268)', () => {
 			unit: 'liter',
 			categoryId: null,
 			categoryName: null,
-			purchased: false
+			purchased: false,
+			// El `order` lo pone el servidor: detrás del último item de la lista.
+			order: pan!.order + 1
 		});
-		const row = await prisma.item.findUniqueOrThrow({ where: { id: created.id } });
-		const panRow = await prisma.item.findUniqueOrThrow({ where: { id: pan!.id } });
-		expect(row.order).toBe(panRow.order + 1);
 		expect((await listItems(familyId, listId)).map((item) => item.name)).toEqual(['Pan', 'Leche']);
 	});
 

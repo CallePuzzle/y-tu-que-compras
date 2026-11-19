@@ -104,7 +104,7 @@ test('un listId inexistente responde 404', async ({ page, request }) => {
 	expect(await response.json()).toEqual(NOT_FOUND);
 });
 
-test('camino feliz: login OTP real, token y 200 con la ListView y sus ItemView en orden visual', async ({
+test('camino feliz: login OTP real, token y 200 con la ListView y sus items (con order) en orden visual', async ({
 	page,
 	request
 }) => {
@@ -150,7 +150,8 @@ test('camino feliz: login OTP real, token y 200 con la ListView y sus ItemView e
 				unit: 'unit',
 				categoryId: null,
 				categoryName: null,
-				purchased: false
+				purchased: false,
+				order: 1
 			},
 			{
 				id: huevos.id,
@@ -159,7 +160,8 @@ test('camino feliz: login OTP real, token y 200 con la ListView y sus ItemView e
 				unit: 'dozen',
 				categoryId: null,
 				categoryName: null,
-				purchased: false
+				purchased: false,
+				order: 2
 			},
 			{
 				id: leche.id,
@@ -168,7 +170,8 @@ test('camino feliz: login OTP real, token y 200 con la ListView y sus ItemView e
 				unit: 'liter',
 				categoryId: lacteos.id,
 				categoryName: 'Lácteos',
-				purchased: true
+				purchased: true,
+				order: 0
 			}
 		]
 	});
