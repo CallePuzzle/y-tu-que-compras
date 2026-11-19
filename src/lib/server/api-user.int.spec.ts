@@ -9,7 +9,8 @@ import type { RequestEvent } from '@sveltejs/kit';
 // US1) y verificadas con el hashing SHA-256 y el lookup reales sobre la tabla
 // `apikey`. La BD es la desechable de test (ver `integration-setup.ts`): los
 // usuarios y claves que aquí se crean no se limpian detrás.
-import { API_KEY_RATE_LIMIT, auth } from './auth.js';
+import { API_KEY_RATE_LIMIT } from './api-rate-limit.js';
+import { auth } from './auth.js';
 import { requireApiUser } from './api-user.js';
 import prisma from './prisma.js';
 

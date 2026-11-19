@@ -33,11 +33,6 @@ const sendVerificationOtp: SendVerificationOtp = async ({ email, otp, type }) =>
 	});
 };
 
-// Límite de peticiones por clave de API (T5.1, #271): definido en
-// `api-rate-limit.ts` para que la spec OpenAPI (T6.1, #267) lo lea sin cargar
-// better-auth; reexportado aquí para los tests que ya lo importan de `auth.ts`.
-export { API_KEY_RATE_LIMIT };
-
 // better-auth no ve el .env vía process.env en este setup (bun no lo inyecta en
 // los scripts de package.json), así que baseURL y secret van explícitos desde
 // `$app/env/private`: el handle de @callepuzzle/auth corta el arranque si
@@ -65,43 +60,26 @@ function createAuth() {
 			// (defaults de better-auth, dejados explícitos para que el límite sea
 			// visible; al agotarse el código queda invalidado).
 			emailOtpPreset(sendVerificationOtp, { expiresIn: 300, allowedAttempts: 3 }),
-			// Claves de API de la familia (épica #260, tarea #270): endpoints de
-			// creación, listado, actualización y borrado de claves. El plugin dejó
-			// el core de better-auth en la 1.5 y vive en `@better-auth/api-key`
-			// (versión clavada a la de better-auth). El hashing de la clave lo hace
-			// el plugin (SHA-256): en la BD solo va el hash y la clave en claro se
-			// devuelve una única vez al crearla. El modelo Apikey del esquema
-			// Prisma replica el schema del plugin (tabla `apikey`, en minúsculas).
+			// Claves de API de la API pública (épica #260). El plugin guarda solo
+			// el hash (SHA-256); la clave en claro se muestra una vez al crearla.
+			// Versión clavada a la de better-auth.
 			apiKey({
-				// Caducidad POR CLAVE: sin expiración por defecto (null), pero quien
-				// crea la clave puede pedir entre 1 y 365 días. Defaults del plugin,
-				// dejados explícitos para que el contrato sea visible.
+				// Prefijo propio: identifica la clave como nuestra (escáneres de
+				// secretos, logs). `start` guarda prefijo + 6 caracteres para la UI.
+				defaultPrefix: 'ytqc_',
+				startingCharactersConfig: { charactersLength: 11 },
+				// Sin caducidad por defecto; quien la crea puede pedir 1–365 días.
 				keyExpiration: {
 					defaultExpiresIn: null,
 					minExpiresIn: 1,
 					maxExpiresIn: 365
 				},
-				// Límite de peticiones POR CLAVE (T5.1, #271; columnas `rateLimit*` de
-				// Apikey), distinto del rate limit global de arriba: este limita el uso
-				// de la clave contra la API pública — semántica de la clave, no defensa
-				// del login — así que sigue activo también en dev. El contador vive en
-				// la propia fila de la clave (BD), así que es por token y no global, y
-				// vale con varias réplicas.
-				//
-				// 60 peticiones por minuto: de sobra para una integración real
-				// (scripts, atajos, domótica que sondea) y corta los bucles
-				// desbocados. El default del plugin (10 al día) no daba ni para un
-				// uso ligero. Cuidado con la semántica del plugin: la ventana NO es
-				// fija ni deslizante, se reinicia cuando pasa más de `timeWindow`
-				// desde la ÚLTIMA petición aceptada. Un cliente que nunca deja un
-				// hueco de un minuto acaba agotando las 60 y espera lo que quede
-				// hasta cumplir ese minuto de silencio (el `Retry-After` del 429,
-				// ver `api-user.ts`).
-				//
-				// El plugin COPIA estos valores a la fila al crear la clave: cambiar
-				// el límite aquí no toca las claves ya creadas (hace falta una
-				// migración de datos, como la de `api_key_rate_limit`). Los defaults
-				// de las columnas en `schema.prisma` replican estos mismos números.
+				// Límite POR CLAVE (T5.1, #271), activo también en dev. Ojo: la
+				// ventana se reinicia cuando pasa `timeWindow` desde la ÚLTIMA
+				// petición aceptada (ver el `Retry-After` en `api-user.ts`). El
+				// plugin copia el límite a la fila al crear la clave: cambiarlo
+				// aquí exige migrar las claves existentes y los defaults de las
+				// columnas en `schema.prisma`.
 				rateLimit: {
 					enabled: true,
 					timeWindow: API_KEY_RATE_LIMIT.timeWindowMs,

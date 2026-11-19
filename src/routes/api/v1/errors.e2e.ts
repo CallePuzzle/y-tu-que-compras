@@ -53,9 +53,11 @@ test('los errores de los endpoints comparten shape y Content-Type', async ({ pag
 	const token = await createApiToken(page);
 	const lists = `/api/v1/families/${family.id}/lists`;
 
-	await expectApiError(await request.get(lists), 401, {
+	const unauthenticated = await request.get(lists);
+	await expectApiError(unauthenticated, 401, {
 		error: { code: 'unauthenticated', message: 'Missing or invalid API key' }
 	});
+	expect(unauthenticated.headers()['www-authenticate']).toBe('Bearer realm="api"');
 	await expectApiError(await request.get(lists, { headers: bearer(token) }), 403, {
 		error: { code: 'forbidden', message: 'Not a member of this family' }
 	});

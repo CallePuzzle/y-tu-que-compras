@@ -1,4 +1,4 @@
-import type { RequestEvent } from '@sveltejs/kit';
+import { error, isHttpError, isRedirect, redirect, type RequestEvent } from '@sveltejs/kit';
 import { describe, expect, it, vi } from 'vitest';
 
 import { apiError } from './api-error.js';
@@ -118,6 +118,22 @@ describe('handleApiErrors', () => {
 			expect.objectContaining({ errorId: body.error.details.errorId, message: 'boom' }),
 			'unhandled error'
 		);
+	});
+
+	it('relanza los redirect y HttpError de kit en vez de convertirlos en 500', async () => {
+		const { event, log } = eventFor('/api/v1/a');
+
+		await expect(
+			run(event, () => {
+				redirect(307, '/api/v1/b');
+			})
+		).rejects.toSatisfy(isRedirect);
+		await expect(
+			run(event, () => {
+				error(418, 'teapot');
+			})
+		).rejects.toSatisfy((thrown) => isHttpError(thrown, 418));
+		expect(log.error).not.toHaveBeenCalled();
 	});
 
 	it('conserva el status de otros errores de kit (p. ej. 403 CSRF) con el código del catálogo', async () => {

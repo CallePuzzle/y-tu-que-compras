@@ -1,6 +1,6 @@
 import type { RequestEvent } from '@sveltejs/kit';
 
-import { apiError } from './api-error.js';
+import { API_WWW_AUTHENTICATE, apiError } from './api-error.js';
 import { auth } from './auth.js';
 import logger from './logger.js';
 
@@ -23,8 +23,10 @@ type VerifiedApiKeyResponse = Extract<VerifyApiKeyResponse, { error: null }>;
 /** Registro de una clave de API verificada (el `key` del éxito del plugin: el hash de la clave nunca sale de la BD). */
 export type ApiKeyRecord = NonNullable<VerifiedApiKeyResponse['key']>;
 
-/** Lo que `requireApiUser` entrega al endpoint: la autenticación o la 401/429 lista para devolver.
-
+/**
+ * Lo que `requireApiUser` entrega al endpoint: la autenticación o la 401/429
+ * lista para devolver.
+ *
  * El corte NO lanza un `error()` de kit: su body viajaría con `status` y
  * `message` propios de `App.Error` al nivel superior, ensuciando el envelope
  * `{ error: { code, message } }` (ver `api-error.ts`). Con el resultado en la
@@ -39,7 +41,7 @@ export type ApiUserResult =
 const UNAUTHORIZED_MESSAGE = 'Missing or invalid API key';
 
 /**
- * 401 con el envelope de `apiError`. La causa fina (código del plugin:
+ * 401 con el envelope de `apiError` y `WWW-Authenticate`. La causa fina (código del plugin:
  * `KEY_NOT_FOUND`, `KEY_DISABLED`, `KEY_EXPIRED`...) solo va al log del
  * request (`requestId` incluido), para depurar integraciones sin filtrar
  * matices al cliente.
@@ -48,7 +50,12 @@ function unauthorized(event: RequestEvent, reason: string): { ok: false; respons
 	// `handleLogging` lo crea siempre en cada request; el fallback cubre las
 	// llamadas fuera del ciclo de request (los specs).
 	(event.locals.log ?? logger).info({ api_key_rejected: reason }, UNAUTHORIZED_MESSAGE);
-	return { ok: false, response: apiError('unauthenticated', UNAUTHORIZED_MESSAGE) };
+	return {
+		ok: false,
+		response: apiError('unauthenticated', UNAUTHORIZED_MESSAGE, {
+			headers: { 'www-authenticate': API_WWW_AUTHENTICATE }
+		})
+	};
 }
 
 /**

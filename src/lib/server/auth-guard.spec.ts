@@ -27,6 +27,7 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/docs')).toBe(true);
 		expect(isPublicPathname('/docs/__data.json')).toBe(true);
 		expect(isPublicPathname('/docsx')).toBe(false);
+		expect(isPublicPathname('/docs/private')).toBe(false);
 	});
 
 	it('la vista de invitación por token es pública (issue #61)', () => {

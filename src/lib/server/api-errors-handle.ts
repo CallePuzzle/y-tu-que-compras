@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isHttpError, isRedirect } from '@sveltejs/kit';
 import type { Handle } from '@sveltejs/kit/hooks';
 
 import { apiError, apiErrorCodeForStatus, isApiErrorResponse } from './api-error.js';
@@ -80,6 +81,9 @@ export const handleApiErrors: Handle = async ({ event, resolve }) => {
 	try {
 		response = await resolve(event);
 	} catch (error) {
+		// `redirect()`/`error()` de kit no son fallos del servidor: se relanzan
+		// para que kit responda con su status (3xx/4xx) en vez de un 500.
+		if (isRedirect(error) || isHttpError(error)) throw error;
 		// Una excepción de un handle posterior: kit la convertiría fuera de esta
 		// cadena (y sin envelope). Se registra como haría `handleError`.
 		const errorId = randomUUID();

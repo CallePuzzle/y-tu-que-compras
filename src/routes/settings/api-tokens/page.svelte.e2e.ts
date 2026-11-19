@@ -59,6 +59,7 @@ test('crear un token lo muestra UNA vez y la clave desaparece al cerrar el aviso
 	await expect(revealed).toContainText('es la única vez que lo verás');
 	const key = (await revealed.locator('code').textContent()) ?? '';
 	expect(key.length).toBeGreaterThan(32);
+	expect(key.startsWith('ytqc_')).toBe(true);
 
 	// En la base solo está el hash: el plugin no guarda la clave en claro y el
 	// servidor ya no podría servirla otra vez.
@@ -66,7 +67,7 @@ test('crear un token lo muestra UNA vez y la clave desaparece al cerrar el aviso
 	expect(row).not.toBeNull();
 	expect(row?.key).not.toBe(key);
 	expect(row?.name).toBe('Integración de prueba');
-	expect(row?.start).toBe(key.slice(0, 6));
+	expect(row?.start).toBe(key.slice(0, 11));
 
 	// Cerrar el aviso: la clave sale del DOM, también tras recargar. Lo único
 	// que queda es la fila del listado, con nombre y prefijo (start), nunca la
@@ -78,7 +79,7 @@ test('crear un token lo muestra UNA vez y la clave desaparece al cerrar el aviso
 
 	const listRow = page.locator('section ol > li', { hasText: 'Integración de prueba' });
 	await expect(listRow).toBeVisible();
-	await expect(listRow).toContainText(key.slice(0, 6));
+	await expect(listRow).toContainText(key.slice(0, 11));
 	await expect(listRow).not.toContainText(key);
 	await expect(listRow).toContainText('Nunca usado');
 	await expect(listRow).toContainText('Creado');

@@ -72,6 +72,7 @@ describe('requireApiUser: la cabecera (#274)', () => {
 		const response = await failureOf(requireApiUser(eventOf()));
 
 		expect(response.status).toBe(401);
+		expect(response.headers.get('www-authenticate')).toBe('Bearer realm="api"');
 		expect(await response.json()).toEqual(ENVELOPE);
 		expect(verifyApiKey).not.toHaveBeenCalled();
 	});

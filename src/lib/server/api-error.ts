@@ -43,6 +43,9 @@ export const API_ERROR_STATUS = {
 /** Identificador estable de un error de la API: los mensajes pueden cambiar, el código no. */
 export type ApiErrorCode = keyof typeof API_ERROR_STATUS;
 
+/** Cabecera `WWW-Authenticate` de todo 401 de la API (RFC 9110 §11.6.1, esquema Bearer de RFC 6750). */
+export const API_WWW_AUTHENTICATE = 'Bearer realm="api"';
+
 /** Body JSON de cualquier error de /api/v1. */
 export interface ApiErrorBody {
 	error: {
