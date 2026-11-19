@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
 
+import { API_HEADERS } from './api-response.js';
+
 // Envelope de errores de la API pública /api/v1 (épica #260, tarea #274):
 // TODOS los errores comparten la misma forma `{ error: { code, message } }`.
 //
@@ -23,5 +25,6 @@ import { json } from '@sveltejs/kit';
  * @param message Texto legible, en inglés (mensajes de una API pública).
  */
 export function apiError(status: number, code: string, message: string): Response {
-	return json({ error: { code, message } }, { status });
+	// Mismas cabeceras que los éxitos (charset explícito y `no-store`, #269).
+	return json({ error: { code, message } }, { status, headers: API_HEADERS });
 }

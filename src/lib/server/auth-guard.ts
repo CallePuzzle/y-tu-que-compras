@@ -26,6 +26,10 @@ export function isPublicPathname(pathname: string): boolean {
 		pathname === '/login' ||
 		pathname.startsWith('/login/') ||
 		pathname.startsWith('/api/auth/') ||
+		// API pública (épica #260): sin cookie de sesión; cada endpoint se
+		// autentica con su Bearer token (`requireApiUser`, 401 JSON) en vez
+		// de redirigir a /login.
+		pathname.startsWith('/api/v1/') ||
 		// Probes de Kubernetes (issue #124): el kubelet va sin sesión.
 		// `/healthz` es liveness (sin BD); `/readyz`, readiness (`SELECT 1`).
 		pathname === '/healthz' ||
