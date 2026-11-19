@@ -68,6 +68,32 @@ export async function listItems(familyId: string, listId: string): Promise<ItemV
 }
 
 /**
+ * Un item de la lista por id (API pública, tarea #268): `null` si no hay item
+ * con ese id EN ESA LISTA y la lista no es de la familia — mismo `where` que
+ * `updateItem`, así que un id ajeno es «como si no existiera». El PATCH de la
+ * API lo usa para mezclar la actualización parcial con lo guardado.
+ */
+export async function getItem(
+	familyId: string,
+	listId: string,
+	id: string
+): Promise<ItemView | null> {
+	const row = await prisma.item.findFirst({
+		where: { id, listId, list: { organizationId: familyId } },
+		select: {
+			id: true,
+			name: true,
+			quantity: true,
+			unit: true,
+			categoryId: true,
+			category: { select: { name: true } },
+			purchased: true
+		}
+	});
+	return row ? toItem(row) : null;
+}
+
+/**
  * Resuelve la categoría del item (checklist #172): el id de UNA categoría de
  * la familia, o `null` si no viaja o ya no está en ella. La UI solo ofrece
  * categorías de la familia, así que un id que no cuadra (rancio: la borraron
@@ -201,6 +227,27 @@ export async function setItemPurchased(
 	const result = await prisma.item.updateMany({
 		where: { id, listId, list: { organizationId: familyId } },
 		data: { purchased }
+	});
+	return result.count > 0;
+}
+
+/**
+ * Fija la posición (`order`) de un item dentro de su lista (API pública,
+ * tarea #268): la UI no reordena items, pero la API deja a una integración
+ * colocarlos. El valor viaja explícito y se escribe tal cual — sin reescribir
+ * el resto de la lista: dos items con el mismo `order` se desempatan por
+ * antigüedad, igual que en `listItems`. `false` si no hay item con ese id EN
+ * ESA LISTA (y la lista, en esa familia), con la pertenencia en el `where`.
+ */
+export async function setItemOrder(
+	familyId: string,
+	listId: string,
+	id: string,
+	order: number
+): Promise<boolean> {
+	const result = await prisma.item.updateMany({
+		where: { id, listId, list: { organizationId: familyId } },
+		data: { order }
 	});
 	return result.count > 0;
 }
