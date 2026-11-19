@@ -94,7 +94,7 @@ describe('GET /api/v1/families/:familyId/lists (#269)', () => {
 
 		expect(response.status).toBe(401);
 		expect(await response.json()).toEqual({
-			error: { code: 'unauthorized', message: 'Missing or invalid API key' }
+			error: { code: 'unauthenticated', message: 'Missing or invalid API key' }
 		});
 	});
 

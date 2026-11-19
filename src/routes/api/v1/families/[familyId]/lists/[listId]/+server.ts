@@ -10,7 +10,7 @@ import { listSchema, type ListData } from '#lib/schemas/list.js';
 
 /** 404 común: la lista no existe o es de otra familia (no se revela cuál). */
 function listNotFound(): Response {
-	return apiError(404, 'not_found', 'List not found');
+	return apiError('not_found', 'List not found');
 }
 
 // GET /api/v1/families/:familyId/lists/:listId (épica #260, tarea #275): una

@@ -8,9 +8,6 @@ import { apiError } from './api-error.js';
 // se comprueba que el usuario del token sea miembro de ella en la tabla
 // `member` (la misma verdad que usa `resolveActiveFamily` para la web).
 
-/** Código estable del 403 de pertenencia. */
-const FORBIDDEN_CODE = 'forbidden';
-
 /** Mensaje del 403: el mismo exista o no la familia. */
 const FORBIDDEN_MESSAGE = 'Not a member of this family';
 
@@ -42,5 +39,5 @@ export async function requireApiFamilyMember(
 	if (await isFamilyMember(userId, familyId)) {
 		return null;
 	}
-	return apiError(403, FORBIDDEN_CODE, FORBIDDEN_MESSAGE);
+	return apiError('forbidden', FORBIDDEN_MESSAGE);
 }

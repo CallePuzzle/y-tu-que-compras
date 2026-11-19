@@ -26,7 +26,7 @@ import {
 // Al final, el ciclo completo por API (crear → editar → comprar → borrar),
 // con cada paso comprobado en el GET y en la web.
 
-const UNAUTHORIZED = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const UNAUTHORIZED = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 const FORBIDDEN = { error: { code: 'forbidden', message: 'Not a member of this family' } };
 const NOT_FOUND = { error: { code: 'not_found', message: 'Item not found' } };
 

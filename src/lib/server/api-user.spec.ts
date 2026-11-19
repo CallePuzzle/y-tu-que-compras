@@ -41,7 +41,7 @@ function verifiedKeyOf(userId: string) {
 }
 
 /** El envelope EXACTO del 401 (sin campos heredados de App.Error). */
-const ENVELOPE = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const ENVELOPE = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 
 /** El resultado ha de ser un fallo; devuelve su Response para asertarla. */
 async function failureOf(result: Promise<ApiUserResult>): Promise<Response> {

@@ -47,7 +47,7 @@ function eventWithBearer(token: string): RequestEvent {
 }
 
 /** El envelope EXACTO del 401. */
-const ENVELOPE = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const ENVELOPE = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 
 describe('requireApiUser contra claves reales (#274)', () => {
 	it('una clave real creada por el plugin autentica a su dueño', async () => {

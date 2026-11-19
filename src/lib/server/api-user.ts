@@ -35,9 +35,6 @@ export type ApiKeyRecord = NonNullable<VerifiedApiKeyResponse['key']>;
 export type ApiUserResult =
 	{ ok: true; userId: string; key: ApiKeyRecord } | { ok: false; response: Response };
 
-/** Código estable del 401: sin cabecera, clave inválida, revocada o caducada comparten envelope; el matiz queda en el log. */
-const UNAUTHORIZED_CODE = 'unauthorized';
-
 /** Mensaje único para todo 401: ni revocada ni caducada revelan más de la cuenta. */
 const UNAUTHORIZED_MESSAGE = 'Missing or invalid API key';
 
@@ -51,7 +48,7 @@ function unauthorized(event: RequestEvent, reason: string): { ok: false; respons
 	// `handleLogging` lo crea siempre en cada request; el fallback cubre las
 	// llamadas fuera del ciclo de request (los specs).
 	(event.locals.log ?? logger).info({ api_key_rejected: reason }, UNAUTHORIZED_MESSAGE);
-	return { ok: false, response: apiError(401, UNAUTHORIZED_CODE, UNAUTHORIZED_MESSAGE) };
+	return { ok: false, response: apiError('unauthenticated', UNAUTHORIZED_MESSAGE) };
 }
 
 /**

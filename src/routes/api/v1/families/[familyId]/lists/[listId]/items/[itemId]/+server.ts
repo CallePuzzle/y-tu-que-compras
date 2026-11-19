@@ -22,7 +22,7 @@ import {
  * familia (no se revela cuál).
  */
 function itemNotFound(): Response {
-	return apiError(404, 'not_found', 'Item not found');
+	return apiError('not_found', 'Item not found');
 }
 
 // PATCH /api/v1/families/:familyId/lists/:listId/items/:itemId (épica #260,

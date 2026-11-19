@@ -22,7 +22,7 @@ import {
 // 404 cross-family (sin tocar la lista ajena), 422 con envelope en el PATCH,
 // cascada de items en el DELETE y los cambios visibles luego en el GET.
 
-const UNAUTHORIZED = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const UNAUTHORIZED = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 const FORBIDDEN = { error: { code: 'forbidden', message: 'Not a member of this family' } };
 const NOT_FOUND = { error: { code: 'not_found', message: 'List not found' } };
 

@@ -31,7 +31,7 @@ export function validateApiBody<S extends z.ZodType>(
 	}
 	return {
 		ok: false,
-		response: apiError(422, 'validation_failed', 'Invalid request body', details)
+		response: apiError('validation_failed', 'Invalid request body', { details })
 	};
 }
 
@@ -44,7 +44,7 @@ export async function readApiBody<S extends z.ZodType>(
 	try {
 		value = await request.json();
 	} catch {
-		return { ok: false, response: apiError(400, 'invalid_json', 'Request body must be JSON') };
+		return { ok: false, response: apiError('invalid_json', 'Request body must be JSON') };
 	}
 	return validateApiBody(schema, value);
 }

@@ -31,7 +31,7 @@ export const POST: RequestHandler = async (event) => {
 	const { name, quantity, unit } = body.data;
 	const categoryId = await resolveApiCategoryId(familyId, body.data);
 	const item = await createItem(familyId, listId, { name, quantity, unit, categoryId });
-	if (!item) return apiError(404, 'not_found', 'List not found');
+	if (!item) return apiError('not_found', 'List not found');
 
 	return apiJson(item, 201);
 };
