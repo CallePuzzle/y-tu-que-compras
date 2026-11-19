@@ -30,6 +30,10 @@ export function isPublicPathname(pathname: string): boolean {
 		// autentica con su Bearer token (`requireApiUser`, 401 JSON) en vez
 		// de redirigir a /login.
 		pathname.startsWith('/api/v1/') ||
+		// Su documentación (tarea #281): la referencia de Scalar que lee la
+		// spec de `/api/v1/openapi.json`. `/docs` exacta y su `__data.json`.
+		pathname === '/docs' ||
+		pathname.startsWith('/docs/') ||
 		// Probes de Kubernetes (issue #124): el kubelet va sin sesión.
 		// `/healthz` es liveness (sin BD); `/readyz`, readiness (`SELECT 1`).
 		pathname === '/healthz' ||

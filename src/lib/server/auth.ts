@@ -9,6 +9,7 @@ import { getRequestEvent } from '$app/server';
 import { BETTER_AUTH_URL, BETTER_AUTH_SECRET } from '$app/env/private';
 import { extractLocaleFromRequest } from '#lib/paraglide/runtime.js';
 
+import { API_KEY_RATE_LIMIT } from '#lib/server/api-rate-limit.js';
 import logger from '#lib/server/logger.js';
 import { sendOtpEmail } from '#lib/server/emails.js';
 import { tenancyConfig } from '#lib/server/tenancy.js';
@@ -32,12 +33,10 @@ const sendVerificationOtp: SendVerificationOtp = async ({ email, otp, type }) =>
 	});
 };
 
-/**
- * Límite de peticiones por clave de API (T5.1, #271): `maxRequests` por
- * `timeWindowMs`. Exportado para que la spec OpenAPI (T6.1, #267) y los tests
- * documenten el mismo número que aplica el plugin.
- */
-export const API_KEY_RATE_LIMIT = { maxRequests: 60, timeWindowMs: 60 * 1000 } as const;
+// Límite de peticiones por clave de API (T5.1, #271): definido en
+// `api-rate-limit.ts` para que la spec OpenAPI (T6.1, #267) lo lea sin cargar
+// better-auth; reexportado aquí para los tests que ya lo importan de `auth.ts`.
+export { API_KEY_RATE_LIMIT };
 
 // better-auth no ve el .env vía process.env en este setup (bun no lo inyecta en
 // los scripts de package.json), así que baseURL y secret van explícitos desde

@@ -485,5 +485,11 @@
 	"tour_pantry_title": "Tu despensa",
 	"tour_pantry_description": "Lo que compráis queda aquí: consumid, reponed y re-añadid a la compra lo que se acabe.",
 	"tour_families_create_title": "Compra en familia",
-	"tour_families_create_description": "Con Crear familia invitas a los tuyos por email: todos comparten las mismas listas y la misma despensa."
+	"tour_families_create_description": "Con Crear familia invitas a los tuyos por email: todos comparten las mismas listas y la misma despensa.",
+	"docs_title": "Documentación de la API",
+	"docs_meta_description": "Referencia interactiva de la API pública de ¿Y tú qué compras?: endpoints de /api/v1, esquemas y peticiones de prueba con tu token.",
+	"docs_loading": "Cargando la referencia de la API…",
+	"docs_load_error": "No se pudo cargar la referencia de la API. Puedes descargar la spec OpenAPI directamente.",
+	"docs_spec_link": "Spec OpenAPI (JSON)",
+	"docs_footer_link": "API"
 }

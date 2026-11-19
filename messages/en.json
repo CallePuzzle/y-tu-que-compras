@@ -485,5 +485,11 @@
 	"tour_pantry_title": "Your pantry",
 	"tour_pantry_description": "Everything you buy ends up here: consume, restock and re-add whatever runs out to the shopping list.",
 	"tour_families_create_title": "Shop as a family",
-	"tour_families_create_description": "Create a family and invite yours by email: everyone shares the same lists and the same pantry."
+	"tour_families_create_description": "Create a family and invite yours by email: everyone shares the same lists and the same pantry.",
+	"docs_title": "API documentation",
+	"docs_meta_description": "Interactive reference for the What are you buying? public API: /api/v1 endpoints, schemas and test requests with your token.",
+	"docs_loading": "Loading the API reference…",
+	"docs_load_error": "The API reference could not be loaded. You can download the OpenAPI spec directly.",
+	"docs_spec_link": "OpenAPI spec (JSON)",
+	"docs_footer_link": "API"
 }
