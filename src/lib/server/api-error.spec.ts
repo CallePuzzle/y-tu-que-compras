@@ -31,3 +31,20 @@ describe('apiError (envelope de errores de /api/v1, #274)', () => {
 		}
 	});
 });
+
+describe('apiError con details (422 de validación, #272)', () => {
+	it('añade `details` dentro del envelope solo cuando se pasa', async () => {
+		const response = apiError(422, 'validation_failed', 'Invalid request body', {
+			name: ['Too small']
+		});
+
+		expect(response.status).toBe(422);
+		expect(await response.json()).toEqual({
+			error: {
+				code: 'validation_failed',
+				message: 'Invalid request body',
+				details: { name: ['Too small'] }
+			}
+		});
+	});
+});

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { bearer, createApiToken } from '../../../../../../../e2e/helpers/api';
 import { loginViaUi, seedSession } from '../../../../../../../e2e/helpers/auth';
+import { prisma } from '../../../../../../../e2e/helpers/db';
 import {
 	addFamilyMember,
 	createFamily,
@@ -16,6 +17,9 @@ import {
 // con el fixture `request` (contexto sin cookies): la única credencial es el
 // Bearer. Ojo: el plugin limita cada clave a 10 peticiones al día; con
 // `resetDb` por test cada uno estrena las suyas.
+//
+// POST (US3 #263, tarea #277) va al final: 201 con la `ListView`, 403 sin
+// pertenencia y 400/422 con el envelope de error y los `details` por campo.
 
 const UNAUTHORIZED = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
 const FORBIDDEN = { error: { code: 'forbidden', message: 'Not a member of this family' } };
@@ -149,4 +153,107 @@ test('camino feliz: login OTP real, token y 200 con las ListView de la familia d
 			}
 		])
 	);
+});
+
+// --- POST /api/v1/families/:familyId/lists (US3 #263, tarea #277) ---
+
+test('POST: token de un usuario ajeno a la familia responde 403 y no crea nada', async ({
+	page,
+	request
+}) => {
+	const owner = await createUser();
+	const family = await createFamily({ owner });
+	const outsider = await createUser();
+	await createFamily({ owner: outsider });
+	await seedSession(page, outsider);
+	const token = await createApiToken(page);
+
+	const response = await request.post(`/api/v1/families/${family.id}/lists`, {
+		headers: bearer(token),
+		data: { name: 'Intrusa', color: 'red', icon: 'gift' }
+	});
+
+	expect(response.status()).toBe(403);
+	expect(await response.json()).toEqual(FORBIDDEN);
+	expect(await prisma.list.count()).toBe(0);
+});
+
+test('POST: payload inválido responde 422 con el envelope y los errores por campo', async ({
+	page,
+	request
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await seedSession(page, user);
+	const token = await createApiToken(page);
+	const url = `/api/v1/families/${family.id}/lists`;
+	const valid = { name: 'Semanal', color: 'green', icon: 'apple' };
+
+	// Cada caso rompe un solo campo: `details` lleva exactamente ese campo.
+	const cases = [
+		{ payload: { ...valid, name: '   ' }, field: 'name' },
+		{ payload: { ...valid, color: 'fucsia' }, field: 'color' },
+		{ payload: { ...valid, icon: 'rocket' }, field: 'icon' }
+	];
+	for (const { payload, field } of cases) {
+		const response = await request.post(url, { headers: bearer(token), data: payload });
+		expect(response.status(), field).toBe(422);
+		expect(await response.json(), field).toEqual({
+			error: {
+				code: 'validation_failed',
+				message: 'Invalid request body',
+				details: { [field]: [expect.any(String)] }
+			}
+		});
+	}
+
+	// Body que no es JSON: 400, no hay nada que validar.
+	const notJson = await request.post(url, {
+		headers: { ...bearer(token), 'content-type': 'application/json' },
+		// Buffer: con un string y content-type JSON, Playwright lo serializaría a JSON.
+		data: Buffer.from('{esto no es json')
+	});
+	expect(notJson.status()).toBe(400);
+	expect(await notJson.json()).toEqual({
+		error: { code: 'invalid_json', message: 'Request body must be JSON' }
+	});
+
+	expect(await prisma.list.count()).toBe(0);
+});
+
+test('POST camino feliz: 201 con la ListView y la lista visible luego en el GET', async ({
+	page,
+	request
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await loginViaUi(page, user.email);
+	const token = await createApiToken(page);
+	const url = `/api/v1/families/${family.id}/lists`;
+
+	const response = await request.post(url, {
+		headers: bearer(token),
+		// El nombre se recorta como en el formulario web.
+		data: { name: '  Fiesta  ', color: 'purple', icon: 'gift' }
+	});
+
+	expect(response.status()).toBe(201);
+	expect(response.headers()['content-type']).toBe('application/json; charset=utf-8');
+	expect(response.headers()['cache-control']).toBe('no-store');
+	const created = await response.json();
+	expect(created).toEqual({
+		id: expect.any(String),
+		name: 'Fiesta',
+		color: 'purple',
+		icon: 'gift',
+		itemCount: 0,
+		pendingCount: 0
+	});
+
+	// Se creó en la familia de la URL y el GET de US2 la devuelve tal cual.
+	const stored = await prisma.list.findUniqueOrThrow({ where: { id: created.id } });
+	expect(stored.organizationId).toBe(family.id);
+	const list = await request.get(url, { headers: bearer(token) });
+	expect(list.status()).toBe(200);
+	expect(await list.json()).toEqual([created]);
 });
