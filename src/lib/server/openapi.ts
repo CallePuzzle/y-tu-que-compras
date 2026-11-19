@@ -8,7 +8,7 @@ import { z } from 'zod/v4';
 
 import { LIST_COLORS, LIST_ICONS, listSchema } from '#lib/schemas/list.js';
 import { UNITS } from '#lib/schemas/item.js';
-import { API_ERROR_STATUS, type ApiErrorCode } from './api-error.js';
+import { API_ERROR_STATUS, API_WWW_AUTHENTICATE, type ApiErrorCode } from './api-error.js';
 import { apiItemCreateSchema, apiItemPatchSchema } from './api-items.js';
 import { apiListPatchSchema } from './api-lists.js';
 import { API_KEY_RATE_LIMIT } from './api-rate-limit.js';
@@ -24,7 +24,7 @@ import { API_KEY_RATE_LIMIT } from './api-rate-limit.js';
 //   emite JSON Schema 2020-12 — el dialecto de OpenAPI 3.1. Cambiar un límite
 //   o un enum en el schema cambia la spec sin tocar este fichero. Lo que zod no
 //   sabe expresar (los `.refine`: «al menos un campo», «categoryId o category,
-//   no ambos») se añade aquí (`minProperties`, descripciones).
+//   no ambos») va en las descripciones.
 // - Los catálogos (colores, iconos, unidades, códigos de error) y el límite de
 //   peticiones se importan de su única fuente (`LIST_COLORS`, `UNITS`,
 //   `API_ERROR_STATUS`, `API_KEY_RATE_LIMIT`).
@@ -104,7 +104,8 @@ const BODY_ERRORS = {
 	'422': ref('responses', 'ValidationFailed')
 } as const;
 
-const NOT_FOUND = { '404': ref('responses', 'NotFound') } as const;
+const LIST_NOT_FOUND = { '404': ref('responses', 'ListNotFound') } as const;
+const ITEM_NOT_FOUND = { '404': ref('responses', 'ItemNotFound') } as const;
 
 /** Respuesta 204 de los DELETE. */
 const NO_CONTENT: ResponseObject = { description: 'Borrado. Sin body.' };
@@ -184,7 +185,7 @@ export function buildOpenApiSpec(): OpenAPIObject {
 							description: 'La lista con sus items.',
 							content: json(ref('schemas', 'ListWithItems'))
 						},
-						...NOT_FOUND,
+						...LIST_NOT_FOUND,
 						...COMMON_ERRORS
 					}
 				},
@@ -201,7 +202,7 @@ export function buildOpenApiSpec(): OpenAPIObject {
 							content: json(ref('schemas', 'List'))
 						},
 						...BODY_ERRORS,
-						...NOT_FOUND,
+						...LIST_NOT_FOUND,
 						...COMMON_ERRORS
 					}
 				},
@@ -210,7 +211,7 @@ export function buildOpenApiSpec(): OpenAPIObject {
 					operationId: 'deleteList',
 					summary: 'Borrar una lista',
 					description: 'Borra la lista y todos sus items. Repetir el borrado da 404.',
-					responses: { '204': NO_CONTENT, ...NOT_FOUND, ...COMMON_ERRORS }
+					responses: { '204': NO_CONTENT, ...LIST_NOT_FOUND, ...COMMON_ERRORS }
 				}
 			},
 			'/families/{familyId}/lists/{listId}/items': {
@@ -228,7 +229,7 @@ export function buildOpenApiSpec(): OpenAPIObject {
 							content: json(ref('schemas', 'Item'))
 						},
 						...BODY_ERRORS,
-						...NOT_FOUND,
+						...LIST_NOT_FOUND,
 						...COMMON_ERRORS
 					}
 				}
@@ -252,7 +253,7 @@ export function buildOpenApiSpec(): OpenAPIObject {
 							content: json(ref('schemas', 'Item'))
 						},
 						...BODY_ERRORS,
-						...NOT_FOUND,
+						...ITEM_NOT_FOUND,
 						...COMMON_ERRORS
 					}
 				},
@@ -261,7 +262,7 @@ export function buildOpenApiSpec(): OpenAPIObject {
 					operationId: 'deleteItem',
 					summary: 'Borrar un item',
 					description: 'Repetir el borrado da 404.',
-					responses: { '204': NO_CONTENT, ...NOT_FOUND, ...COMMON_ERRORS }
+					responses: { '204': NO_CONTENT, ...ITEM_NOT_FOUND, ...COMMON_ERRORS }
 				}
 			}
 		},
@@ -279,7 +280,8 @@ export function buildOpenApiSpec(): OpenAPIObject {
 					name: 'familyId',
 					in: 'path',
 					required: true,
-					description: 'Id de la familia. El usuario del token debe ser miembro (si no, 403).',
+					description:
+						'Id de la familia: el de la URL de la familia en la app (`/families/:familyId`). El usuario del token debe ser miembro (si no, 403).',
 					schema: { type: 'string' }
 				},
 				listId: {
@@ -370,7 +372,6 @@ export function buildOpenApiSpec(): OpenAPIObject {
 				},
 				ListCreate: bodySchema(listSchema(), { description: 'Datos de una lista nueva.' }),
 				ListPatch: bodySchema(apiListPatchSchema(), {
-					minProperties: 1,
 					description: 'Campos a cambiar de la lista: al menos uno.'
 				}),
 				ItemCreate: bodySchema(apiItemCreateSchema(), {
@@ -378,7 +379,6 @@ export function buildOpenApiSpec(): OpenAPIObject {
 						'Datos de un item nuevo. La categoría es opcional y va por id (`categoryId`) o por nombre (`category`, sin distinguir mayúsculas ni acentos), no ambas. Una categoría que no es de la familia se guarda como «sin categoría».'
 				}),
 				ItemPatch: bodySchema(apiItemPatchSchema(), {
-					minProperties: 1,
 					description:
 						'Campos a cambiar del item: al menos uno. La categoría va por id (`categoryId`) o por nombre (`category`), no ambas; `null` o `""` la quita y su ausencia la conserva.'
 				}),
@@ -421,16 +421,26 @@ export function buildOpenApiSpec(): OpenAPIObject {
 					{
 						code: 'unauthenticated',
 						message: 'Missing or invalid API key'
+					},
+					{
+						'WWW-Authenticate': {
+							description: `Reto de autenticación: siempre \`${API_WWW_AUTHENTICATE}\`.`,
+							schema: { type: 'string', const: API_WWW_AUTHENTICATE }
+						}
 					}
 				),
 				Forbidden: errorResponse(
 					'El usuario del token no es miembro de la familia de la URL (o la familia no existe).',
 					{ code: 'forbidden', message: 'Not a member of this family' }
 				),
-				NotFound: errorResponse('El recurso no existe o es de otra familia.', {
+				ListNotFound: errorResponse('La lista no existe o es de otra familia.', {
 					code: 'not_found',
 					message: 'List not found'
 				}),
+				ItemNotFound: errorResponse(
+					'El item no existe, es de otra lista o la lista es de otra familia.',
+					{ code: 'not_found', message: 'Item not found' }
+				),
 				ValidationFailed: errorResponse(
 					'El body JSON no cumple el schema. `details` trae los errores por campo (`{ campo: [mensajes] }`; los que no son de un campo, en `_errors`).',
 					{

@@ -3,21 +3,10 @@
 	import { resolve } from '$app/paths';
 	import { m } from '#lib/paraglide/messages.js';
 
-	// /docs (US6 #266, tarea #281): referencia interactiva de la API pública
-	// con Scalar, leyendo la spec de GET /api/v1/openapi.json (#267). Pública:
-	// el guard de hooks la deja pasar sin sesión (`isPublicPathname`) y el
-	// layout pinta su contenido sin ella (`showContent`).
-	//
-	// Scalar viene del paquete npm (`@scalar/api-reference`, versión fijada),
-	// no del CDN: así no hace falta abrir la CSP a un origen externo. Se importa
-	// dinámicamente en `onMount` para que su bundle (Vue incluido) solo lo
-	// descargue quien abre /docs, y nunca entre en SSR. Los estilos que inyecta
-	// ya los admite `style-src 'unsafe-inline'`, y las peticiones del «try it»
-	// van al mismo origen (`connect-src 'self'`).
-	//
-	// Sin prerender: el contenido es estático, pero el layout raíz pinta la
-	// sesión (cabecera, menú), así que un HTML prerenderizado mostraría siempre
-	// la cabecera de «sin sesión».
+	// /docs (US6 #266, tarea #281): referencia de la API con Scalar, leyendo
+	// GET /api/v1/openapi.json. Pública (`isPublicPathname`). Scalar sale del
+	// paquete npm (no del CDN, por la CSP) y se importa en `onMount`: solo lo
+	// descarga quien abre /docs y nunca entra en SSR.
 	const SPEC_URL = '/api/v1/openapi.json';
 
 	let container: HTMLDivElement;
@@ -36,19 +25,15 @@
 				if (cancelled) return;
 				app = createApiReference(container, {
 					url: SPEC_URL,
-					// La app solo tiene tema oscuro: Scalar también, sin conmutador
-					// (evita además el flash de su tema claro por defecto).
+					// La app solo tiene tema oscuro.
 					forceDarkModeState: 'dark',
 					hideDarkModeToggle: true,
-					// Nada de terceros: sin las fuentes de fonts.scalar.com (la CSP
-					// `font-src 'self'` las bloquearía), sin telemetría, sin el chat
-					// del agente de Scalar y sin el enlace al cliente externo.
+					// Nada de terceros (fuentes, telemetría, agente, cliente externo).
 					withDefaultFonts: false,
 					telemetry: false,
 					agent: { disabled: true },
 					hideClientButton: true,
 					showDeveloperTools: 'never'
-					// Sin `proxyUrl`: el «try it» llama directamente a la API (mismo origen).
 				});
 				status = 'ready';
 			} catch (error) {

@@ -137,6 +137,12 @@ describe('buildOpenApiSpec', () => {
 		expect(spec.info.description).toContain('Retry-After');
 	});
 
+	it('documenta el WWW-Authenticate del 401', () => {
+		const unauthenticated = buildOpenApiSpec().components?.responses
+			?.Unauthenticated as ResponseObject;
+		expect(unauthenticated?.headers).toHaveProperty('WWW-Authenticate');
+	});
+
 	it('las respuestas describen las propiedades de ListView y ApiItemView', () => {
 		expect(propertiesOf('List')).toEqual(Object.keys(LIST_VIEW_KEYS).sort());
 		expect(propertiesOf('Item')).toEqual(Object.keys(API_ITEM_VIEW_KEYS).sort());
@@ -151,11 +157,9 @@ describe('buildOpenApiSpec', () => {
 		);
 		const itemPatch = schemas.ItemPatch as SchemaObject;
 		expect(itemPatch.required).toBeUndefined();
-		expect(itemPatch.minProperties).toBe(1);
 		expect(Object.keys(itemPatch.properties ?? {})).toEqual(
 			expect.arrayContaining(['purchased', 'order'])
 		);
 		expect((schemas.ListCreate as SchemaObject).required).toEqual(['name', 'color', 'icon']);
-		expect((schemas.ListPatch as SchemaObject).minProperties).toBe(1);
 	});
 });
