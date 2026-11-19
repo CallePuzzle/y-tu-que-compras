@@ -38,6 +38,7 @@
 		"@inlang/paraglide-js": "^2.18.2",
 		"@playwright/test": "^1.60.0",
 		"@readme/openapi-parser": "^10.0.0",
+		"@scalar/api-reference": "1.77.0",
 		"@sveltejs/adapter-node": "^6.0.0",
 		"@sveltejs/adapter-vercel": "^7.0.0",
 		"@sveltejs/kit": "^3.0.0",

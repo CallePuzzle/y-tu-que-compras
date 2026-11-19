@@ -23,6 +23,12 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/api/v1/families/fam-1/lists')).toBe(true);
 	});
 
+	it('la documentación de la API es pública (tarea #281)', () => {
+		expect(isPublicPathname('/docs')).toBe(true);
+		expect(isPublicPathname('/docs/__data.json')).toBe(true);
+		expect(isPublicPathname('/docsx')).toBe(false);
+	});
+
 	it('la vista de invitación por token es pública (issue #61)', () => {
 		// El token del enlace es la credencial: hay que poder ver la invitación
 		// (o su caducidad) antes de crearse una cuenta. Responderla exige
