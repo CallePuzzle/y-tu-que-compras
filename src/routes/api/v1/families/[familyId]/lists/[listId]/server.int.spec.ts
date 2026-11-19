@@ -9,9 +9,9 @@ import type { RequestEvent } from '@sveltejs/kit';
 // `integration-setup.ts`): lo que aquí se crea no se limpia.
 import { auth } from '#lib/server/auth.js';
 import { createItem, setItemPurchased } from '#lib/server/items.js';
-import { createList } from '#lib/server/lists.js';
+import { createList, getList } from '#lib/server/lists.js';
 import prisma from '#lib/server/prisma.js';
-import { GET } from './+server.js';
+import { DELETE, GET, PATCH } from './+server.js';
 
 async function userRow(): Promise<string> {
 	const id = randomUUID();
@@ -172,5 +172,156 @@ describe('GET /api/v1/families/:familyId/lists/:listId (#275)', () => {
 		expect(await response.json()).toEqual({
 			error: { code: 'not_found', message: 'List not found' }
 		});
+	});
+});
+
+/** RequestEvent de un PATCH/DELETE (con body JSON opcional). */
+function mutationEventOf(
+	method: 'PATCH' | 'DELETE',
+	familyId: string,
+	listId: string,
+	token?: string,
+	body?: unknown
+): Parameters<typeof PATCH>[0] {
+	return {
+		request: new Request(`http://localhost/api/v1/families/${familyId}/lists/${listId}`, {
+			method,
+			headers: {
+				...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+				...(token ? { authorization: `Bearer ${token}` } : {})
+			},
+			body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body)
+		}),
+		params: { familyId, listId },
+		locals: {}
+	} as unknown as RequestEvent as Parameters<typeof PATCH>[0];
+}
+
+describe('PATCH /api/v1/families/:familyId/lists/:listId (#272)', () => {
+	it('actualiza solo los campos enviados y responde 200 con la lista', async () => {
+		const userId = await userRow();
+		const familyId = await familyRow();
+		await memberRow(familyId, userId);
+		const listId = await newList(familyId);
+		await createItem(familyId, listId, { name: 'Pan', quantity: 1, unit: 'unit' });
+
+		const response = await PATCH(
+			mutationEventOf('PATCH', familyId, listId, await realKey(userId), {
+				name: 'Finde',
+				icon: 'pizza'
+			})
+		);
+
+		expect(response.status).toBe(200);
+		const expected = {
+			id: listId,
+			name: 'Finde',
+			color: 'yellow',
+			icon: 'pizza',
+			itemCount: 1,
+			pendingCount: 1
+		};
+		expect(await response.json()).toEqual(expected);
+		expect(await getList(familyId, listId)).toEqual(expected);
+	});
+
+	it('un payload inválido (o vacío) responde 422 y no toca la lista', async () => {
+		const userId = await userRow();
+		const familyId = await familyRow();
+		await memberRow(familyId, userId);
+		const listId = await newList(familyId);
+		const key = await realKey(userId);
+
+		const invalid = await PATCH(
+			mutationEventOf('PATCH', familyId, listId, key, { color: 'fucsia' })
+		);
+		const empty = await PATCH(mutationEventOf('PATCH', familyId, listId, key, {}));
+
+		expect(invalid.status).toBe(422);
+		expect((await invalid.json()).error).toMatchObject({
+			code: 'validation_failed',
+			details: { color: [expect.any(String)] }
+		});
+		expect(empty.status).toBe(422);
+		expect((await empty.json()).error.details._errors).toEqual([
+			'At least one of name, color or icon is required'
+		]);
+		expect(await getList(familyId, listId)).toMatchObject({ name: 'Semanal', color: 'yellow' });
+	});
+
+	it('401 sin token, 403 sin pertenencia y 404 si la lista es de otra familia', async () => {
+		const userId = await userRow();
+		const familyId = await familyRow();
+		const otherFamily = await familyRow();
+		const strangerFamily = await familyRow();
+		await memberRow(familyId, userId);
+		await memberRow(otherFamily, userId);
+		const foreignList = await newList(otherFamily, 'Ajena');
+		const strangerList = await newList(strangerFamily, 'Privada');
+		const key = await realKey(userId);
+		const payload = { name: 'Pirateada' };
+
+		const unauthorized = await PATCH(
+			mutationEventOf('PATCH', familyId, foreignList, undefined, payload)
+		);
+		const forbidden = await PATCH(
+			mutationEventOf('PATCH', strangerFamily, strangerList, key, payload)
+		);
+		const notFound = await PATCH(mutationEventOf('PATCH', familyId, foreignList, key, payload));
+
+		expect(unauthorized.status).toBe(401);
+		expect(forbidden.status).toBe(403);
+		expect(notFound.status).toBe(404);
+		expect(await notFound.json()).toEqual({
+			error: { code: 'not_found', message: 'List not found' }
+		});
+		expect(await getList(otherFamily, foreignList)).toMatchObject({ name: 'Ajena' });
+		expect(await getList(strangerFamily, strangerList)).toMatchObject({ name: 'Privada' });
+	});
+});
+
+describe('DELETE /api/v1/families/:familyId/lists/:listId (#272)', () => {
+	it('borra la lista con sus items y responde 204; un segundo DELETE es 404', async () => {
+		const userId = await userRow();
+		const familyId = await familyRow();
+		await memberRow(familyId, userId);
+		const listId = await newList(familyId);
+		await createItem(familyId, listId, { name: 'Pan', quantity: 1, unit: 'unit' });
+		const key = await realKey(userId);
+
+		const response = await DELETE(mutationEventOf('DELETE', familyId, listId, key));
+
+		expect(response.status).toBe(204);
+		expect(await response.text()).toBe('');
+		expect(await getList(familyId, listId)).toBeNull();
+		expect(await prisma.item.count({ where: { listId } })).toBe(0);
+
+		const again = await DELETE(mutationEventOf('DELETE', familyId, listId, key));
+		expect(again.status).toBe(404);
+	});
+
+	it('401 sin token, 403 sin pertenencia y 404 si la lista es de otra familia', async () => {
+		const userId = await userRow();
+		const familyId = await familyRow();
+		const otherFamily = await familyRow();
+		const strangerFamily = await familyRow();
+		await memberRow(familyId, userId);
+		await memberRow(otherFamily, userId);
+		const foreignList = await newList(otherFamily, 'Ajena');
+		const strangerList = await newList(strangerFamily, 'Privada');
+		const key = await realKey(userId);
+
+		const unauthorized = await DELETE(mutationEventOf('DELETE', familyId, foreignList));
+		const forbidden = await DELETE(mutationEventOf('DELETE', strangerFamily, strangerList, key));
+		const notFound = await DELETE(mutationEventOf('DELETE', familyId, foreignList, key));
+
+		expect(unauthorized.status).toBe(401);
+		expect(forbidden.status).toBe(403);
+		expect(await forbidden.json()).toEqual({
+			error: { code: 'forbidden', message: 'Not a member of this family' }
+		});
+		expect(notFound.status).toBe(404);
+		expect(await getList(otherFamily, foreignList)).not.toBeNull();
+		expect(await getList(strangerFamily, strangerList)).not.toBeNull();
 	});
 });

@@ -23,8 +23,16 @@ import { API_HEADERS } from './api-response.js';
  * @param code Identificador estable del error para los clientes (`unauthorized`,
  * `not_found`...): los mensajes pueden cambiar, este no.
  * @param message Texto legible, en inglés (mensajes de una API pública).
+ * @param details Detalle opcional legible por máquina (p. ej. los errores por
+ * campo del 422 de validación, #272); si no se pasa, la clave no aparece.
  */
-export function apiError(status: number, code: string, message: string): Response {
+export function apiError(
+	status: number,
+	code: string,
+	message: string,
+	details?: Record<string, unknown>
+): Response {
+	const error = details === undefined ? { code, message } : { code, message, details };
 	// Mismas cabeceras que los éxitos (charset explícito y `no-store`, #269).
-	return json({ error: { code, message } }, { status, headers: API_HEADERS });
+	return json({ error }, { status, headers: API_HEADERS });
 }
