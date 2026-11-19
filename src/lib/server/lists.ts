@@ -108,6 +108,23 @@ export async function updateList(familyId: string, id: string, data: ListData): 
 }
 
 /**
+ * Actualización PARCIAL de una lista (API pública, épica #260): una sola
+ * escritura con solo los campos presentes, sin leer-mezclar-reescribir.
+ * `false` si no hay lista con ese id EN ESA FAMILIA, como `updateList`.
+ */
+export async function patchList(
+	familyId: string,
+	id: string,
+	patch: Partial<ListData>
+): Promise<boolean> {
+	const result = await prisma.list.updateMany({
+		where: { id, organizationId: familyId },
+		data: { name: patch.name, color: patch.color, icon: patch.icon }
+	});
+	return result.count > 0;
+}
+
+/**
  * Borra una lista de la familia; `false` si ya no estaba (doble envío) o era
  * de otra familia. Sus items mueren en cascada por la FK (issue #67).
  */

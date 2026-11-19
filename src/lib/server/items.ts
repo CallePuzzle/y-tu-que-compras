@@ -100,8 +100,8 @@ export async function listApiItems(familyId: string, listId: string): Promise<Ap
  * Un item de la lista por id, con su `order` (API pública, tarea #268): `null`
  * si no hay item con ese id EN ESA LISTA y la lista no es de la familia —
  * mismo `where` que `updateItem`, así que un id ajeno es «como si no
- * existiera». La API lo usa para mezclar el PATCH parcial con lo guardado y
- * para devolver el item tras crearlo o editarlo.
+ * existiera». La API lo usa para el 404 previo al body del PATCH y para
+ * devolver el item tras editarlo.
  */
 export async function getItem(
 	familyId: string,
@@ -245,23 +245,40 @@ export async function setItemPurchased(
 	return result.count > 0;
 }
 
+/** Campos de un PATCH parcial de item (API pública): solo se escriben los presentes. */
+export interface ItemPatch {
+	name?: string;
+	quantity?: number;
+	unit?: Unit;
+	/** `null` o `''` quita la categoría; un id que no es de la familia, también. */
+	categoryId?: string | null;
+	purchased?: boolean;
+	/** Posición en la lista; se escribe tal cual (empates por antigüedad). */
+	order?: number;
+}
+
 /**
- * Fija la posición (`order`) de un item dentro de su lista (API pública,
- * tarea #268): la UI no reordena items, pero la API deja a una integración
- * colocarlos. El valor viaja explícito y se escribe tal cual — sin reescribir
- * el resto de la lista: dos items con el mismo `order` se desempatan por
- * antigüedad, igual que en `listItems`. `false` si no hay item con ese id EN
- * ESA LISTA (y la lista, en esa familia), con la pertenencia en el `where`.
+ * Actualización PARCIAL de un item (API pública, épica #260): UNA sola
+ * escritura con solo los campos presentes, así que dos PATCH concurrentes de
+ * campos distintos no se pisan. La categoría se resuelve antes, como en
+ * `updateItem`. `false` si no hay item con ese id EN ESA LISTA (y la lista,
+ * en esa familia): la pertenencia va en el `where` del `updateMany`.
  */
-export async function setItemOrder(
+export async function patchItem(
 	familyId: string,
 	listId: string,
 	id: string,
-	order: number
+	patch: ItemPatch
 ): Promise<boolean> {
+	// Prisma ignora los `undefined`: los campos ausentes no se tocan.
+	const categoryId =
+		patch.categoryId === undefined
+			? undefined
+			: await resolveCategoryId(prisma, familyId, patch.categoryId ?? undefined);
+	const { name, quantity, unit, purchased, order } = patch;
 	const result = await prisma.item.updateMany({
 		where: { id, listId, list: { organizationId: familyId } },
-		data: { order }
+		data: { name, quantity, unit, purchased, order, categoryId }
 	});
 	return result.count > 0;
 }
