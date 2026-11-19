@@ -15,14 +15,15 @@ import {
 // GET /api/v1/families/:familyId/lists/:listId (US2 #262, tarea #276) contra
 // el stack completo: dev server real, BD de test y tokens REALES del plugin
 // apiKey. Las peticiones a la API van con el fixture `request` (sin cookies):
-// la única credencial es el Bearer. El plugin limita cada clave a 10
-// peticiones al día; con `resetDb` por test cada uno estrena las suyas.
+// la única credencial es el Bearer. El plugin limita cada clave a 60
+// peticiones por minuto (#271); con `resetDb` por test cada uno estrena las
+// suyas y no se acerca al límite.
 //
 // PATCH y DELETE (US3 #263, tarea #277) van al final: 403 sin pertenencia,
 // 404 cross-family (sin tocar la lista ajena), 422 con envelope en el PATCH,
 // cascada de items en el DELETE y los cambios visibles luego en el GET.
 
-const UNAUTHORIZED = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const UNAUTHORIZED = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 const FORBIDDEN = { error: { code: 'forbidden', message: 'Not a member of this family' } };
 const NOT_FOUND = { error: { code: 'not_found', message: 'List not found' } };
 

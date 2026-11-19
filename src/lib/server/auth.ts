@@ -32,6 +32,13 @@ const sendVerificationOtp: SendVerificationOtp = async ({ email, otp, type }) =>
 	});
 };
 
+/**
+ * Límite de peticiones por clave de API (T5.1, #271): `maxRequests` por
+ * `timeWindowMs`. Exportado para que la spec OpenAPI (T6.1, #267) y los tests
+ * documenten el mismo número que aplica el plugin.
+ */
+export const API_KEY_RATE_LIMIT = { maxRequests: 60, timeWindowMs: 60 * 1000 } as const;
+
 // better-auth no ve el .env vía process.env en este setup (bun no lo inyecta en
 // los scripts de package.json), así que baseURL y secret van explícitos desde
 // `$app/env/private`: el handle de @callepuzzle/auth corta el arranque si
@@ -75,15 +82,31 @@ function createAuth() {
 					minExpiresIn: 1,
 					maxExpiresIn: 365
 				},
-				// Límite de peticiones POR CLAVE (columnas `rateLimit*` de Apikey),
-				// distinto del rate limit global de arriba: este limita el uso de la
-				// clave contra la API pública — semántica de la clave, no defensa del
-				// login — así que sigue activo también en dev. Defaults del plugin
-				// (10 peticiones al día), dejados explícitos por lo mismo.
+				// Límite de peticiones POR CLAVE (T5.1, #271; columnas `rateLimit*` de
+				// Apikey), distinto del rate limit global de arriba: este limita el uso
+				// de la clave contra la API pública — semántica de la clave, no defensa
+				// del login — así que sigue activo también en dev. El contador vive en
+				// la propia fila de la clave (BD), así que es por token y no global, y
+				// vale con varias réplicas.
+				//
+				// 60 peticiones por minuto: de sobra para una integración real
+				// (scripts, atajos, domótica que sondea) y corta los bucles
+				// desbocados. El default del plugin (10 al día) no daba ni para un
+				// uso ligero. Cuidado con la semántica del plugin: la ventana NO es
+				// fija ni deslizante, se reinicia cuando pasa más de `timeWindow`
+				// desde la ÚLTIMA petición aceptada. Un cliente que nunca deja un
+				// hueco de un minuto acaba agotando las 60 y espera lo que quede
+				// hasta cumplir ese minuto de silencio (el `Retry-After` del 429,
+				// ver `api-user.ts`).
+				//
+				// El plugin COPIA estos valores a la fila al crear la clave: cambiar
+				// el límite aquí no toca las claves ya creadas (hace falta una
+				// migración de datos, como la de `api_key_rate_limit`). Los defaults
+				// de las columnas en `schema.prisma` replican estos mismos números.
 				rateLimit: {
 					enabled: true,
-					timeWindow: 1000 * 60 * 60 * 24, // 1 día, en ms
-					maxRequests: 10
+					timeWindow: API_KEY_RATE_LIMIT.timeWindowMs,
+					maxRequests: API_KEY_RATE_LIMIT.maxRequests
 				}
 			}),
 			// Familias (familia = organization): endpoints de organizaciones, roles,

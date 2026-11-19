@@ -15,13 +15,13 @@ import {
 // completo: dev server real, BD de test y tokens REALES del plugin apiKey
 // creados por HTTP con la sesión de la usuaria. Las peticiones a la API van
 // con el fixture `request` (contexto sin cookies): la única credencial es el
-// Bearer. Ojo: el plugin limita cada clave a 10 peticiones al día; con
-// `resetDb` por test cada uno estrena las suyas.
+// Bearer. El plugin limita cada clave a 60 peticiones por minuto (#271):
+// con `resetDb` por test cada uno estrena las suyas y no se acerca al límite.
 //
 // POST (US3 #263, tarea #277) va al final: 201 con la `ListView`, 403 sin
 // pertenencia y 400/422 con el envelope de error y los `details` por campo.
 
-const UNAUTHORIZED = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const UNAUTHORIZED = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 const FORBIDDEN = { error: { code: 'forbidden', message: 'Not a member of this family' } };
 
 test.beforeEach(async () => {

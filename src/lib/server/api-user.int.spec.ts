@@ -9,7 +9,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 // US1) y verificadas con el hashing SHA-256 y el lookup reales sobre la tabla
 // `apikey`. La BD es la desechable de test (ver `integration-setup.ts`): los
 // usuarios y claves que aquí se crean no se limpian detrás.
-import { auth } from './auth.js';
+import { API_KEY_RATE_LIMIT, auth } from './auth.js';
 import { requireApiUser } from './api-user.js';
 import prisma from './prisma.js';
 
@@ -47,7 +47,7 @@ function eventWithBearer(token: string): RequestEvent {
 }
 
 /** El envelope EXACTO del 401. */
-const ENVELOPE = { error: { code: 'unauthorized', message: 'Missing or invalid API key' } };
+const ENVELOPE = { error: { code: 'unauthenticated', message: 'Missing or invalid API key' } };
 
 describe('requireApiUser contra claves reales (#274)', () => {
 	it('una clave real creada por el plugin autentica a su dueño', async () => {
@@ -113,5 +113,51 @@ describe('requireApiUser contra claves reales (#274)', () => {
 			expect(result.response.status).toBe(401);
 			expect(await result.response.json()).toEqual(ENVELOPE);
 		}
+	});
+});
+
+describe('requireApiUser: límite de peticiones por clave real (#271)', () => {
+	it('una clave nueva estrena el límite configurado (no el default del plugin)', async () => {
+		const userId = await userRow();
+		await realKey(userId);
+
+		const row = await prisma.apikey.findFirstOrThrow({ where: { referenceId: userId } });
+
+		expect(row).toMatchObject({
+			rateLimitEnabled: true,
+			rateLimitMax: API_KEY_RATE_LIMIT.maxRequests,
+			rateLimitTimeWindow: API_KEY_RATE_LIMIT.timeWindowMs
+		});
+	});
+
+	it('superar el límite responde 429 con Retry-After, y solo a ESA clave', async () => {
+		const userId = await userRow();
+		const exhausted = await realKey(userId);
+		// Límite pequeño solo en esta clave para no hacer 60 peticiones: el
+		// plugin lee el límite de la fila, igual que con el valor real.
+		const row = await prisma.apikey.findFirstOrThrow({ where: { referenceId: userId } });
+		await prisma.apikey.update({ where: { id: row.id }, data: { rateLimitMax: 2 } });
+		const other = await realKey(userId);
+
+		expect((await requireApiUser(eventWithBearer(exhausted))).ok).toBe(true);
+		expect((await requireApiUser(eventWithBearer(exhausted))).ok).toBe(true);
+		const result = await requireApiUser(eventWithBearer(exhausted));
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.response.status).toBe(429);
+			const retryAfter = Number(result.response.headers.get('retry-after'));
+			expect(retryAfter).toBeGreaterThanOrEqual(1);
+			expect(retryAfter).toBeLessThanOrEqual(API_KEY_RATE_LIMIT.timeWindowMs / 1000);
+			expect(await result.response.json()).toEqual({
+				error: {
+					code: 'rate_limited',
+					message: 'Rate limit exceeded for this API key',
+					details: { retryAfter }
+				}
+			});
+		}
+		// El límite es por clave, no global: otra clave del mismo usuario sigue.
+		expect((await requireApiUser(eventWithBearer(other))).ok).toBe(true);
 	});
 });
