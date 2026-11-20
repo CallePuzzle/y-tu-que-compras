@@ -84,23 +84,47 @@ export function convertQuantity(quantity: number, from: Unit, to: Unit): number 
 }
 
 /**
- * Los productos de despensa con el MISMO nombre canónico (`normalizeItemName`:
- * «arroz» y «Arroz» empatan) pero en OTRA unidad que la fila — el conflicto
- * que avisa el chip. El nombre va SIN normalizar (lo normaliza la función,
- * igual que hace la búsqueda de items) y el producto YA enlazado puede salir:
- * es justo el caso «la unidad se cambió a mano después» que la conversión
- * deshace. Si el producto vive en varias unidades, salen TODAS las opciones.
+ * Los productos de despensa con el MISMO nombre canónico que `name`
+ * (`normalizeItemName`: «arroz» y «Arroz» empatan), en cualquier unidad. Un
+ * nombre que el canónico deja vacío no casa con nada. Es el casamiento que
+ * comparten el chip de conflicto (`findUnitConflicts`) y el enlace de una
+ * fila a su producto (`findPantryProduct`).
+ */
+function sameNameProducts(name: string, pantryProducts: readonly PantryProduct[]): PantryProduct[] {
+	const normalizedName = normalizeItemName(name);
+	if (!normalizedName) {
+		return [];
+	}
+	return pantryProducts.filter((product) => normalizeItemName(product.name) === normalizedName);
+}
+
+/**
+ * Los productos de despensa con el MISMO nombre canónico pero en OTRA unidad
+ * que la fila — el conflicto que avisa el chip. El nombre va SIN normalizar
+ * (lo normaliza la función, igual que hace la búsqueda de items) y el
+ * producto YA enlazado puede salir: es justo el caso «la unidad se cambió a
+ * mano después» que la conversión deshace. Si el producto vive en varias
+ * unidades, salen TODAS las opciones.
  */
 export function findUnitConflicts(
 	name: string,
 	unit: Unit,
 	pantryProducts: readonly PantryProduct[]
 ): PantryProduct[] {
-	const normalizedName = normalizeItemName(name);
-	if (!normalizedName) {
-		return [];
-	}
-	return pantryProducts.filter(
-		(product) => product.unit !== unit && normalizeItemName(product.name) === normalizedName
-	);
+	return sameNameProducts(name, pantryProducts).filter((product) => product.unit !== unit);
+}
+
+/**
+ * El producto de despensa que ES la fila: mismo nombre canónico y MISMA
+ * unidad (el único de `PantryItem` es familia + canónico + unidad, así que
+ * hay como mucho uno). Es el complemento de `findUnitConflicts`: con la
+ * misma fila, o hay enlace o hay conflicto (o ninguno, si el nombre no está
+ * en la despensa).
+ */
+export function findPantryProduct(
+	name: string,
+	unit: Unit,
+	pantryProducts: readonly PantryProduct[]
+): PantryProduct | undefined {
+	return sameNameProducts(name, pantryProducts).find((product) => product.unit === unit);
 }

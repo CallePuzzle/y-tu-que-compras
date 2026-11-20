@@ -1,23 +1,24 @@
 import { normalizeItemName } from '#lib/normalize-name.js';
 import prisma from '#lib/server/prisma.js';
+import type { Unit } from '#lib/schemas/item.js';
 
-// Sugerencia de categoría por nombre conocido (issue #173, épica #164): al
-// escribir en el alta rápida un nombre que la familia ya conoce, el select de
-// categoría se autocompleta con la categoría que esa familia le suele dar —
-// SIEMPRE editable: es una sugerencia, nunca una imposición (el select sigue
-// funcionando igual y lo manual manda).
+// Sugerencias por nombre conocido (issue #173, épica #164; ampliadas en la
+// épica #286): al escribir un nombre de producto que la familia ya conoce, el
+// formulario lo autocompleta y pre-rellena lo que la familia le suele dar
+// (unidad, categoría, enlace a despensa) — SIEMPRE editable: es una
+// sugerencia, nunca una imposición (lo manual manda).
 //
 // La resolución compara por nombre CANÓNICO (`normalizeItemName`), igual que
 // la despensa identifica sus productos: «Leche Entera», «leche entera» y
 // «LECHE  entera» son el mismo nombre a efectos de sugerir. Las fuentes son
-// la despensa de la familia y los items de TODAS sus listas — lo comprado en
-// otra lista también es «conocido».
+// la despensa de la familia, los items de TODAS sus listas y los ingredientes
+// de sus recetas.
 //
-// El resultado es un mapa nombre canónico -> id de categoría que el load
-// entrega a la página: el cliente resuelve cada tecla SIN consultas nuevas.
-
-/** El mapa de sugerencias: nombre canónico -> id de categoría de la familia. */
-export type CategorySuggestions = Record<string, string>;
+// La categoría sigue la regla de #173 (`resolveCategorySuggestions`, pura) y
+// la consume la resolución de nombres (`resolveProductNameSuggestions`); el
+// load entrega a la página la lista ya resuelta
+// (`listProductNameSuggestions`) y el cliente resuelve cada tecla SIN
+// consultas nuevas.
 
 /** De dónde salió una fila candidata: la despensa manda sobre los items. */
 export const SOURCE_PANTRY = 0;
@@ -50,7 +51,7 @@ export interface SuggestionRow {
  * 3. Recencia: a igual fuente, el `updatedAt` más nuevo (la última vez que
  *    la familia clasificó ese nombre manda sobre las anteriores).
  */
-export function resolveCategorySuggestions(rows: SuggestionRow[]): CategorySuggestions {
+export function resolveCategorySuggestions(rows: SuggestionRow[]): Record<string, string> {
 	const best = new Map<string, { categoryId: string; source: number; updatedAt: Date }>();
 	for (const row of rows) {
 		if (!row.categoryId) {
@@ -76,39 +77,129 @@ export function resolveCategorySuggestions(rows: SuggestionRow[]): CategorySugge
 	return Object.fromEntries([...best].map(([key, { categoryId }]) => [key, categoryId]));
 }
 
+// Sugerencias de NOMBRE de producto (issue #282, épica #286): el autocompletado
+// con `<datalist>` de todos los inputs de nombre (alta rápida, editar item,
+// ingredientes de recetas y menús) sugiere lo que la familia ya ha escrito
+// alguna vez, colapsado por nombre canónico para que «Patatas» y «patatas» sean
+// UNA sola opción y no se sigan multiplicando las variantes. Mismo contrato que
+// la resolución de categoría de arriba: fuentes ya filtradas por familia,
+// resolución pura testeable sin base de datos y una lista que el load entrega a
+// la página para que el cliente no consulte nada por tecla.
+
+/** Tercera fuente, solo para nombres: los ingredientes de las recetas. */
+export const SOURCE_RECIPE = 2;
+
+/** Una fila candidata a sugerir nombre: la de categoría más su unidad. */
+export interface ProductNameRow extends SuggestionRow {
+	/** La unidad con la que la familia escribió ese producto en esa fuente. */
+	unit: Unit;
+}
+
+/** Una sugerencia de nombre, lista para un `<option>` y para pre-rellenar. */
+export interface ProductNameSuggestion {
+	/** Nombre visible tal y como lo escribió la fila ganadora. */
+	name: string;
+	/** Unidad sugerida: la de la fila ganadora. */
+	unit: Unit;
+	/**
+	 * Categoría sugerida: la misma regla que `resolveCategorySuggestions` sobre
+	 * las filas de ese canónico (solo cuentan las que tienen categoría), así
+	 * que un nombre cuya fila ganadora no tiene categoría aún puede sugerir la
+	 * de otra fuente. `null` = ninguna fila del canónico tiene categoría.
+	 */
+	categoryId: string | null;
+}
+
 /**
- * Las sugerencias de categoría de UNA familia (issue #173): su despensa y los
- * items de todas sus listas que tengan categoría. Los nombres de la despensa
- * llegan ya canónicos (`PantryItem.normalizedName`); los de los items se
- * normalizan aquí, que no guardan copia. Un producto de otra familia es como
- * si no existiera: la familia viaja en cada `where`, como en el resto de
- * módulos de servidor.
+ * La resolución pura de sugerencias de nombre (issue #282): de todas las filas
+ * conocidas queda UNA sugerencia por nombre canónico (`normalizeItemName`; la
+ * despensa trae el suyo ya guardado). Reglas, las mismas que en #173:
+ *
+ * 1. Nombres que el canónico deja vacíos no sugieren nada.
+ * 2. Fuente: despensa (0) sobre items de listas (1) sobre ingredientes de
+ *    recetas (2). La fila ganadora da nombre visible y unidad. El enlace a
+ *    despensa no viaja aquí: el cliente lo resuelve contra `pantryItems` por
+ *    canónico + unidad final de la fila (`findPantryProduct`).
+ * 3. Recencia: a igual fuente, el `updatedAt` más nuevo. Así un mismo
+ *    canónico con varias unidades en despensa (el único de PantryItem es
+ *    familia + canónico + unidad) colapsa en la fila más reciente.
+ *
+ * La categoría se resuelve aparte con `resolveCategorySuggestions` sobre las
+ * mismas filas, para que coincida con lo que sugeriría el mapa de categorías.
+ * El resultado va ordenado por nombre visible (orden estable del datalist).
  */
-export async function listCategorySuggestions(familyId: string): Promise<CategorySuggestions> {
-	const [pantryRows, itemRows] = await Promise.all([
+export function resolveProductNameSuggestions(rows: ProductNameRow[]): ProductNameSuggestion[] {
+	const best = new Map<string, ProductNameRow>();
+	for (const row of rows) {
+		const key = row.normalizedName ?? normalizeItemName(row.name);
+		if (!key) {
+			continue;
+		}
+		const current = best.get(key);
+		if (
+			!current ||
+			row.source < current.source ||
+			(row.source === current.source && row.updatedAt > current.updatedAt)
+		) {
+			best.set(key, row);
+		}
+	}
+	const categories = resolveCategorySuggestions(rows);
+	return [...best]
+		.map(([key, row]) => ({
+			name: row.name.trim(),
+			unit: row.unit,
+			categoryId: categories[key] ?? null
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+}
+
+/**
+ * Las sugerencias de nombre de UNA familia (issue #282): su despensa, los
+ * items de todas sus listas y los ingredientes de todas sus recetas. La
+ * familia viaja en cada `where`; los ingredientes no tienen `updatedAt` y
+ * desempatan con el de su receta (la última vez que se tocó la receta).
+ */
+export async function listProductNameSuggestions(
+	familyId: string
+): Promise<ProductNameSuggestion[]> {
+	const [pantryRows, itemRows, ingredientRows] = await Promise.all([
 		prisma.pantryItem.findMany({
-			where: { organizationId: familyId, categoryId: { not: null } },
-			select: { name: true, normalizedName: true, categoryId: true, updatedAt: true }
+			where: { organizationId: familyId },
+			select: { name: true, normalizedName: true, unit: true, categoryId: true, updatedAt: true }
 		}),
 		prisma.item.findMany({
-			where: { list: { organizationId: familyId }, categoryId: { not: null } },
-			select: { name: true, categoryId: true, updatedAt: true }
+			where: { list: { organizationId: familyId } },
+			select: { name: true, unit: true, categoryId: true, updatedAt: true }
+		}),
+		prisma.recipeIngredient.findMany({
+			where: { recipe: { organizationId: familyId } },
+			select: { name: true, unit: true, categoryId: true, recipe: { select: { updatedAt: true } } }
 		})
 	]);
 
-	return resolveCategorySuggestions([
-		...pantryRows.map(({ name, normalizedName, categoryId, updatedAt }) => ({
+	return resolveProductNameSuggestions([
+		...pantryRows.map(({ name, normalizedName, unit, categoryId, updatedAt }) => ({
 			name,
 			normalizedName,
+			unit,
 			categoryId,
 			source: SOURCE_PANTRY,
 			updatedAt
 		})),
-		...itemRows.map(({ name, categoryId, updatedAt }) => ({
+		...itemRows.map(({ name, unit, categoryId, updatedAt }) => ({
 			name,
+			unit,
 			categoryId,
 			source: SOURCE_ITEM,
 			updatedAt
+		})),
+		...ingredientRows.map(({ name, unit, categoryId, recipe }) => ({
+			name,
+			unit,
+			categoryId,
+			source: SOURCE_RECIPE,
+			updatedAt: recipe.updatedAt
 		}))
 	]);
 }

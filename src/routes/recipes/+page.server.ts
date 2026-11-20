@@ -14,6 +14,7 @@ import {
 	listRecipes,
 	updateRecipe
 } from '#lib/server/recipes.js';
+import { listProductNameSuggestions } from '#lib/server/suggestions.js';
 import { dateKeyOf } from '../calendar/grid.js';
 import { recipeFormSchema, recipeMealPlanFormSchema, recipeUpdateFormSchema } from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -90,6 +91,12 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		recipes,
 		pantryItems,
+		// Los nombres que la familia ya conoce (#284): despensa, items de sus
+		// listas e ingredientes de recetas, uno por canónico. Son el `datalist`
+		// de ingredientes del modal de crear/editar y lo que hereda la fila al
+		// casar uno (unidad y, si es de despensa, su enlace). `pantryItems`
+		// sigue aparte: lo consume el chip de unidad conflictiva (#240).
+		nameSuggestions: await listProductNameSuggestions(family.id),
 		// El «hoy» de la zona de la app (el cliente no calcula fechas, las
 		// sirve el servidor: ver `grid.ts` del calendario): el día por defecto
 		// del modal de asignar al menú (#242).
