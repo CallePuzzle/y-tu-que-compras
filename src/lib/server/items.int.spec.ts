@@ -11,7 +11,14 @@ import { describe, expect, it } from 'vitest';
 import type { ItemData } from '#lib/schemas/item.js';
 import prisma from './prisma.js';
 import { createCategory } from './categories.js';
-import { createItem, deleteItem, listItems, setItemPurchased, updateItem } from './items.js';
+import {
+	createItem,
+	deleteItem,
+	listItems,
+	patchItem,
+	setItemPurchased,
+	updateItem
+} from './items.js';
 import { createList } from './lists.js';
 
 /** Crea una familia directamente en la base y devuelve su id. */
@@ -262,6 +269,42 @@ describe('Categoría de los items (#172)', () => {
 		expect(await updateItem(familyId, list.id, item.id, { ...ITEM, categoryId: '' })).toBe(true);
 		expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
 			categoryId: null
+		});
+	});
+});
+
+describe('PATCH parcial de items (API, #260)', () => {
+	it('patchItem escribe solo los campos presentes: dos parches de campos distintos no se pisan', async () => {
+		const familyId = await familyRow('Familia Parcheadora');
+		const list = await createList(familyId, LIST);
+		const category = await createCategory(familyId, { name: 'Lácteos' });
+		const item = await createItemOrFail(familyId, list.id, { ...ITEM, categoryId: category.id });
+
+		expect(await patchItem(familyId, list.id, item.id, { name: 'Leche desnatada' })).toBe(true);
+		expect(await patchItem(familyId, list.id, item.id, { purchased: true, order: 7 })).toBe(true);
+		expect(await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({
+			name: 'Leche desnatada',
+			unit: ITEM.unit,
+			categoryId: category.id,
+			purchased: true,
+			order: 7
+		});
+
+		// `null` quita la categoría; ausente, se conserva (arriba).
+		expect(await patchItem(familyId, list.id, item.id, { categoryId: null })).toBe(true);
+		expect((await prisma.item.findUniqueOrThrow({ where: { id: item.id } })).categoryId).toBeNull();
+	});
+
+	it('patchItem devuelve false para un item de otra lista o familia y no lo toca', async () => {
+		const ownFamily = await familyRow('Familia Parcheadora');
+		const otherFamily = await familyRow('Familia Intacta');
+		const ownList = await createList(ownFamily, LIST);
+		const foreignList = await createList(otherFamily, LIST);
+		const foreignItem = await createItemOrFail(otherFamily, foreignList.id, ITEM);
+
+		expect(await patchItem(ownFamily, ownList.id, foreignItem.id, { name: 'Vándalo' })).toBe(false);
+		expect(await prisma.item.findUniqueOrThrow({ where: { id: foreignItem.id } })).toMatchObject({
+			name: ITEM.name
 		});
 	});
 });

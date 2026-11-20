@@ -4,6 +4,7 @@
 	// (cada página monta su cliente, pero las clases son las mismas).
 	import '@sjmc11/tourguidejs/src/scss/tour.scss';
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import {
 		ButtonSignOut,
 		Dock,
@@ -50,7 +51,9 @@
 		Boolean(data.user) ||
 			page.route.id === '/login' ||
 			page.route.id === '/invitations/[token]' ||
-			page.route.id === '/'
+			page.route.id === '/' ||
+			// La documentación de la API (tarea #281) es pública.
+			page.route.id === '/docs'
 	);
 
 	// Tras `signOut()` la cookie ya no vale, pero SvelteKit NO reejecuta el load
@@ -171,6 +174,10 @@
 				<!-- El reinicio del tour (#142) vive aquí y sólo con sesión: es un
 				     tour de usuario logado, sin sesión no hay nada que ver. -->
 				<p class="p-4 text-sm opacity-70">{m.app_footer()}</p>
+				<!-- Enlace a la documentación pública de la API (tarea #281). -->
+				<a href={resolve('/docs')} class="link link-hover text-sm opacity-70">
+					{m.docs_footer_link()}
+				</a>
 				{#if data.user}
 					<button
 						type="button"

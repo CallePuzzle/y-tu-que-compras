@@ -1,4 +1,5 @@
 import prisma from '#lib/server/prisma.js';
+import { apiKey } from '@better-auth/api-key';
 import { emailOtpPreset, emailOtpRateLimitRules, getBetterAuth } from '@callepuzzle/auth/server';
 import type { SendVerificationOtp } from '@callepuzzle/auth/server';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
@@ -8,6 +9,7 @@ import { getRequestEvent } from '$app/server';
 import { BETTER_AUTH_URL, BETTER_AUTH_SECRET } from '$app/env/private';
 import { extractLocaleFromRequest } from '#lib/paraglide/runtime.js';
 
+import { API_KEY_RATE_LIMIT } from '#lib/server/api-rate-limit.js';
 import logger from '#lib/server/logger.js';
 import { sendOtpEmail } from '#lib/server/emails.js';
 import { tenancyConfig } from '#lib/server/tenancy.js';
@@ -58,6 +60,32 @@ function createAuth() {
 			// (defaults de better-auth, dejados explícitos para que el límite sea
 			// visible; al agotarse el código queda invalidado).
 			emailOtpPreset(sendVerificationOtp, { expiresIn: 300, allowedAttempts: 3 }),
+			// Claves de API de la API pública (épica #260). El plugin guarda solo
+			// el hash (SHA-256); la clave en claro se muestra una vez al crearla.
+			// Versión clavada a la de better-auth.
+			apiKey({
+				// Prefijo propio: identifica la clave como nuestra (escáneres de
+				// secretos, logs). `start` guarda prefijo + 6 caracteres para la UI.
+				defaultPrefix: 'ytqc_',
+				startingCharactersConfig: { charactersLength: 11 },
+				// Sin caducidad por defecto; quien la crea puede pedir 1–365 días.
+				keyExpiration: {
+					defaultExpiresIn: null,
+					minExpiresIn: 1,
+					maxExpiresIn: 365
+				},
+				// Límite POR CLAVE (T5.1, #271), activo también en dev. Ojo: la
+				// ventana se reinicia cuando pasa `timeWindow` desde la ÚLTIMA
+				// petición aceptada (ver el `Retry-After` en `api-user.ts`). El
+				// plugin copia el límite a la fila al crear la clave: cambiarlo
+				// aquí exige migrar las claves existentes y los defaults de las
+				// columnas en `schema.prisma`.
+				rateLimit: {
+					enabled: true,
+					timeWindow: API_KEY_RATE_LIMIT.timeWindowMs,
+					maxRequests: API_KEY_RATE_LIMIT.maxRequests
+				}
+			}),
 			// Familias (familia = organization): endpoints de organizaciones, roles,
 			// miembros e invitaciones. La configuración (i18n `es`, filtro de
 			// familias por pertenencia y seed de roles al crear) vive en

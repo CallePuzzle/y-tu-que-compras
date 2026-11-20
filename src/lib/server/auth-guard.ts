@@ -26,6 +26,15 @@ export function isPublicPathname(pathname: string): boolean {
 		pathname === '/login' ||
 		pathname.startsWith('/login/') ||
 		pathname.startsWith('/api/auth/') ||
+		// API pública (épica #260): sin cookie de sesión; cada endpoint se
+		// autentica con su Bearer token (`requireApiUser`, 401 JSON) en vez
+		// de redirigir a /login.
+		pathname.startsWith('/api/v1/') ||
+		// Su documentación (tarea #281): la referencia de Scalar que lee la
+		// spec de `/api/v1/openapi.json`. `/docs` exacta y su `__data.json`,
+		// no cualquier ruta futura bajo `/docs/`.
+		pathname === '/docs' ||
+		pathname === '/docs/__data.json' ||
 		// Probes de Kubernetes (issue #124): el kubelet va sin sesión.
 		// `/healthz` es liveness (sin BD); `/readyz`, readiness (`SELECT 1`).
 		pathname === '/healthz' ||

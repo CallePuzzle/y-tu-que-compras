@@ -46,25 +46,73 @@ function toItem(row: {
 }
 
 /**
- * Los items de la lista, en su orden visual: primero los pendientes, luego
- * los comprados (#69: separación de comprados vs pendientes también sin JS);
- * dentro de cada grupo manda el `order` y después la antigüedad.
+ * Un item tal y como lo devuelve la API pública (tarea #268): la vista de la
+ * UI más su `order`, que la API deja escribir en el PATCH y por tanto expone
+ * al leer. La UI no lo usa (no reordena items), así que `ItemView` no lo lleva.
  */
-export async function listItems(familyId: string, listId: string): Promise<ItemView[]> {
-	const rows = await prisma.item.findMany({
+export interface ApiItemView extends ItemView {
+	/** Posición dentro de su grupo (pendientes/comprados) de la lista. */
+	order: number;
+}
+
+/** Columnas de un item para las vistas: las de `ItemView` más el `order`. */
+const ITEM_SELECT = {
+	id: true,
+	name: true,
+	quantity: true,
+	unit: true,
+	categoryId: true,
+	category: { select: { name: true } },
+	purchased: true,
+	order: true
+} as const;
+
+/** De la fila de Prisma a la vista de la API: la de la UI más el `order`. */
+function toApiItem(row: Parameters<typeof toItem>[0] & { order: number }): ApiItemView {
+	return { ...toItem(row), order: row.order };
+}
+
+/**
+ * Las filas de los items de la lista, en su orden visual: primero los
+ * pendientes, luego los comprados (#69: separación de comprados vs pendientes
+ * también sin JS); dentro de cada grupo manda el `order` y después la
+ * antigüedad.
+ */
+function findListItems(familyId: string, listId: string) {
+	return prisma.item.findMany({
 		where: { listId, list: { organizationId: familyId } },
 		orderBy: [{ purchased: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
-		select: {
-			id: true,
-			name: true,
-			quantity: true,
-			unit: true,
-			categoryId: true,
-			category: { select: { name: true } },
-			purchased: true
-		}
+		select: ITEM_SELECT
 	});
-	return rows.map(toItem);
+}
+
+/** Los items de la lista para la UI, en su orden visual (ver `findListItems`). */
+export async function listItems(familyId: string, listId: string): Promise<ItemView[]> {
+	return (await findListItems(familyId, listId)).map(toItem);
+}
+
+/** Los items de la lista para la API (con `order`), en el mismo orden visual. */
+export async function listApiItems(familyId: string, listId: string): Promise<ApiItemView[]> {
+	return (await findListItems(familyId, listId)).map(toApiItem);
+}
+
+/**
+ * Un item de la lista por id, con su `order` (API pública, tarea #268): `null`
+ * si no hay item con ese id EN ESA LISTA y la lista no es de la familia —
+ * mismo `where` que `updateItem`, así que un id ajeno es «como si no
+ * existiera». La API lo usa para el 404 previo al body del PATCH y para
+ * devolver el item tras editarlo.
+ */
+export async function getItem(
+	familyId: string,
+	listId: string,
+	id: string
+): Promise<ApiItemView | null> {
+	const row = await prisma.item.findFirst({
+		where: { id, listId, list: { organizationId: familyId } },
+		select: ITEM_SELECT
+	});
+	return row ? toApiItem(row) : null;
 }
 
 /**
@@ -101,7 +149,7 @@ export async function createItem(
 	familyId: string,
 	listId: string,
 	data: ItemData
-): Promise<ItemView | null> {
+): Promise<ApiItemView | null> {
 	return prisma.$transaction(async (tx) => {
 		// La lista PRIMERO y CON LOCK (issue #108): dos altas concurrentes en
 		// la misma lista se serializan, así que el `max(order) + 1` de abajo
@@ -137,17 +185,9 @@ export async function createItem(
 				categoryId,
 				order: (_max.order ?? -1) + 1
 			},
-			select: {
-				id: true,
-				name: true,
-				quantity: true,
-				unit: true,
-				categoryId: true,
-				category: { select: { name: true } },
-				purchased: true
-			}
+			select: ITEM_SELECT
 		});
-		return toItem(row);
+		return toApiItem(row);
 	});
 }
 
@@ -201,6 +241,44 @@ export async function setItemPurchased(
 	const result = await prisma.item.updateMany({
 		where: { id, listId, list: { organizationId: familyId } },
 		data: { purchased }
+	});
+	return result.count > 0;
+}
+
+/** Campos de un PATCH parcial de item (API pública): solo se escriben los presentes. */
+export interface ItemPatch {
+	name?: string;
+	quantity?: number;
+	unit?: Unit;
+	/** `null` o `''` quita la categoría; un id que no es de la familia, también. */
+	categoryId?: string | null;
+	purchased?: boolean;
+	/** Posición en la lista; se escribe tal cual (empates por antigüedad). */
+	order?: number;
+}
+
+/**
+ * Actualización PARCIAL de un item (API pública, épica #260): UNA sola
+ * escritura con solo los campos presentes, así que dos PATCH concurrentes de
+ * campos distintos no se pisan. La categoría se resuelve antes, como en
+ * `updateItem`. `false` si no hay item con ese id EN ESA LISTA (y la lista,
+ * en esa familia): la pertenencia va en el `where` del `updateMany`.
+ */
+export async function patchItem(
+	familyId: string,
+	listId: string,
+	id: string,
+	patch: ItemPatch
+): Promise<boolean> {
+	// Prisma ignora los `undefined`: los campos ausentes no se tocan.
+	const categoryId =
+		patch.categoryId === undefined
+			? undefined
+			: await resolveCategoryId(prisma, familyId, patch.categoryId ?? undefined);
+	const { name, quantity, unit, purchased, order } = patch;
+	const result = await prisma.item.updateMany({
+		where: { id, listId, list: { organizationId: familyId } },
+		data: { name, quantity, unit, purchased, order, categoryId }
 	});
 	return result.count > 0;
 }

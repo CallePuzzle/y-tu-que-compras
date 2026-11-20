@@ -14,6 +14,11 @@ declare global {
 			 * páginas la consumen con `requireActiveFamily` (#lib/server/family-context).
 			 */
 			activeFamily?: import('#lib/server/family-context.js').ActiveFamily | null;
+			/**
+			 * Id del error no controlado de esta request, si lo hubo: lo fija
+			 * `handleError` y lo expone el 500 JSON de /api/v1 (`handleApiErrors`, #279).
+			 */
+			errorId?: string;
 		}
 		// interface PageData {}
 		// interface PageState {}

@@ -20,6 +20,7 @@ model User {
   updatedAt     DateTime  @updatedAt
   sessions      Session[]
   accounts      Account[]
+  apiKeys       Apikey[]
   members       Member[]
 
   // Grants/denies recibidos (userId) y concedidos/denegados por el usuario
@@ -94,6 +95,44 @@ model RateLimit {
 
   @@unique([key])
   @@map("rateLimit")
+}
+
+// ============================================================================
+// Plugin @better-auth/api-key (épica #260): claves de la API pública. Replica
+// el schema que genera `npx @better-auth/cli generate` para el plugin. El
+// modelo se llama `Apikey` porque el adaptador busca el delegate `apikey`.
+// `key` guarda solo el hash; `referenceId` es el usuario dueño. Los defaults
+// de `rateLimit*` replican el límite por clave de `auth.ts`.
+// ============================================================================
+model Apikey {
+  id                  String    @id
+  configId            String    @default("default")
+  name                String?
+  start               String?
+  referenceId         String
+  prefix              String?
+  key                 String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean?  @default(true)
+  rateLimitEnabled    Boolean?  @default(true)
+  rateLimitTimeWindow Int?      @default(60000)
+  rateLimitMax        Int?      @default(60)
+  requestCount        Int?      @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime
+  updatedAt           DateTime
+  permissions         String?
+  metadata            String?
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
+  @@map("apikey")
 }
 
 // ============================================================================
