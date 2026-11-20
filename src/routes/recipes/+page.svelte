@@ -51,13 +51,15 @@
 		assignModal?.open(recipe, data.todayKey);
 	}
 
-	// Detalle de solo lectura (#290): una modal compartida; el NOMBRE de la
-	// fila la abre (los botones de la fila siguen siendo las acciones). El
-	// mismo patrón que asignar/editar: cada fila fija qué receta se muestra
-	// antes de abrir.
+	// Detalle de receta (#290): una modal compartida; el NOMBRE de la fila
+	// la abre (los botones de la fila siguen siendo las acciones sobre la
+	// receta). El mismo patrón que asignar/editar: cada fila fija qué
+	// receta se muestra antes de abrir. Dentro, el estado de despensa y el
+	// volcado a la compra van con el tronco del calendario; editar y borrar
+	// siguen fuera.
 	let detailModal: RecipeDetailModal | undefined = $state();
 
-	/** Abre el detalle de solo lectura de la receta elegida. */
+	/** Abre el detalle de la receta elegida. */
 	function openDetail(recipe: RecipeRow) {
 		successMessage = null;
 		detailModal?.open(recipe);
@@ -214,9 +216,16 @@
 />
 
 <!-- Detalle de solo lectura (#290): una modal compartida; el nombre de la
-     fila fija qué receta se muestra. Sin acciones dentro: solo cerrar —
-     añadir al menú, editar y borrar siguen en los botones de la fila. -->
-<RecipeDetailModal bind:this={detailModal} />
+     fila fija qué receta se muestra. El estado de despensa y el volcado
+     van dentro (el tronco del calendario); las acciones de la receta
+     siguen en los botones de la fila. -->
+<RecipeDetailModal
+	bind:this={detailModal}
+	pantryQuantities={data.pantryQuantities}
+	lists={data.lists}
+	dumpForm={data.dumpForm}
+	onDumpSuccess={(message) => (successMessage = message)}
+/>
 
 <!-- Borrar: una modal compartida; cada botón de la fila fija a qué receta se
      refiere antes de abrirla. La despensa y los menús no cambian: el fallo
