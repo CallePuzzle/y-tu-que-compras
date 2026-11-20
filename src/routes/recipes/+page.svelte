@@ -11,6 +11,7 @@
 	import { useRefetchOnVisible } from '#lib/refetch-on-visible.svelte.js';
 	import AssignRecipeModal from './AssignRecipeModal.svelte';
 	import CreateRecipeModal from './CreateRecipeModal.svelte';
+	import RecipeDetailModal from './RecipeDetailModal.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -48,6 +49,18 @@
 	function openAssign(recipe: RecipeRow) {
 		successMessage = null;
 		assignModal?.open(recipe, data.todayKey);
+	}
+
+	// Detalle de solo lectura (#290): una modal compartida; el NOMBRE de la
+	// fila la abre (los botones de la fila siguen siendo las acciones). El
+	// mismo patrón que asignar/editar: cada fila fija qué receta se muestra
+	// antes de abrir.
+	let detailModal: RecipeDetailModal | undefined = $state();
+
+	/** Abre el detalle de solo lectura de la receta elegida. */
+	function openDetail(recipe: RecipeRow) {
+		successMessage = null;
+		detailModal?.open(recipe);
 	}
 
 	// Borrar con confirmación: un `ConfirmModal` compartido (patrón items);
@@ -125,7 +138,17 @@
 				{#each filteredRecipes as recipe (recipe.id)}
 					<li class="bg-base-200 rounded-box flex items-center gap-1 px-3 py-2">
 						<div class="min-w-0 flex-1">
-							<p class="font-medium break-words">{recipe.name}</p>
+							<!-- El nombre es el botón del detalle (#290): solo el
+							     nombre, no la fila entera, que ya lleva los tres
+							     botones de acción como hermanos (sin interactivos
+							     anidados). -->
+							<button
+								type="button"
+								class="text-left font-medium break-words"
+								onclick={() => openDetail(recipe)}
+							>
+								{recipe.name}
+							</button>
 							{#if recipe.servings !== null}
 								<span class="badge badge-ghost badge-sm mt-0.5 tabular-nums">
 									{m.recipe_servings({ count: recipe.servings })}
@@ -189,6 +212,11 @@
 	nameSuggestions={data.nameSuggestions}
 	onSuccess={(message) => (successMessage = message)}
 />
+
+<!-- Detalle de solo lectura (#290): una modal compartida; el nombre de la
+     fila fija qué receta se muestra. Sin acciones dentro: solo cerrar —
+     añadir al menú, editar y borrar siguen en los botones de la fila. -->
+<RecipeDetailModal bind:this={detailModal} />
 
 <!-- Borrar: una modal compartida; cada botón de la fila fija a qué receta se
      refiere antes de abrirla. La despensa y los menús no cambian: el fallo

@@ -375,6 +375,7 @@
 	"recipe_delete_confirm": "Delete permanently",
 	"recipe_servings": "Servings: {count}",
 	"recipe_assign_menu": "Add to menu",
+	"recipe_no_ingredients": "This recipe has no ingredients.",
 	"schema_recipes_name_label": "Recipe name",
 	"schema_recipes_name_placeholder": "e.g. Spanish omelette",
 	"schema_recipes_name_error": "Write a recipe name (max 100 characters).",
