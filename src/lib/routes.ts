@@ -3,6 +3,7 @@ import type { RouteMap } from '@callepuzzle/core';
 import CalendarDays from '@lucide/svelte/icons/calendar-days';
 import ChefHat from '@lucide/svelte/icons/chef-hat';
 import History from '@lucide/svelte/icons/history';
+import KeyRound from '@lucide/svelte/icons/key-round';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import LogIn from '@lucide/svelte/icons/log-in';
 import Refrigerator from '@lucide/svelte/icons/refrigerator';
@@ -112,6 +113,16 @@ export function getRoutes(isLoggedIn: boolean): RouteMap<RouteId> {
 			icon: Users,
 			showInMenu: true,
 			showInMobile: true
+		};
+		// Los ajustes de la cuenta (épica #260, tarea #273): hoy solo los tokens
+		// de API, con entrada propia en el menú de escritorio y el cajón lateral
+		// (la ruta /settings redirige aquí). FUERA del dock móvil, como el resto
+		// de gestión fina: no es navegación de uso diario.
+		routes['/settings/api-tokens'] = {
+			label: m.routes_settings(),
+			icon: KeyRound,
+			showInMenu: true,
+			showInMobile: false
 		};
 	}
 

@@ -4,6 +4,7 @@ import { sequence, type Handle, type HandleServerError } from '@sveltejs/kit/hoo
 import { building, dev } from '$app/env';
 import { OBSERVABILITY_SALT, VERCEL, VERCEL_ENV } from '$app/env/private';
 import { betterAuthHandle } from '@callepuzzle/auth/hooks';
+import { handleApiErrors } from '#lib/server/api-errors-handle.js';
 import { auth } from '#lib/server/auth.js';
 import { handleAuthGuard } from '#lib/server/auth-guard.js';
 import { handleFamilyContext } from '#lib/server/family-context.js';
@@ -132,6 +133,9 @@ export const handleError: HandleServerError = ({ error, event }) => {
 	}
 
 	const errorId = randomUUID();
+	// Para el 500 JSON de /api/v1 (`handleApiErrors`, #279): el envelope lleva
+	// el mismo id que el log, en vez del mensaje localizado de la web.
+	if (event) event.locals.errorId = errorId;
 	(event?.locals.log ?? logger).error(
 		{
 			errorId,
@@ -161,11 +165,16 @@ export const handleError: HandleServerError = ({ error, event }) => {
 // handleAuthGuard (justo después, para ver `locals.user`) exige sesión en todo
 // lo demás y manda a /login sin ella: cubre también `+server.ts` y form actions,
 // que un guard en `+layout.server.ts` no vería.
+// handleApiErrors (issue #279) reescribe al envelope JSON de la API cualquier
+// error de /api/v1/** que no lo traiga (404 de kit, 405, 500 no controlado);
+// va tras handleSecurityHeaders para que su respuesta también lleve esas
+// cabeceras, y antes del resto para recoger lo que lancen.
 // handleFamilyContext (issue #63) resuelve la familia activa del usuario en
 // cada request autenticado y la deja en `locals.activeFamily`.
 export const handle: Handle = sequence(
 	handleLogging,
 	handleSecurityHeaders,
+	handleApiErrors,
 	betterAuthHandle(auth, building, { skipAssets: true }),
 	handleAuthGuard,
 	handleFamilyContext,

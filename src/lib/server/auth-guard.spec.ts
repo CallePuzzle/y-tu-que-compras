@@ -19,6 +19,15 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/login/__data.json')).toBe(true);
 		expect(isPublicPathname('/api/auth/sign-in-email')).toBe(true);
 		expect(isPublicPathname('/api/auth/sign-out')).toBe(true);
+		// La API pública se autentica con Bearer token en cada endpoint (#269).
+		expect(isPublicPathname('/api/v1/families/fam-1/lists')).toBe(true);
+	});
+
+	it('la documentación de la API es pública (tarea #281)', () => {
+		expect(isPublicPathname('/docs')).toBe(true);
+		expect(isPublicPathname('/docs/__data.json')).toBe(true);
+		expect(isPublicPathname('/docsx')).toBe(false);
+		expect(isPublicPathname('/docs/private')).toBe(false);
 	});
 
 	it('la vista de invitación por token es pública (issue #61)', () => {
@@ -51,6 +60,7 @@ describe('isPublicPathname', () => {
 		expect(isPublicPathname('/loginfoo')).toBe(false);
 		expect(isPublicPathname('/families')).toBe(false);
 		expect(isPublicPathname('/api/otra-cosa')).toBe(false);
+		expect(isPublicPathname('/api/v1')).toBe(false);
 		expect(isPublicPathname('/__data.jsonx')).toBe(false);
 	});
 });

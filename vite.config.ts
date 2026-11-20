@@ -70,6 +70,15 @@ export default defineConfig({
 			tracing: { server: true }
 		})
 	],
+	// Flags de compilación de Vue, que entra solo con Scalar (la referencia de
+	// /docs, tarea #281): sin definirlos el build esm-bundler avisa en consola.
+	// Options API activa (la usan dependencias de Scalar); devtools y detalles
+	// de hidratación, fuera del bundle de producción.
+	define: {
+		__VUE_OPTIONS_API__: 'true',
+		__VUE_PROD_DEVTOOLS__: 'false',
+		__VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false'
+	},
 	ssr: {
 		// El barrel de `@callepuzzle/svelte-ui` arrastra formsnap y
 		// sveltekit-superforms, que importan los módulos virtuales `$app/*`.
