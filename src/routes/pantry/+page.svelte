@@ -315,13 +315,16 @@
 		};
 	}
 
-	// ---- Editar cantidad y unidad (#249): modal con SU formulario de
-	// superforms (id «edit-item», lo pone el load), patrón del re-añadido.
-	// Al cambiar la unidad del select, si la conversión es EXACTA
+	// ---- Editar nombre, cantidad y unidad (#249 y #289): modal con SU
+	// formulario de superforms (id «edit-item», lo pone el load), patrón del
+	// re-añadido. Al cambiar la unidad del select, si la conversión es EXACTA
 	// (`convertQuantity`: kg↔g, L↔ml, docena→ud) la cantidad se pre-rellena
 	// convertida; si no (paquete→kg, lata→g…), queda como está y se edita a
-	// mano. ----
+	// mano. El nombre entró con la #289: renombrar reordena la fila (la lista
+	// es alfabética) al aterrizar el refresco pesimista. ----
 	const editSchemaCompiled = editSchema({
+		nameError: m.schema_items_name_error(),
+		nameLabel: m.pantry_edit_name_label(),
 		quantityError: m.schema_items_quantity_error(),
 		quantityLabel: m.pantry_edit_quantity_label(),
 		unitError: m.schema_items_unit_error(),
@@ -365,7 +368,7 @@
 		editItem = item;
 		editMessage.set(undefined);
 		editErrors.clear();
-		editFormData.set({ quantity: item.quantity, unit: item.unit });
+		editFormData.set({ name: item.name, quantity: item.quantity, unit: item.unit });
 		editUnit = item.unit;
 		editModal?.showModal();
 	}
@@ -867,12 +870,14 @@
 	{/if}
 </Modal>
 
-<!-- Editar cantidad y unidad (#249): una modal compartida; el botón de la
-     fila fija a qué producto se refiere antes de abrirla. Al cambiar la
-     unidad, la conversión exacta pre-rellena la cantidad (`convertQuantity`);
-     si no es exacta, la cantidad queda editable a mano. Los fallos del action
-     (producto ya no está, colisión con otro producto, error de servidor) se
-     cuentan aquí dentro. -->
+<!-- Editar nombre, cantidad y unidad (#249 y #289): una modal compartida; el
+     botón de la fila fija a qué producto se refiere antes de abrirla. Al
+     cambiar la unidad, la conversión exacta pre-rellena la cantidad
+     (`convertQuantity`); si no es exacta, la cantidad queda editable a mano.
+     El nombre se edita aquí desde la #289: al renombrar, la fila puede saltar
+     de sitio (la lista es alfabética). Los fallos del action (producto ya no
+     está, colisión con otro producto, error de servidor) se cuentan aquí
+     dentro. -->
 <Modal
 	bind:this={editModal}
 	type="X"
@@ -886,6 +891,26 @@
 	<form method="POST" action="?/edit" use:editEnhance class="mt-4 flex flex-col gap-4">
 		<!-- El id del producto de despensa viaja con el formulario. -->
 		<input type="hidden" name="pantry" value={editItem?.id ?? ''} />
+
+		<!-- El nombre (#289): precargado con el actual, mismo contrato que el
+		     item (trim, 1–100). -->
+		<div class="flex flex-col gap-1">
+			<label class="fieldset-label" for="edit-item-name">{m.pantry_edit_name_label()}</label>
+			<input
+				bind:value={$editFormData.name}
+				aria-invalid={errorMessage($editErrors.name) ? 'true' : undefined}
+				id="edit-item-name"
+				name="name"
+				type="text"
+				class="input w-full"
+				autocomplete="off"
+				required
+				maxlength="100"
+			/>
+			{#if errorMessage($editErrors.name)}
+				<p class="fieldset-label text-error" role="alert">{errorMessage($editErrors.name)}</p>
+			{/if}
+		</div>
 
 		<div class="grid grid-cols-2 gap-2">
 			<div class="flex flex-col gap-1">

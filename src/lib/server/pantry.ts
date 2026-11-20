@@ -159,9 +159,9 @@ function isUniqueViolation(error: unknown): boolean {
 	return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
-/** Cómo acabó la edición de cantidad y unidad de un producto de despensa (#249). */
+/** Cómo acabó la edición de nombre, cantidad y unidad de un producto (#249, #289). */
 export type UpdateOutcome =
-	/** El producto quedó con la cantidad y la unidad pedidas. */
+	/** El producto quedó con el nombre, la cantidad y la unidad pedidos. */
 	| 'updated'
 	/** El producto ya no está en esa familia (id ajeno o rancio). */
 	| 'pantry-gone'
@@ -169,18 +169,22 @@ export type UpdateOutcome =
 	| 'duplicate';
 
 /**
- * Cambia la cantidad y la unidad de UN producto de la despensa (#249):
- * escritura para cualquier miembro (issue #111), como consumir o re-añadir.
- * El nombre no se toca — el canónico de la familia es el de la primera
- * compra — y la pertenencia va en el `where` (id ajeno o rancio es «no
- * existe», count 0), el mismo criterio de `removePantryItem`.
+ * Cambia el nombre, la cantidad y la unidad de UN producto de la despensa
+ * (#249 y #289): escritura para cualquier miembro (issue #111), como consumir
+ * o re-añadir. El nombre visible se guarda tal cual (trim) y su canónico se
+ * RECALCULA con `normalizeItemName`, para que «Leche Entera» y «leche entera»
+ * sigan sumando sobre el mismo producto; la pertenencia va en el `where` (id
+ * ajeno o rancio es «no existe», count 0), el mismo criterio de
+ * `removePantryItem`.
  *
  * La colisión con otro producto NO se pre-chequea: una ventana entre el check
  * y el write dejaría pasar duplicados, y el índice único (familia, nombre
- * normalizado, unidad) es el árbitro a prueba de carrera — la edición a una
- * unidad ocupada muere en P2002 y se traduce a `duplicate`, nunca un 500.
- * Fusionar los dos productos sería decisión aparte: los enlaces de recetas y
- * menús apuntan al id, así que aquí no se toca NADA si hay colisión.
+ * normalizado, unidad) es el árbitro a prueba de carrera — la edición a un
+ * nombre o una unidad ocupados muere en P2002 y se traduce a `duplicate`,
+ * nunca un 500. Renombrar a sí mismo solo en mayúsculas/acentos no colisiona:
+ * el canónico no cambia y la única fila que cumple la restricción es la
+ * propia. Fusionar los dos productos sería decisión aparte: los enlaces de
+ * recetas y menús apuntan al id, así que aquí no se toca NADA si hay colisión.
  */
 export async function updatePantryItem(
 	familyId: string,
@@ -190,7 +194,12 @@ export async function updatePantryItem(
 	try {
 		const updated = await prisma.pantryItem.updateMany({
 			where: { id, organizationId: familyId },
-			data: { quantity: data.quantity, unit: data.unit }
+			data: {
+				name: data.name,
+				normalizedName: normalizeItemName(data.name),
+				quantity: data.quantity,
+				unit: data.unit
+			}
 		});
 		return updated.count > 0 ? 'updated' : 'pantry-gone';
 	} catch (error) {

@@ -20,7 +20,8 @@ import type { Actions, PageServerLoad } from './$types';
 // La despensa de la familia activa (issues #44, #72, #73 y #74): la consulta
 // trae los productos, la acción `adjust` consume/devuelve un paso por item,
 // la acción `readd` lo manda a la lista de la compra elegida y la `edit`
-// (#249) cambia la cantidad y la unidad de un producto. La familia
+// (#249 y #289) cambia el nombre, la cantidad y la unidad de un producto. La
+// familia
 // activa es la puerta de la vista (issue #63): `requireActiveFamily` manda a
 // `/families` a quien no tiene o no ha elegido, y su id — ya verificado contra
 // la membresía — es el que filtra la query. Con las categorías (#176), el
@@ -49,6 +50,8 @@ const EMPTY_READD = { listId: '', quantity: 1 } as const;
 
 function editFormSchema() {
 	return editSchema({
+		nameError: m.schema_items_name_error(),
+		nameLabel: m.pantry_edit_name_label(),
 		quantityError: m.schema_items_quantity_error(),
 		quantityLabel: m.pantry_edit_quantity_label(),
 		unitError: m.schema_items_unit_error(),
@@ -61,7 +64,7 @@ function editFormSchema() {
 const EDIT_FORM_ID = 'edit-item';
 
 /** Valores iniciales del formulario: los reales los fija `openEdit` con el producto pulsado. */
-const EMPTY_EDIT = { quantity: 1, unit: 'unit' } as const;
+const EMPTY_EDIT = { name: '', quantity: 1, unit: 'unit' } as const;
 
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
@@ -223,13 +226,14 @@ export const actions: Actions = {
 		return message(form, m.pantry_readd_success());
 	},
 
-	// Editar cantidad y unidad de un producto (#249): el modal manda ambas y
-	// el id oculto del producto viaja con el FormData (patrón del re-añadido:
-	// se lee UNA vez y alimenta al superforms y al id). La colisión con otro
-	// producto (mismo nombre normalizado en la unidad destino) NO fusiona:
-	// los enlaces de recetas y menús apuntan al id, fusionar sería decisión
-	// aparte — se avisa y no se toca nada. El producto ya no estar (id rancio
-	// o ajeno) es pantry-gone, 404 (issue #110).
+	// Editar nombre, cantidad y unidad de un producto (#249 y #289): el modal
+	// manda los tres y el id oculto del producto viaja con el FormData (patrón
+	// del re-añadido: se lee UNA vez y alimenta al superforms y al id). La
+	// colisión con otro producto (mismo nombre normalizado en la unidad
+	// destino, también si RENOMBRA a uno ocupado) NO fusiona: los enlaces de
+	// recetas y menús apuntan al id, fusionar sería decisión aparte — se avisa
+	// y no se toca nada. El producto ya no estar (id rancio o ajeno) es
+	// pantry-gone, 404 (issue #110).
 	edit: async (event) => {
 		const family = requireActiveFamily(event);
 		const data = await event.request.formData();

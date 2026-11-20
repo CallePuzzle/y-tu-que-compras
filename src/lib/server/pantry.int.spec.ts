@@ -214,13 +214,17 @@ describe('Quitar un producto de la despensa (#148)', () => {
 	});
 });
 
-describe('Editar cantidad y unidad (#249)', () => {
-	it('cambia cantidad y unidad del producto', async () => {
+describe('Editar nombre, cantidad y unidad (#249, #289)', () => {
+	it('cambia cantidad y unidad del producto, dejando el nombre como está', async () => {
 		const familyId = await familyRow('Familia Editora');
 		const lentejas = await pantryRow(familyId, 'Lentejas', 1, 'package');
 
 		await expect(
-			updatePantryItem(familyId, lentejas.id, { quantity: 1, unit: 'kilogram' })
+			updatePantryItem(familyId, lentejas.id, {
+				name: 'Lentejas',
+				quantity: 1,
+				unit: 'kilogram'
+			})
 		).resolves.toBe('updated');
 
 		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: lentejas.id } });
@@ -231,19 +235,38 @@ describe('Editar cantidad y unidad (#249)', () => {
 		expect(row.normalizedName).toBe('lentejas');
 	});
 
-	it('editar solo la cantidad a su misma unidad no colisiona consigo mismo', async () => {
-		const familyId = await familyRow('Familia Reeditora');
-		const lentejas = await pantryRow(familyId, 'Lentejas', 1, 'kilogram');
+	it('el renombre persiste y recalcula el nombre canónico (#289)', async () => {
+		const familyId = await familyRow('Familia Renombradora');
+		// Sembrado a propósito SIN acentos colapsados en el canónico: el
+		// renombre debe dejarlo consistente con `normalizeItemName`.
+		const row = await prisma.pantryItem.create({
+			data: {
+				organizationId: familyId,
+				name: 'Leche Entera  ',
+				normalizedName: 'leche entera',
+				quantity: 2,
+				unit: 'liter'
+			}
+		});
 
 		await expect(
-			updatePantryItem(familyId, lentejas.id, { quantity: 0.75, unit: 'kilogram' })
+			updatePantryItem(familyId, row.id, {
+				// Tal y como llega del schema (zod ya hizo el trim): la acción le
+				// pasa `form.data`, nunca el FormData crudo.
+				name: 'Leche semidesnatada',
+				quantity: 2,
+				unit: 'liter'
+			})
 		).resolves.toBe('updated');
 
-		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: lentejas.id } });
-		expect(Number(row.quantity)).toBe(0.75);
+		const renamed = await prisma.pantryItem.findUniqueOrThrow({ where: { id: row.id } });
+		// El nombre visible se guarda tal cual y el canónico se recalcula:
+		// minúsculas, sin acentos y espacios colapsados.
+		expect(renamed.name).toBe('Leche semidesnatada');
+		expect(renamed.normalizedName).toBe('leche semidesnatada');
 	});
 
-	it('la colisión con otro producto en la unidad destino es duplicate, sin tocar nada', async () => {
+	it('la colisión de unidad (mismo nombre) es duplicate, sin tocar nada (#249)', async () => {
 		const familyId = await familyRow('Familia Colisionada');
 		// «Lentejas» en paquete y «lentejas» en kg: mismo nombre canónico y
 		// distinta unidad — exactamente el caso del modal (paquete → kg).
@@ -251,16 +274,110 @@ describe('Editar cantidad y unidad (#249)', () => {
 		const granel = await pantryRow(familyId, 'lentejas', 0.3, 'kilogram');
 
 		await expect(
-			updatePantryItem(familyId, paquete.id, { quantity: 1, unit: 'kilogram' })
+			updatePantryItem(familyId, paquete.id, {
+				name: 'Lentejas',
+				quantity: 1,
+				unit: 'kilogram'
+			})
 		).resolves.toBe('duplicate');
 
 		// NINGUNA fila se tocó: ni la editada ni la ocupada.
 		const editada = await prisma.pantryItem.findUniqueOrThrow({ where: { id: paquete.id } });
+		expect(editada.name).toBe('Lentejas');
 		expect(editada.unit).toBe('package');
 		expect(Number(editada.quantity)).toBe(1);
 		const ocupada = await prisma.pantryItem.findUniqueOrThrow({ where: { id: granel.id } });
 		expect(ocupada.unit).toBe('kilogram');
 		expect(Number(ocupada.quantity)).toBe(0.3);
+	});
+
+	it('renombrar a un nombre ocupado en la misma unidad es duplicate, sin tocar nada (#289)', async () => {
+		const familyId = await familyRow('Familia Renombra Ocupado');
+		const lacteo = await pantryRow(familyId, 'Lacteo', 1, 'liter');
+		// «Leche entera» ya vive en litros: renombrar «Lacteo» a ese nombre
+		// (mismo canónico, misma unidad) choca con el índice único.
+		const ocupado = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+
+		await expect(
+			updatePantryItem(familyId, lacteo.id, {
+				name: 'Leche  Entera',
+				quantity: 1,
+				unit: 'liter'
+			})
+		).resolves.toBe('duplicate');
+
+		// NINGUNA fila se tocó: ni la renombrada ni la ocupada.
+		const quedo = await prisma.pantryItem.findUniqueOrThrow({ where: { id: lacteo.id } });
+		expect(quedo.name).toBe('Lacteo');
+		expect(quedo.normalizedName).toBe('lacteo');
+		expect(quedo.unit).toBe('liter');
+		expect(Number(quedo.quantity)).toBe(1);
+		const leche = await prisma.pantryItem.findUniqueOrThrow({ where: { id: ocupado.id } });
+		expect(leche.name).toBe('Leche entera');
+		expect(leche.normalizedName).toBe('leche entera');
+		expect(Number(leche.quantity)).toBe(2);
+	});
+
+	it('renombrar a sí mismo solo en mayúsculas o acentos no colisiona (#289)', async () => {
+		const familyId = await familyRow('Familia Reescribe');
+		const leche = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+
+		// Mismo canónico ('leche entera') y misma unidad: la única fila que
+		// cumple la restricción única es la propia — no hay 409.
+		await expect(
+			updatePantryItem(familyId, leche.id, {
+				name: 'LECHE ENTera',
+				quantity: 2,
+				unit: 'liter'
+			})
+		).resolves.toBe('updated');
+
+		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: leche.id } });
+		expect(row.name).toBe('LECHE ENTera');
+		// El canónico no cambia: es el mismo producto de siempre.
+		expect(row.normalizedName).toBe('leche entera');
+	});
+
+	it('renombrar a un nombre ocupado en OTRA unidad sí vale (#289)', async () => {
+		const familyId = await familyRow('Familia Renombra Otra Unidad');
+		const paquete = await pantryRow(familyId, 'Lentejas de paquete', 1, 'package');
+		await pantryRow(familyId, 'Lentejas', 0.3, 'kilogram');
+
+		// El índice único es (familia, canónico, unidad): «Lentejas» en kg no
+		// estorba a renombrar en paquete.
+		await expect(
+			updatePantryItem(familyId, paquete.id, {
+				name: 'Lentejas',
+				quantity: 1,
+				unit: 'package'
+			})
+		).resolves.toBe('updated');
+
+		const row = await prisma.pantryItem.findUniqueOrThrow({ where: { id: paquete.id } });
+		expect(row.name).toBe('Lentejas');
+		expect(row.normalizedName).toBe('lentejas');
+		expect(row.unit).toBe('package');
+	});
+
+	it('el re-añadido usa el nombre NUEVO a partir del renombre (#289)', async () => {
+		const familyId = await familyRow('Familia Renombre Readd');
+		const list = await createList(familyId, LIST);
+		const product = await pantryRow(familyId, 'Leche entera', 0, 'liter');
+		await updatePantryItem(familyId, product.id, {
+			name: 'Leche semidesnatada',
+			quantity: 0,
+			unit: 'liter'
+		});
+
+		await expect(
+			readdPantryItem(familyId, product.id, { ...READD_BASE, listId: list.id, quantity: 1 })
+		).resolves.toBe('added');
+
+		const rows = await prisma.item.findMany({ where: { listId: list.id } });
+		expect(rows).toHaveLength(1);
+		// El item de la lista lleva el nombre renombrado, no el de la primera
+		// compra.
+		expect(rows[0].name).toBe('Leche semidesnatada');
 	});
 
 	it('un producto de otra familia no se puede editar (pantry-gone)', async () => {
@@ -269,7 +386,11 @@ describe('Editar cantidad y unidad (#249)', () => {
 		const caviar = await pantryRow(otherFamily, 'Caviar', 1, 'unit');
 
 		await expect(
-			updatePantryItem(ownFamily, caviar.id, { quantity: 2, unit: 'unit' })
+			updatePantryItem(ownFamily, caviar.id, {
+				name: 'Caviar',
+				quantity: 2,
+				unit: 'unit'
+			})
 		).resolves.toBe('pantry-gone');
 
 		// La despensa ajena queda intacta.
@@ -281,7 +402,11 @@ describe('Editar cantidad y unidad (#249)', () => {
 	it('un id que no existe devuelve pantry-gone', async () => {
 		const familyId = await familyRow('Familia Edita Fantasma');
 		await expect(
-			updatePantryItem(familyId, 'no-existe', { quantity: 2, unit: 'unit' })
+			updatePantryItem(familyId, 'no-existe', {
+				name: 'Fantasma',
+				quantity: 2,
+				unit: 'unit'
+			})
 		).resolves.toBe('pantry-gone');
 	});
 });

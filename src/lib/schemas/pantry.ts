@@ -46,6 +46,8 @@ export type ReaddData = z.infer<ReaddSchema>;
 
 /** Textos inyectables del schema de edición. Defaults: ninguno (el consumidor los pasa). */
 export type EditSchemaStrings = {
+	nameError?: string;
+	nameLabel?: string;
 	quantityError?: string;
 	quantityLabel?: string;
 	unitError?: string;
@@ -53,12 +55,15 @@ export type EditSchemaStrings = {
 };
 
 /**
- * Factoría del schema de edición de un producto de despensa (#249): cuánto
- * queda y en qué unidad. El nombre NO se toca (el canónico de la despensa es
- * el de la primera compra) y el id del producto NO va en el schema: viaja como
- * el id oculto del FormData, patrón del re-añadido — el FormData se lee UNA
- * vez y alimenta a superforms y al id a la vez.
+ * Factoría del schema de edición de un producto de despensa (#249 y #289):
+ * cómo se llama, cuánto queda y en qué unidad. El nombre entró con la #289 —
+ * antes el canónico era inamovible (el de la primera compra) y renombrar
+ * obligaba a quitar el producto y esperar a la siguiente compra —; el id del
+ * producto NO va en el schema: viaja como el id oculto del FormData, patrón
+ * del re-añadido — el FormData se lee UNA vez y alimenta a superforms y al id
+ * a la vez.
  *
+ * El nombre lleva el MISMO contrato que el item (trim, 1–100, issue #107).
  * La cantidad lleva el MISMO contrato que el item (`quantitySchema`, issue
  * #107: mínimo 0.001 — el agotado no va por aquí: se consume hasta 0 y de ahí
  * se re-añade o se quita —, techo de la columna y múltiplo de la milésima).
@@ -68,6 +73,12 @@ export type EditSchemaStrings = {
  */
 export function editSchema(strings?: EditSchemaStrings) {
 	return z.object({
+		name: z
+			.string()
+			.trim()
+			.min(1, strings?.nameError)
+			.max(100, strings?.nameError)
+			.meta({ description: strings?.nameLabel }),
 		quantity: quantitySchema(strings?.quantityError).meta({
 			description: strings?.quantityLabel
 		}),
