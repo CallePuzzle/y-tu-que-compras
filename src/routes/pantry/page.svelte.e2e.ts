@@ -898,18 +898,14 @@ test('la colisión con otro producto en la unidad destino avisa y no toca nada (
 	const user = await createUser();
 	const family = await createFamily({ owner: user });
 	// Mismo nombre canónico ('lentejas') en dos unidades: el paquete quiere
-	// convertirse a kg, pero el kg ya está ocupado.
+	// convertirse a kg, pero el kg ya está ocupado. Los dos llevan nombre y
+	// canónico consistentes (los mismos que deja `finalizePurchase`): desde
+	// la #289 el canónico se recalcula SIEMPRE desde el nombre enviado, así
+	// que un nombre visible distinto de su canónico ya no conserva este caso.
+	await createPantryItem({ familyId: family.id, name: 'Lentejas', quantity: 1, unit: 'package' });
 	await createPantryItem({
 		familyId: family.id,
-		name: 'Lentejas paquete',
-		normalizedName: 'lentejas',
-		quantity: 1,
-		unit: 'package'
-	});
-	await createPantryItem({
-		familyId: family.id,
-		name: 'Lentejas granel',
-		normalizedName: 'lentejas',
+		name: 'lentejas',
 		quantity: 0.3,
 		unit: 'kilogram'
 	});
@@ -917,7 +913,9 @@ test('la colisión con otro producto en la unidad destino avisa y no toca nada (
 
 	await page.goto('/pantry');
 	await waitForHydration(page);
-	const paquete = page.locator('li', { hasText: 'Lentejas paquete' });
+	// El badge distingue las dos filas: `hasText` no distingue mayúsculas y
+	// «Lentejas» casa con las dos.
+	const paquete = page.locator('li', { hasText: '1 paquete' });
 
 	await paquete.getByRole('button', { name: 'Editar producto' }).click();
 	const dialog = page.locator('dialog[open]');
@@ -930,9 +928,7 @@ test('la colisión con otro producto en la unidad destino avisa y no toca nada (
 
 	// …y ninguna fila se tocó.
 	await expect(paquete.getByText('1 paquete')).toBeVisible();
-	await expect(
-		page.locator('li', { hasText: 'Lentejas granel' }).getByText('0,3 kg')
-	).toBeVisible();
+	await expect(page.locator('li', { hasText: '0,3 kg' })).toBeVisible();
 	await expect
 		.poll(async () => {
 			const rows = await prisma.pantryItem.findMany({ where: { normalizedName: 'lentejas' } });
@@ -942,6 +938,45 @@ test('la colisión con otro producto en la unidad destino avisa y no toca nada (
 				.join(' ');
 		})
 		.toBe('kilogram:0.3 package:1');
+});
+
+test('editar el nombre desde el modal renombra y reordena la fila (#289)', async ({ page }) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// Alfabético: «Aceite» va delante de «Tomate»; renombrarlo a «Zanahoria»
+	// debe mandarlo al final cuando aterrice el refresco.
+	await createPantryItem({ familyId: family.id, name: 'Aceite', quantity: 1, unit: 'liter' });
+	await createPantryItem({ familyId: family.id, name: 'Tomate', quantity: 1, unit: 'kilogram' });
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+	const aceite = page.locator('li', { hasText: 'Aceite' });
+
+	await aceite.getByRole('button', { name: 'Editar producto' }).click();
+	const dialog = page.locator('dialog[open]');
+	await expect(dialog.getByRole('heading', { name: 'Editar «Aceite»' })).toBeVisible();
+	// El nombre actual viaja precargado: se corrige y se guarda.
+	await expect(dialog.locator('#edit-item-name')).toHaveValue('Aceite');
+	await dialog.locator('#edit-item-name').fill('Zanahoria');
+	await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+
+	// El modal cierra, avisa y la fila pinta el nombre nuevo…
+	await expect(page.locator('dialog[open]')).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText('Producto actualizado.');
+	await expect(page.locator('li', { hasText: 'Aceite' })).toHaveCount(0);
+	const zanahoria = page.locator('li', { hasText: 'Zanahoria' });
+	await expect(zanahoria).toBeVisible();
+	// …y reordenada: la lista es alfabética y «Tomate» pasa por delante.
+	await expect(page.locator('#tour-pantry-list li')).toHaveText([/Tomate/, /Zanahoria/]);
+
+	// En la base queda visible + canónico consistentes, con su unidad intacta.
+	await expect
+		.poll(async () => {
+			const row = await prisma.pantryItem.findFirst({ where: { name: 'Zanahoria' } });
+			return row ? `${row.name}|${row.normalizedName}|${row.unit}` : '';
+		})
+		.toBe('Zanahoria|zanahoria|liter');
 });
 
 test('En casa y Agotados recuerdan su colapsado por separado (#209)', async ({ page }) => {

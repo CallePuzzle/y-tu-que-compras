@@ -6,7 +6,7 @@ import { editSchema, readdSchema } from './pantry.js';
 const VALID = { listId: 'lista-1', quantity: 1 } as const;
 
 /** Datos válidos que el schema de edición acepta, para mutar campo a campo. */
-const EDIT_VALID = { quantity: 1, unit: 'kilogram' } as const;
+const EDIT_VALID = { name: 'Lentejas', quantity: 1, unit: 'kilogram' } as const;
 
 describe('readdSchema (#74, #149)', () => {
 	it('acepta lista y cantidad, sin nada más que preguntar (#149)', () => {
@@ -47,9 +47,18 @@ describe('readdSchema (#74, #149)', () => {
 	});
 });
 
-describe('editSchema (#249)', () => {
-	it('acepta cantidad y unidad, sin nada más que preguntar', () => {
+describe('editSchema (#249, #289)', () => {
+	it('acepta nombre, cantidad y unidad', () => {
 		expect(editSchema().safeParse(EDIT_VALID).success).toBe(true);
+	});
+
+	it('exige un nombre no vacío y hasta 100 caracteres, con trim (#289)', () => {
+		expect(editSchema().safeParse({ ...EDIT_VALID, name: '' }).success).toBe(false);
+		expect(editSchema().safeParse({ ...EDIT_VALID, name: '   ' }).success).toBe(false);
+		expect(editSchema().safeParse({ ...EDIT_VALID, name: undefined }).success).toBe(false);
+		expect(editSchema().safeParse({ ...EDIT_VALID, name: 'x'.repeat(101) }).success).toBe(false);
+		expect(editSchema().safeParse({ ...EDIT_VALID, name: 'x'.repeat(100) }).success).toBe(true);
+		expect(editSchema().safeParse({ ...EDIT_VALID, name: '  Lentejas  ' }).success).toBe(true);
 	});
 
 	it('la unidad es del catálogo, ni una más', () => {
@@ -77,6 +86,15 @@ describe('editSchema (#249)', () => {
 	});
 
 	it('inyecta los mensajes del consumidor en los errores de cada campo', () => {
+		const name = editSchema({ nameError: 'Nombre inválido' }).safeParse({
+			...EDIT_VALID,
+			name: ''
+		});
+		expect(name.success).toBe(false);
+		if (!name.success) {
+			expect(name.error.issues[0]?.message).toBe('Nombre inválido');
+		}
+
 		const quantity = editSchema({ quantityError: 'Cantidad inválida' }).safeParse({
 			...EDIT_VALID,
 			quantity: 0
