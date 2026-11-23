@@ -698,10 +698,18 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 	await expect(dialog.getByText('Escribe un total válido (cero o más).')).toBeVisible();
 	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
 
-	// Total válido: cierra el modal, avisa y la lista queda con los
-	// pendientes — la leche desaparece y con ella el CTA de finalizar.
+	// Total válido SIN establecimiento (#293): el primer click no cierra
+	// nada, pregunta antes de cerrar la compra.
 	await dialog.locator('#finalize-total').fill('23.45');
 	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+	await expect(dialog.getByRole('alert')).toContainText(
+		'No has seleccionado ningún establecimiento.'
+	);
+	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
+
+	// «Sí»: la compra se cierra igual que siempre, sin tienda — de paso
+	// valida el camino de confirmar el cierre sin establecimiento.
+	await dialog.getByRole('button', { name: 'Sí, finalizar sin establecimiento' }).click();
 
 	await expect(page.getByRole('status')).toContainText('Compra finalizada');
 	await expect(page.locator('li', { hasText: 'Leche' })).toHaveCount(0);
@@ -723,6 +731,58 @@ test('finalizar compra: resumen en el modal, total a mano y entrada en el histor
 	expect(record.storeName).toBeNull();
 	expect(record.items.map((row) => row.name)).toEqual(['Leche']);
 	await expect(prisma.item.findUnique({ where: { id: leche.id } })).resolves.toBeNull();
+});
+
+test('confirmación sin establecimiento (#293): pregunta, deja elegir tienda y no toca la BD hasta responder', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createItem({ listId: list.id, name: 'Leche', purchased: true, order: 0 });
+	const mercadona = await createStore({ familyId: family.id, name: 'Mercadona' });
+	await seedSession(page, user);
+
+	await page.goto(`/lists/${list.id}`);
+	await waitForHydration(page);
+
+	await page.getByRole('button', { name: 'Finalizar compra' }).click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.locator('#finalize-total').fill('12.5');
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+
+	// El primer click pregunta sin cerrar nada: sin historial ni aviso de
+	// éxito, y el item sigue comprado.
+	await expect(dialog.getByRole('alert')).toContainText(
+		'No has seleccionado ningún establecimiento.'
+	);
+	await expect(prisma.purchaseRecord.findFirst({ where: { listId: list.id } })).resolves.toBeNull();
+
+	// «No» retira la pregunta y lleva el foco al select, sin cerrar la compra.
+	await dialog.getByRole('button', { name: 'No, elegir establecimiento' }).click();
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+	await expect(dialog.locator('#finalize-store')).toBeFocused();
+
+	// Volver a pulsar «Finalizar compra» vuelve a preguntar: el «Sí» no se
+	// recuerda tras retirar la alerta.
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+	await expect(dialog.getByRole('alert')).toContainText(
+		'No has seleccionado ningún establecimiento.'
+	);
+
+	// Elegir establecimiento retira la pregunta por sí solo…
+	await dialog.locator('#finalize-store').selectOption({ label: 'Mercadona' });
+	await expect(dialog.getByRole('alert')).toHaveCount(0);
+
+	// …y el siguiente click finaliza DIRECTO, sin reproteguntar.
+	await dialog.getByRole('button', { name: 'Finalizar compra' }).click();
+	await expect(page.getByRole('status')).toContainText('Compra finalizada');
+	expect(
+		await prisma.purchaseRecord.findFirstOrThrow({ where: { listId: list.id } })
+	).toMatchObject({
+		storeId: mercadona.id,
+		storeName: 'Mercadona'
+	});
 });
 
 test('finalizar con establecimiento (#185): el select ofrece la familia y el historial congela nombre', async ({

@@ -48,6 +48,21 @@ bun run dev
 bun run dev -- --open
 ```
 
+### Datos de prueba
+
+```sh
+bun run db:seed
+```
+
+Siembra en la BD local (`DATABASE_URL` del `.env`) la familia «Familia García» (slug
+`familia-garcia`) con dos usuarios — `maria@ytqc.test` (admin) y `juan@ytqc.test` (miembro) —,
+listas de la compra con items, categorías, establecimientos, despensa, historial de compras,
+una receta, menús para hoy y mañana y una invitación pendiente (`lucia@ytqc.test`). Es
+idempotente: borra y recrea la familia sembrada (y solo ella) y los usuarios van por upsert,
+así que se puede re-ejecutar sin perder nada más. Para entrar como uno de ellos, pide el
+código OTP en `/login` con su email: en desarrollo no sale ningún correo y el código queda
+impreso en el log del dev server («email capturado (no enviado)»).
+
 ## Build
 
 ```sh
