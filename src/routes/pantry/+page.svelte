@@ -500,26 +500,28 @@
 			</a>
 		</div>
 	{:else}
-		<!-- Una fila de producto: stepper −/+ (checklist #73) y botón de
-		     re-añadir (checklist #74). El snippet lo comparten las dos
-		     secciones («En casa» y «Agotados»); un agotado no pinta el −: de
-		     cero no se puede consumir más, solo reponer o re-añadir. -->
+		<!-- Producto en dos filas (#292): arriba nombre y categoría, abajo
+		     stepper −/+ (checklist #73) y acciones (re-añadir, checklist
+		     #74). El snippet lo comparten las dos secciones («En casa» y
+		     «Agotados»); un agotado no pinta el −: de cero no se puede
+		     consumir más, solo reponer o re-añadir. -->
 		{#snippet productRow(item: PantryRow)}
 			{@const quantity = displayQuantity(item)}
 			<li
-				class={`bg-base-200 rounded-box flex items-center gap-2 px-3 py-2 sm:px-4 ${quantity === 0 ? 'opacity-60' : ''}`}
+				class={`bg-base-200 rounded-box flex flex-col gap-1.5 px-3 py-2 sm:px-4 ${quantity === 0 ? 'opacity-60' : ''}`}
 			>
-				<!-- Sin `truncate` (issue #152): el nombre largo salta a varias
-				     líneas y la fila crece con él. Debajo, el badge de categoría
-				     (#176): clasifica el producto y abre su recategorización, como
+				<!-- Fila 1: nombre a la izquierda y badge de categoría anclado
+				     a la derecha. Sin `truncate` en el nombre (issue #152): el
+				     largo salta a varias líneas y la fila crece con él. El badge
+				     (#176) clasifica el producto y abre su recategorización, como
 				     el chip de la lista (#172). Solo con categorías en la familia —
 				     sin ellas, un «Sin categoría» repetido en cada fila sería ruido. -->
-				<div class="min-w-0 flex-1">
-					<p class="font-medium break-words">{item.name}</p>
+				<div class="flex items-center gap-2">
+					<p class="min-w-0 flex-1 font-medium break-words">{item.name}</p>
 					{#if withCategories}
 						<button
 							type="button"
-							class="badge badge-ghost badge-sm mt-0.5 max-w-full cursor-pointer hover:opacity-80"
+							class="badge badge-ghost badge-sm max-w-full shrink-0 cursor-pointer hover:opacity-80"
 							title={m.pantry_change_category()}
 							aria-label={m.pantry_change_category()}
 							onclick={() => openRecategorize(item)}
@@ -531,79 +533,85 @@
 						</button>
 					{/if}
 				</div>
-				<form
-					method="POST"
-					action="?/adjust"
-					use:kitEnhance={handleAdjust(item.id, item.unit)}
-					class="flex shrink-0 items-center gap-1"
-				>
-					<input type="hidden" name="item" value={item.id} />
-					{#if quantity > 0}
+				<!-- Fila 2: stepper − cantidad + a la izquierda; editar,
+				     re-añadir y quitar empujados a la derecha con `ml-auto`. -->
+				<div class="flex items-center gap-2">
+					<form
+						method="POST"
+						action="?/adjust"
+						use:kitEnhance={handleAdjust(item.id, item.unit)}
+						class="flex shrink-0 items-center gap-1"
+					>
+						<input type="hidden" name="item" value={item.id} />
+						{#if quantity > 0}
+							<button
+								type="submit"
+								name="delta"
+								value="-1"
+								class="btn btn-ghost btn-sm"
+								aria-label={stepLabel(item, m.pantry_consume)}
+								title={stepLabel(item, m.pantry_consume)}
+							>
+								<Minus aria-hidden="true" />
+							</button>
+						{/if}
+						<span class="badge badge-ghost tabular-nums">
+							{formatQuantity(quantity, getLocale())}
+							{UNIT_LABEL[item.unit]}
+						</span>
 						<button
 							type="submit"
 							name="delta"
-							value="-1"
+							value="1"
 							class="btn btn-ghost btn-sm"
-							aria-label={stepLabel(item, m.pantry_consume)}
-							title={stepLabel(item, m.pantry_consume)}
+							aria-label={stepLabel(item, m.pantry_restock)}
+							title={stepLabel(item, m.pantry_restock)}
 						>
-							<Minus aria-hidden="true" />
+							<Plus aria-hidden="true" />
 						</button>
-					{/if}
-					<span class="badge badge-ghost tabular-nums">
-						{formatQuantity(quantity, getLocale())}
-						{UNIT_LABEL[item.unit]}
-					</span>
-					<button
-						type="submit"
-						name="delta"
-						value="1"
-						class="btn btn-ghost btn-sm"
-						aria-label={stepLabel(item, m.pantry_restock)}
-						title={stepLabel(item, m.pantry_restock)}
-					>
-						<Plus aria-hidden="true" />
-					</button>
-				</form>
-				<!-- Editar cantidad y unidad (#249): abre el modal con la
-				     cantidad y la unidad actuales. En cualquier producto,
-				     también en el agotado: cambiar la unidad deja la memoria
-				     lista para la próxima compra. -->
-				<button
-					type="button"
-					class="btn btn-ghost btn-sm"
-					title={m.pantry_edit()}
-					aria-label={m.pantry_edit()}
-					onclick={() => openEdit(item)}
-				>
-					<Pencil aria-hidden="true" />
-				</button>
-				<!-- Re-añadir a la compra (checklist #74): abre el modal con el
-				     selector de lista y la cantidad. En un agotado es EL botón:
-				     la memoria de «esto se compra» lista para volver. -->
-				<button
-					type="button"
-					class="btn btn-ghost btn-sm"
-					title={m.pantry_readd()}
-					aria-label={m.pantry_readd()}
-					onclick={() => openReadd(item)}
-				>
-					<ShoppingCart aria-hidden="true" />
-				</button>
-				<!-- Quitar de la despensa (#148): solo el agotado lo ofrece — un
-				     producto con existencias se consume o se re-añade; quitarlo
-				     del todo es la decisión explícita del ConfirmModal. -->
-				{#if quantity === 0}
-					<button
-						type="button"
-						class="btn btn-ghost btn-sm"
-						title={m.pantry_delete()}
-						aria-label={m.pantry_delete()}
-						onclick={() => openDelete(item)}
-					>
-						<Trash2 aria-hidden="true" />
-					</button>
-				{/if}
+					</form>
+					<!-- Editar cantidad y unidad (#249): abre el modal con la
+					     cantidad y la unidad actuales. En cualquier producto,
+					     también en el agotado: cambiar la unidad deja la memoria
+					     lista para la próxima compra. -->
+					<div class="ml-auto flex items-center gap-1">
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							title={m.pantry_edit()}
+							aria-label={m.pantry_edit()}
+							onclick={() => openEdit(item)}
+						>
+							<Pencil aria-hidden="true" />
+						</button>
+						<!-- Re-añadir a la compra (checklist #74): abre el modal con el
+						     selector de lista y la cantidad. En un agotado es EL botón:
+						     la memoria de «esto se compra» lista para volver. -->
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							title={m.pantry_readd()}
+							aria-label={m.pantry_readd()}
+							onclick={() => openReadd(item)}
+						>
+							<ShoppingCart aria-hidden="true" />
+						</button>
+						<!-- Quitar de la despensa (#148): solo el agotado lo ofrece — un
+						     producto con existencias se consume o se re-añade; quitarlo
+						     del todo es la decisión explícita del ConfirmModal. -->
+						{#if quantity === 0}
+							<button
+								type="button"
+								class="btn btn-ghost btn-sm"
+								title={m.pantry_delete()}
+								aria-label={m.pantry_delete()}
+								onclick={() => openDelete(item)}
+							>
+								<Trash2 aria-hidden="true" />
+							</button>
+						{/if}
+					</div>
+				</div>
 			</li>
 		{/snippet}
 
