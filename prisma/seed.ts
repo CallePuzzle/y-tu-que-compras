@@ -147,7 +147,24 @@ async function main(): Promise<void> {
 	// ---------------------------------------------------------------------------
 	const sembradaAntes = await prisma.organization.findUnique({ where: { slug: FAMILIA_SLUG } });
 	if (sembradaAntes) {
-		// contextId es columna plana en estas tablas (sin FK): no cascada.
+		// ROLES primero y miembros después (invariantes de familia, issue #104):
+		// el trigger `member_last_family_admin` impide borrar por SQL directo
+		// al último admin de una familia viva — borrar los roles hace SET NULL
+		// en `member.roleId` (el trigger lo salta: es un UPDATE en cascada de
+		// FK) y el borrado de miembros ya no ve ningún admin. Es el mismo
+		// orden que la migración describe para borrar una familia. Los
+		// statements y traducciones de los roles cascada con el rol.
+		await prisma.role.deleteMany({
+			where: { contextType: 'organization', contextId: sembradaAntes.id }
+		});
+		await prisma.member.deleteMany({
+			where: { contextType: 'organization', contextId: sembradaAntes.id }
+		});
+		// contextId es columna plana en estas tablas (sin FK a la familia): no
+		// cascada. Sin este borrado, cada re-ejecución dejaría membresías y
+		// roles huérfanos, y a los usuarios con DOS membresías (la vieja
+		// apuntando a la familia borrada) se les perdería la autoselección de
+		// `resolveActiveFamily`.
 		await prisma.invitation.deleteMany({
 			where: { contextType: 'organization', contextId: sembradaAntes.id }
 		});
