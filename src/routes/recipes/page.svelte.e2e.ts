@@ -44,6 +44,12 @@ const modalBorrar = (page: Page) => modalAbierto(page, page.locator('form[action
 /** La fila del listado de UNA receta (por su nombre visible). */
 const filaDe = (page: Page, nombre: string) => page.locator('li', { hasText: nombre });
 
+/** El detalle de receta (#290): sin formulario de acción de receta dentro,
+ * los `modalAbierto` por `form[action=…]` no lo ven — se discrimina por su
+ * heading, que es el nombre de la receta abierta. */
+const modalDetalle = (page: Page, nombre: string) =>
+	page.locator('dialog[open]').filter({ has: page.getByRole('heading', { name: nombre }) });
+
 test('crear con autocompletado: hereda la unidad, enlaza el producto y no crea nada en despensa', async ({
 	page
 }) => {
@@ -481,6 +487,197 @@ test('borrar con confirmacion: fuera del listado y sin tocar despensa ni menús'
 	const menuTrasBorrar = await prisma.mealPlan.findUniqueOrThrow({ where: { id: menu.id } });
 	expect(menuTrasBorrar.recipeId).toBeNull();
 	expect(menuTrasBorrar.title).toBe(menu.title);
+});
+
+test('el detalle abre al pulsar el nombre: raciones e ingredientes formateados, solo lectura', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	await createRecipe({
+		familyId: family.id,
+		name: 'Bechamel',
+		servings: 4,
+		ingredients: [
+			{ name: 'Leche entera', quantity: 0.5, unit: 'liter' },
+			{ name: 'Nuez moscada', quantity: 1, unit: 'unit' }
+		]
+	});
+	// Sin raciones NI ingredientes: el detalle tiene SU aviso (el del
+	// calendario habla de «menú», no de receta).
+	await createRecipe({ familyId: family.id, name: 'Sopa de fideos' });
+	await seedSession(page, user);
+
+	await openRecipes(page);
+
+	// El click va SOLO sobre el nombre (botón), no sobre la fila entera.
+	await filaDe(page, 'Bechamel').getByRole('button', { name: 'Bechamel' }).click();
+	const detalle = modalDetalle(page, 'Bechamel');
+	await expect(detalle.getByRole('heading', { name: 'Bechamel' })).toBeVisible();
+	await expect(detalle.getByText('Raciones: 4')).toBeVisible();
+
+	// Cantidades localizadas (coma decimal en es) y unidades traducidas
+	// (`unit_*`), como en el calendario: «0,5 L» y «1 ud».
+	await expect(detalle.getByText('0,5 L')).toBeVisible();
+	await expect(detalle.getByText('Leche entera')).toBeVisible();
+	await expect(detalle.getByText('1 ud')).toBeVisible();
+	await expect(detalle.getByText('Nuez moscada')).toBeVisible();
+
+	// Sin acciones sobre la receta dentro (añadir al menú, editar y borrar
+	// siguen en los botones de la fila, detrás del modal) y sin listas no
+	// hay volcado posible: se explica y los botones de añadir quedan
+	// deshabilitados. La única acción que queda es cerrar.
+	await expect(
+		detalle.getByText('Esta familia no tiene listas: crea una para poder añadir lo que falta.')
+	).toBeVisible();
+	const anadir = detalle.getByRole('button', { name: /Añadir lo que falta de/ });
+	await expect(anadir).toHaveCount(2);
+	await expect(anadir.first()).toBeDisabled();
+	await detalle.getByRole('button', { name: 'Cerrar' }).click();
+	await expect(detalle).toHaveCount(0);
+
+	// Y la receta SIN ingredientes: mensaje propio de receta.
+	await filaDe(page, 'Sopa de fideos').getByRole('button', { name: 'Sopa de fideos' }).click();
+	const detalleSopa = modalDetalle(page, 'Sopa de fideos');
+	await expect(detalleSopa.getByText('Esta receta no lleva ingredientes.')).toBeVisible();
+	await detalleSopa.getByRole('button', { name: 'Cerrar' }).click();
+	await expect(detalleSopa).toHaveCount(0);
+
+	// La fila sigue ahí y sus botones de acción intactos: el nombre es solo
+	// el detalle, las acciones no se han movido.
+	await expect(
+		filaDe(page, 'Bechamel').getByRole('button', { name: 'Editar receta' })
+	).toBeVisible();
+});
+
+test('el detalle pinta el estado de despensa y el volcado individual añade el déficit exacto', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	// Huevos JUSTOS (6 contra 12), leche a medias (1,5 contra 1 L) y el
+	// pimentón SIN producto en despensa: los tres estados del cálculo (#244)
+	// sobre los ingredientes de UNA receta (#290), sin día que agregue.
+	const huevos = await createPantryItem({
+		familyId: family.id,
+		name: 'Huevos',
+		normalizedName: 'huevos',
+		quantity: 12,
+		unit: 'unit'
+	});
+	const leche = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche',
+		normalizedName: 'leche',
+		quantity: 1,
+		unit: 'liter'
+	});
+	const lista = await createList({ familyId: family.id });
+	await createRecipe({
+		familyId: family.id,
+		name: 'Bechamel',
+		servings: 4,
+		ingredients: [
+			{ name: 'Huevos', quantity: 6, unit: 'unit', pantryItemId: huevos.id },
+			{ name: 'Leche', quantity: 1.5, unit: 'liter', pantryItemId: leche.id },
+			{ name: 'Pimentón', quantity: 1, unit: 'unit' }
+		]
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+	await filaDe(page, 'Bechamel').getByRole('button', { name: 'Bechamel' }).click();
+	const detalle = modalDetalle(page, 'Bechamel');
+
+	// Los tres estados, como en el calendario pero contra LA RECETA:
+	// suficiente justo, insuficiente con su déficit y sin producto.
+	await expect(detalle.getByText('Suficiente')).toHaveCount(1);
+	await expect(detalle.getByText('Faltan 0,5 L')).toBeVisible();
+	await expect(detalle.getByText('Falta', { exact: true })).toHaveCount(1);
+
+	// Lo cubierto no se puede añadir; lo que falta, sí.
+	await expect(
+		detalle
+			.locator('li', { hasText: 'Huevos' })
+			.getByRole('button', { name: /Añadir lo que falta/ })
+	).toBeDisabled();
+	const anadirLeche = detalle
+		.locator('li', { hasText: 'Leche' })
+		.getByRole('button', { name: /Añadir lo que falta/ });
+	await expect(anadirLeche).toBeEnabled();
+	await anadirLeche.click();
+
+	// El éxito cierra el detalle y avisa a la página; en la lista entra el
+	// DÉFICIT (0,5 L), no lo que pide la receta (1,5 L) ni lo que hay (1 L).
+	await expect(detalle).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText(
+		'Añadido a la lista de la compra: Leche 0,5 L.'
+	);
+	const item = await prisma.item.findFirstOrThrow({ where: { listId: lista.id } });
+	expect(item.name).toBe('Leche');
+	expect(Number(item.quantity)).toBe(0.5);
+	expect(item.unit).toBe('liter');
+	expect(item.purchased).toBe(false);
+	// Los huevos, ni tocados: solo la línea del volcado.
+	expect(await prisma.item.count({ where: { listId: lista.id } })).toBe(1);
+});
+
+test('el volcado de la receta entera añade una línea por producto con déficit', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const huevos = await createPantryItem({
+		familyId: family.id,
+		name: 'Huevos',
+		normalizedName: 'huevos',
+		quantity: 12,
+		unit: 'unit'
+	});
+	const leche = await createPantryItem({
+		familyId: family.id,
+		name: 'Leche',
+		normalizedName: 'leche',
+		quantity: 1,
+		unit: 'liter'
+	});
+	const lista = await createList({ familyId: family.id });
+	await createRecipe({
+		familyId: family.id,
+		name: 'Bechamel',
+		servings: 4,
+		ingredients: [
+			{ name: 'Huevos', quantity: 6, unit: 'unit', pantryItemId: huevos.id },
+			{ name: 'Leche', quantity: 1.5, unit: 'liter', pantryItemId: leche.id },
+			{ name: 'Pimentón', quantity: 1, unit: 'unit' }
+		]
+	});
+	await seedSession(page, user);
+
+	await openRecipes(page);
+	await filaDe(page, 'Bechamel').getByRole('button', { name: 'Bechamel' }).click();
+	const detalle = modalDetalle(page, 'Bechamel');
+
+	await detalle.getByRole('button', { name: 'Añadir lo que falta de la receta' }).click();
+
+	// Éxito fuera del modal, con lo añadido listado en el orden del servidor
+	// (canónico: leche antes que pimentón).
+	await expect(detalle).toHaveCount(0);
+	await expect(page.getByRole('status')).toContainText(
+		'Añadido a la lista de la compra: Leche 0,5 L, Pimentón 1 ud.'
+	);
+
+	// En la BD: los huevos cubiertos no entran; la leche entra por su
+	// DÉFICIT (nombre y unidad heredados del producto) y el pimentón por su
+	// snapshot entero (sin producto de quien heredar).
+	const items = await prisma.item.findMany({
+		where: { listId: lista.id },
+		orderBy: { order: 'asc' }
+	});
+	expect(items.map((row) => [row.name, Number(row.quantity), row.unit])).toEqual([
+		['Leche', 0.5, 'liter'],
+		['Pimentón', 1, 'unit']
+	]);
 });
 
 test('el filtro busca por nombre en cliente, avisa sin resultados y se limpia', async ({

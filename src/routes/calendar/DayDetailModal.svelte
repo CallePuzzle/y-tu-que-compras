@@ -3,13 +3,11 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { Modal } from '@callepuzzle/svelte-ui';
+	import IngredientStatusRow from '#lib/components/IngredientStatusRow.svelte';
 	import { errorMessage } from '#lib/forms.js';
-	import { formatQuantity } from '#lib/format.js';
 	import { mealTypeLabels } from '#lib/meal-types.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { getLocale } from '#lib/paraglide/runtime.js';
 	import { dayPantryStatus } from '#lib/pantry-status.js';
-	import { unitLabels } from '#lib/units.js';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { dumpFormSchema } from './schemas.js';
@@ -76,7 +74,6 @@
 		onDumpSuccess
 	}: Props = $props();
 
-	const UNIT_LABEL = unitLabels();
 	const MEAL_LABEL = mealTypeLabels();
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
@@ -221,61 +218,26 @@
 
 						{#if meal.ingredients.length > 0}
 							<!-- Ingredientes etiquetados (#221): cantidad con los
-							     separadores de la locale (`formatQuantity`, igual que
-							     la despensa) y unidad traducida (`unit_*`), como el
-							     enum nunca se muestra tal cual. El badge de despensa
-							     (#244) consulta el agregado del día por el producto
-							     del ingrediente — los sin FK caen en «falta» — y el
-							     déficit se formatea con la unidad DEL INGREDIENTE
-							     (mismo producto es misma unidad: el guardado enlaza
-							     por nombre normalizado + unidad). -->
+							     separadores de la locale y unidad traducida, badge
+							     de despensa (#244) y volcado individual (#245) —
+							     la fila la pinta el componente COMPARTIDO con el
+							     detalle de receta (issue #290). El estado es el
+							     agregado del día por producto (`dayPantryStatus`)
+							     y el destino, la lista del formulario de abajo. -->
 							<div class="flex flex-col gap-1">
 								<p class="fieldset-label">{m.meal_plan_ingredients()}</p>
 								<ul class="flex flex-col gap-1">
 									{#each meal.ingredients as ingredient (ingredient.id)}
 										{@const status = pantryStatuses.get(ingredient.pantryItemId)}
-										<li class="flex items-baseline gap-2 text-sm">
-											<span class="shrink-0 font-mono text-xs opacity-80">
-												{formatQuantity(ingredient.quantity, getLocale())}
-												{UNIT_LABEL[ingredient.unit]}
-											</span>
-											<span>{ingredient.name}</span>
-											{#if status?.status === 'enough'}
-												<span class="badge badge-success badge-sm ms-auto shrink-0">
-													{m.meal_status_enough()}
-												</span>
-											{:else if status?.status === 'short'}
-												<span class="badge badge-warning badge-sm ms-auto shrink-0">
-													{m.meal_status_short({
-														quantity: formatQuantity(status.deficit, getLocale()),
-														unit: UNIT_LABEL[ingredient.unit]
-													})}
-												</span>
-											{:else}
-												<span class="badge badge-error badge-sm ms-auto shrink-0">
-													{m.meal_status_missing()}
-												</span>
-											{/if}
-											<!-- Volcado individual (#245): lo que falta de SU
-											     producto para el día entero (el déficit
-											     agregado que enseña el badge), a la lista
-											     del formulario de abajo — lo envía con
-											     `form=` desde fuera de él. Sin producto
-											     cubierto (`enough`) no hay nada que
-											     añadir: deshabilitado, como sin listas. -->
-											<button
-												type="submit"
-												form="calendar-dump"
-												name="ingredientId"
-												value={ingredient.id}
-												class="btn btn-ghost btn-xs shrink-0"
-												aria-label={m.calendar_dump_ingredient_aria({ name: ingredient.name })}
-												disabled={status?.status === 'enough' || lists.length === 0 || $dumpDelayed}
-												onclick={() => (dumpTarget = ingredient.id)}
-											>
-												{m.calendar_dump_ingredient()}
-											</button>
-										</li>
+										<IngredientStatusRow
+											{ingredient}
+											{status}
+											dumpFormId="calendar-dump"
+											dumpDisabled={status?.status === 'enough' ||
+												lists.length === 0 ||
+												$dumpDelayed}
+											onDump={() => (dumpTarget = ingredient.id)}
+										/>
 									{/each}
 								</ul>
 							</div>
