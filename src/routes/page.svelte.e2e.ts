@@ -27,6 +27,40 @@ test('sin sesion, la portada muestra la landing publica (#133)', async ({ page }
 	await expect(cta).toHaveAttribute('href', '/login');
 });
 
+test('sin sesion, el boton de instalar la app solo sale con beforeinstallprompt (#291)', async ({
+	page
+}) => {
+	// Viewport de teléfono: el botón vive junto al CTA del hero y ahí es
+	// donde se comprueba que no desborda.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/');
+	await waitForHydration(page);
+
+	const installButton = page.getByRole('main').getByRole('button', { name: 'Instalar aplicación' });
+
+	// Chromium desktop no despacha `beforeinstallprompt` en `vite dev` (no es
+	// instalable ahí): sin evento, sin botón.
+	await expect(installButton).toHaveCount(0);
+
+	// Evento sintético como el que dispararía el navegador al considerar la
+	// app instalable: el botón aparece junto al CTA.
+	await page.evaluate(() => {
+		const event = new Event('beforeinstallprompt');
+		Object.assign(event, {
+			prompt: () => Promise.resolve(),
+			userChoice: Promise.resolve({ outcome: 'accepted', platform: 'chromium' })
+		});
+		window.dispatchEvent(event);
+	});
+	await expect(installButton).toBeVisible();
+
+	// Sin desbordar: dentro del ancho del viewport.
+	const box = await installButton.boundingBox();
+	expect(box).not.toBeNull();
+	expect(box?.x).toBeGreaterThanOrEqual(0);
+	expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+});
+
 test('con sesion, la portada es el home con saludo y accesos (#161)', async ({ page }) => {
 	await resetDb();
 	const user = await createUser({ name: 'Ana' });

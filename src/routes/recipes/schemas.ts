@@ -1,3 +1,4 @@
+import { z } from 'zod/v4';
 import { m } from '#lib/paraglide/messages.js';
 import { recipeSchema, recipeUpdateSchema } from '#lib/schemas/recipe.js';
 import { mealPlanWithRecipeSchema } from '../calendar/schemas.js';
@@ -68,4 +69,22 @@ export function recipeUpdateFormSchema() {
  */
 export function recipeMealPlanFormSchema() {
 	return mealPlanWithRecipeSchema();
+}
+
+/**
+ * El contrato del volcado a la compra (issue #290): lo que falta de la
+ * receta — entera o de UN ingrediente — a la lista elegida en el detalle.
+ * El mismo trazado que el `dumpFormSchema` del calendario (#245) sin el día,
+ * que aquí no existe: la receta viaja como id (la FK la resuelve el
+ * SERVIDOR, `dumpRecipeToList`) y la lista como id (el select del detalle).
+ * El `recipeId` va en `$form` (input oculto: también hay camino sin JS) y
+ * el `ingredientId` lo fija el botón pulsado (envío nativo con `form=`
+ * desde fuera del formulario; con JS lo inyecta `onSubmit` en el JSON).
+ */
+export function recipeDumpFormSchema() {
+	return z.object({
+		recipeId: z.string(m.recipe_gone()).min(1, m.recipe_gone()),
+		listId: z.string(m.schema_readd_list_error()).min(1, m.schema_readd_list_error()),
+		ingredientId: z.string().optional()
+	});
 }

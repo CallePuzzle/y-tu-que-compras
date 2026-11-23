@@ -13,6 +13,7 @@
 	import Users from '@lucide/svelte/icons/users';
 	import { m } from '#lib/paraglide/messages.js';
 	import logo from '#lib/assets/logo.webp';
+	import InstallAppButton from '#lib/components/InstallAppButton.svelte';
 
 	// La landing sólo se pinta SIN sesión (la portada bifurca por `data.user`,
 	// issue #160): el CTA manda siempre a crear cuenta/acceder, sin mirar quién
@@ -95,10 +96,15 @@
 			<img src={logo} alt="" class="mx-auto mb-4 size-24 object-contain" />
 			<h1 class="text-5xl font-bold">{m.app_brand()}</h1>
 			<p class="py-6">{m.app_tagline()}</p>
-			<a href={ctaHref} class="btn btn-primary">
-				<ShoppingBasket aria-hidden="true" />
-				{m.landing_cta_login()}
-			</a>
+			<!-- El acceso manda; instalar es el secundario (`btn-outline`), como
+			     en la referencia. Solo en el hero: el CTA final no lo repite. -->
+			<div class="flex flex-wrap items-center justify-center gap-3">
+				<a href={ctaHref} class="btn btn-primary">
+					<ShoppingBasket aria-hidden="true" />
+					{m.landing_cta_login()}
+				</a>
+				<InstallAppButton />
+			</div>
 		</div>
 	</div>
 </section>

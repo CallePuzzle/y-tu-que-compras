@@ -1,12 +1,15 @@
 import { fail } from '@sveltejs/kit';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import { message, superValidate } from 'sveltekit-superforms/server';
-import { APP_TIME_ZONE } from '#lib/format.js';
+import { APP_TIME_ZONE, formatQuantity } from '#lib/format.js';
 import { m } from '#lib/paraglide/messages.js';
+import { getLocale } from '#lib/paraglide/runtime.js';
 import { requireActiveFamily } from '#lib/server/family-context.js';
+import { dumpRecipeToList } from '#lib/server/dump.js';
 import logger from '#lib/server/logger.js';
 import { MealPlanExistsError, createMealPlan } from '#lib/server/mealplans.js';
 import { listPantryItems } from '#lib/server/pantry.js';
+import { listLists } from '#lib/server/lists.js';
 import {
 	RecipeExistsError,
 	createRecipe,
@@ -15,8 +18,14 @@ import {
 	updateRecipe
 } from '#lib/server/recipes.js';
 import { listProductNameSuggestions } from '#lib/server/suggestions.js';
+import { unitLabels } from '#lib/units.js';
 import { dateKeyOf } from '../calendar/grid.js';
-import { recipeFormSchema, recipeMealPlanFormSchema, recipeUpdateFormSchema } from './schemas.js';
+import {
+	recipeFormSchema,
+	recipeMealPlanFormSchema,
+	recipeUpdateFormSchema,
+	recipeDumpFormSchema
+} from './schemas.js';
 import type { Actions, PageServerLoad } from './$types';
 
 // La vista de recetas de la familia activa (épica #232, tarea #239): el load
@@ -57,6 +66,16 @@ const EMPTY_MENU_PLAN = {
 };
 
 /**
+ * El modal de detalle (issue #290) lleva SU formulario de volcado, con id
+ * propio para que el resultado de su acción no pise al de crear/editar ni al
+ * de asignar (patrón `DUMP_FORM_ID` del calendario).
+ */
+const DUMP_FORM_ID = 'dump-recipe';
+
+/** Valores iniciales del volcado: la receta y la lista los fija el detalle al abrirse. */
+const EMPTY_DUMP = { recipeId: '', listId: '' } as const;
+
+/**
  * El id de receta que viaja en el formulario de borrar (input hidden del
  * ConfirmModal): `null` si falta o es basura, como `mealPlanIdOf` del
  * calendario.
@@ -82,15 +101,27 @@ export const load: PageServerLoad = async (event) => {
 	// DOS veces con unidades distintas (un producto por fila de despensa): el
 	// modal se queda con el primero y el aviso de unidad conflictiva es la
 	// tarea #240.
-	const pantryItems = (await listPantryItems(family.id)).map(({ id, name, unit }) => ({
+	const pantryRows = await listPantryItems(family.id);
+	const pantryItems = pantryRows.map(({ id, name, unit }) => ({
 		id,
 		name,
 		unit
 	}));
 
+	// El estado de despensa del detalle de receta (issue #290): el mapa
+	// id → cantidad es el payload mínimo que necesita el cálculo puro
+	// (`pantry-status.ts`) — nombre y unidad no viajan aquí, que ya van
+	// snapshotados en cada ingrediente de la receta, y la cantidad es lo
+	// único que la despensa añade.
+	const pantryQuantities = Object.fromEntries(pantryRows.map(({ id, quantity }) => [id, quantity]));
+
 	return {
 		recipes,
 		pantryItems,
+		pantryQuantities,
+		// Las listas de la familia: el destino del volcado del detalle (#290),
+		// el mismo selector que el detalle del día del calendario (#245).
+		lists: await listLists(family.id),
 		// Los nombres que la familia ya conoce (#284): despensa, items de sus
 		// listas e ingredientes de recetas, uno por canónico. Son el `datalist`
 		// de ingredientes del modal de crear/editar y lo que hereda la fila al
@@ -102,7 +133,10 @@ export const load: PageServerLoad = async (event) => {
 		// del modal de asignar al menú (#242).
 		todayKey: dateKeyOf(new Date(), APP_TIME_ZONE),
 		form: await superValidate(EMPTY_RECIPE, zod4(recipeFormSchema())),
-		menuForm: await superValidate(EMPTY_MENU_PLAN, zod4(recipeMealPlanFormSchema()))
+		menuForm: await superValidate(EMPTY_MENU_PLAN, zod4(recipeMealPlanFormSchema())),
+		dumpForm: await superValidate(EMPTY_DUMP, zod4(recipeDumpFormSchema()), {
+			id: DUMP_FORM_ID
+		})
 	};
 };
 
@@ -233,5 +267,56 @@ export const actions: Actions = {
 		}
 
 		return { success: true };
+	},
+
+	// Volcar lo que falta a la compra (issue #290): la receta entera o UN
+	// ingrediente, a la lista elegida en el detalle. El body llega como
+	// FormData (sin JS) o como el JSON troceado de `dataType: 'json'` —
+	// `superValidate(request, …)` lo junta solo, como en crear/editar/asignar.
+	// Lo que falta lo recalcula SIEMPRE el servidor dentro de la transacción
+	// (`dumpRecipeToList`, el tronco de escritura del volcado del día): al
+	// cliente no se le confía cantidad alguna. Déficit 0 sale como el mensaje
+	// «no falta nada», sin escritura; un id rancio (lista, receta o
+	// ingrediente borrados con el detalle abierto) sale como 404 controlado
+	// (issue #110).
+	dump: async (event) => {
+		const family = requireActiveFamily(event);
+		const form = await superValidate(event.request, zod4(recipeDumpFormSchema()), {
+			id: DUMP_FORM_ID
+		});
+		if (!form.valid) {
+			return fail(400, { dumpForm: form });
+		}
+
+		try {
+			const result = await dumpRecipeToList(family.id, form.data);
+			if (result.outcome === 'nothing') {
+				return message(form, m.recipe_dump_nothing());
+			}
+			if (result.outcome === 'list-gone') {
+				return message(form, m.lists_gone(), { status: 404 });
+			}
+			if (result.outcome === 'recipe-gone') {
+				return message(form, m.recipe_gone(), { status: 404 });
+			}
+			if (result.outcome === 'ingredient-gone') {
+				return message(form, m.recipe_dump_gone(), { status: 404 });
+			}
+
+			// La confirmación lista lo añadido: cantidades con los separadores
+			// de la locale de la petición y unidades traducidas (regla i18n) —
+			// el mensaje se compone EN SERVIDOR, como el resto de textos.
+			const locale = getLocale();
+			const unitLabel = unitLabels();
+			const items = result.items
+				.map(
+					(item) => `${item.name} ${formatQuantity(item.quantity, locale)} ${unitLabel[item.unit]}`
+				)
+				.join(', ');
+			return message(form, m.calendar_dump_success({ items }));
+		} catch (error) {
+			logger.error({ err: error }, 'Error al volcar lo que falta a la lista');
+			return message(form, m.calendar_dump_error(), { status: 500 });
+		}
 	}
 };

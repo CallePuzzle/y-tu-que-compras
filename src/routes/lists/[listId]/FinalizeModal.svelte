@@ -34,10 +34,42 @@
 
 	let modal: { showModal(): void; close(): void } | undefined = $state();
 
+	// La confirmación de cerrar la compra SIN establecimiento (#293): el
+	// option vacío puede ser un olvido, así que el primer envío sin tienda se
+	// corta y se pregunta INLINE en este modal (sin segundo dialog apilado ni
+	// confirm() nativo, y sin los problemas de foco/z-index que traería).
+	// `confirmPending` mantiene la alerta visible; `storeConfirmed` deja pasar
+	// el reenvío de «Sí». La puerta es puramente de UI: el servidor sigue
+	// aceptando la compra sin tienda — igual que sin JS.
+	let confirmPending = $state(false);
+	let storeConfirmed = $state(false);
+	let confirmYes: HTMLButtonElement | undefined = $state();
+	let storeSelect: HTMLSelectElement | undefined = $state();
+
+	$effect(() => {
+		// La pregunta ya se anuncia por `role="alert"`; el foco aterriza en el
+		// botón de «Sí» para que responder sea un Enter.
+		if (confirmPending) confirmYes?.focus();
+	});
+
 	// svelte-ignore state_referenced_locally
 	const finalizeForm = superForm(form, {
 		validators: zod4Client(purchaseFormSchema()),
 		invalidateAll: 'pessimistic',
+		// El hook corre ANTES de la validación en cliente, así que aquí se
+		// decide la pregunta (#293): con tienda elegida o con el «Sí» ya dado,
+		// el envío pasa tal cual. Sin tienda, solo se corta si el resto del
+		// formulario (el total) ya es válido — si no, no se cancela y zod
+		// enseña sus errores de siempre: el confirm solo sale cuando la compra
+		// podría cerrarse de verdad. El `submit()` de «Sí» re-entra por aquí
+		// con el flag puesto, y esta vez deja pasar.
+		async onSubmit({ cancel }) {
+			if (storeConfirmed || $formData.storeId) return;
+			const validated = await finalizeForm.validateForm();
+			if (!validated.valid) return;
+			cancel();
+			confirmPending = true;
+		},
 		onResult({ result }) {
 			if (result.type === 'success') {
 				// El texto concreto lo decide la acción y viaja en el resultado
@@ -55,6 +87,11 @@
 	export function open() {
 		message.set(undefined);
 		errors.clear();
+		// La pregunta sin establecimiento también empieza de cero en cada
+		// apertura (#293): ni la alerta ni el «Sí» dado antes de cancelar se
+		// arrastran a la siguiente compra.
+		confirmPending = false;
+		storeConfirmed = false;
 		// El 0 que trae el formulario del load es el default del schema, no un
 		// total real: el campo empieza vacío para que el total no se confirme
 		// sin mirar. El cast es el mismo truco que en la edición: undefined no
@@ -63,6 +100,19 @@
 		// cancelar no se arrastra a la siguiente compra.
 		formData.set({ total: undefined as unknown as number, storeId: '' });
 		modal?.showModal();
+	}
+
+	/** «Sí, finalizar sin establecimiento»: deja pasar el envío y cierra. */
+	function confirmWithoutStore() {
+		confirmPending = false;
+		storeConfirmed = true;
+		finalizeForm.submit();
+	}
+
+	/** «No, elegir establecimiento»: retira la pregunta y foco al select. */
+	function pickStore() {
+		confirmPending = false;
+		storeSelect?.focus();
 	}
 </script>
 
@@ -130,11 +180,15 @@
 		     modal. -->
 		<div class="flex flex-col gap-1">
 			<label class="fieldset-label" for="finalize-store">{m.schema_purchase_store_label()}</label>
+			<!-- Cambiar el establecimiento retira la pregunta sola (#293): si hay
+			     tienda elegida ya no hay nada que confirmar. -->
 			<select
 				bind:value={$formData.storeId}
+				bind:this={storeSelect}
 				id="finalize-store"
 				name="storeId"
 				class="select w-full"
+				onchange={() => (confirmPending = false)}
 			>
 				<option value="">{m.purchases_store_none()}</option>
 				{#each stores as store (store.id)}
@@ -142,6 +196,37 @@
 				{/each}
 			</select>
 		</div>
+
+		<!-- La pregunta del cierre sin establecimiento (#293), en el mismo
+		     modal: `role="alert"` la anuncia y los dos botones resuelven sin
+		     apilar otro dialog. El foco la recibe el botón de «Sí» (efecto).
+		     Los botones van APILADOS en estrecho (un `btn` no encoge: una fila
+		     con los dos desbordaría la alerta) y en fila a la derecha en
+		     pantallas anchas, como el pie del modal. -->
+		{#if confirmPending}
+			<div class="alert alert-warning text-sm" role="alert">
+				<div class="flex w-full min-w-0 flex-col gap-2">
+					<span>{m.purchases_store_confirm_message()}</span>
+					<!-- Los dos botones SIEMPRE apilados y a lo ancho: juntos no
+					     caben en una fila ni en el ancho del modal (un `btn` no
+					     encoge ni parte el texto). «Sí» primero en DOM y arriba,
+					     igual que el foco que recibe. -->
+					<div class="flex flex-col gap-2">
+						<button
+							bind:this={confirmYes}
+							type="button"
+							class="btn btn-sm"
+							onclick={confirmWithoutStore}
+						>
+							{m.purchases_store_confirm_yes()}
+						</button>
+						<button type="button" class="btn btn-ghost btn-sm" onclick={pickStore}>
+							{m.purchases_store_confirm_no()}
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Los fallos del action (lista ajena, otro miembro se llevó los
 		     comprados, error de servidor) se cuentan aquí dentro. -->
