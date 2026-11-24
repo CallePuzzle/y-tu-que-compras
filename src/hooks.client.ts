@@ -1,3 +1,7 @@
+// El `beforeinstallprompt` es de un solo uso por página y puede llegar antes
+// de que cargue el chunk de la ruta: capturarlo en el entry, el punto más
+// temprano del cliente, garantiza no perderlo (issue #291).
+import '#lib/utils/install-prompt.svelte.js';
 import { baseLocale, overwriteGetLocale, toLocale } from '#lib/paraglide/runtime.js';
 
 // En el cliente la locale es SIEMPRE la que resolvió el SSR (cookie o

@@ -14,6 +14,11 @@ import InstallAppButton from './InstallAppButton.svelte';
 
 const BUTTON_NAME = 'Instalar aplicación';
 const IOS_TITLE = 'Instalar en tu iPhone o iPad';
+const ANDROID_TITLE = 'Instalar en tu Android';
+
+/** UA de Android (Chrome en un Pixel), para el modo de reserva sin evento. */
+const ANDROID_UA =
+	'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 
 /**
  * Evento `beforeinstallprompt` sintético, como el que el navegador despacha
@@ -110,5 +115,37 @@ describe('InstallAppButton', () => {
 
 		window.dispatchEvent(new Event('appinstalled'));
 		await expect.poll(() => getByRole('button', { name: BUTTON_NAME }).elements().length).toBe(0);
+	});
+
+	it('en Android sin evento, el botón sale igual y el click abre instrucciones', async () => {
+		// Chrome en Android no siempre dispara `beforeinstallprompt` con la app
+		// instalable (engagement, cooldown por descartar el banner de antes,
+		// in-app browsers, Firefox…): el botón de reserva debe verse igual.
+		stubNavigator('userAgent', ANDROID_UA);
+		const { getByRole, getByText } = await render(InstallAppButton);
+
+		await expect.element(getByRole('button', { name: BUTTON_NAME })).toBeVisible();
+		await getByRole('button', { name: BUTTON_NAME }).click();
+
+		await expect.element(getByRole('heading', { name: ANDROID_TITLE })).toBeVisible();
+		await expect
+			.element(
+				getByText(
+					'Abre el menú del navegador (⋮) y elige «Instalar aplicación» o «Añadir a pantalla de inicio».'
+				)
+			)
+			.toBeVisible();
+	});
+
+	it('en Android con evento, el click lanza el prompt nativo', async () => {
+		stubNavigator('userAgent', ANDROID_UA);
+		const { getByRole } = await render(InstallAppButton);
+
+		const event = syntheticPromptEvent();
+		window.dispatchEvent(event);
+		await expect.element(getByRole('button', { name: BUTTON_NAME })).toBeVisible();
+
+		await getByRole('button', { name: BUTTON_NAME }).click();
+		expect(event.prompt).toHaveBeenCalledTimes(1);
 	});
 });
