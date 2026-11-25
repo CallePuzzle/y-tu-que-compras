@@ -283,9 +283,13 @@ export type ReaddOutcome =
  *
  * Si en la lista ya hay un item PENDIENTE equivalente (mismo nombre
  * normalizado y misma unidad), la cantidad se SUMA sobre él — los comprados
- * no se tocan: ya se compraron — y su nombre escrito se conserva. Si no lo
- * hay, se crea uno nuevo al final de la lista con el nombre canónico de la
- * despensa (el de la primera compra), que es el que la familia reconoce.
+ * no se tocan: ya se compraron — y su nombre y su categoría escritos se
+ * conservan. Si no lo hay, se crea uno nuevo al final de la lista con el
+ * nombre canónico de la despensa (el de la primera compra), que es el que la
+ * familia reconoce, y HEREDA SU CATEGORÍA (issue #302, mismo criterio que el
+ * volcado de `dump.ts`): el item nace agrupado donde la familia ya tiene el
+ * producto, y si la categoría vive en la FK con SetNull — una categoría
+ * borrada ya dejó el producto sin ella.
  */
 export async function readdPantryItem(
 	familyId: string,
@@ -311,10 +315,11 @@ export async function readdPantryItem(
 		const listId = list[0].id;
 
 		// Producto ajeno o ya consumido por otro miembro mientras se abría el
-		// modal: «no existe», sin revelar si vive en otra familia.
+		// modal: «no existe», sin revelar si vive en otra familia. La
+		// categoría viaja con él: el item nuevo la hereda (#302).
 		const product = await tx.pantryItem.findFirst({
 			where: { id: pantryItemId, organizationId: familyId },
-			select: { id: true, name: true, normalizedName: true, unit: true }
+			select: { id: true, name: true, normalizedName: true, unit: true, categoryId: true }
 		});
 		if (!product) {
 			return 'pantry-gone';
@@ -343,7 +348,8 @@ export async function readdPantryItem(
 
 		if (total.count === 0) {
 			// El `order` lo calcula el SERVIDOR, como en `createItem`: al final
-			// de la lista.
+			// de la lista. La categoría la hereda del producto de despensa
+			// (#302): nace agrupada donde la familia ya lo tiene.
 			const { _max } = await tx.item.aggregate({
 				where: { listId: listId },
 				_max: { order: true }
@@ -354,6 +360,7 @@ export async function readdPantryItem(
 					name: product.name,
 					quantity: data.quantity,
 					unit: product.unit,
+					categoryId: product.categoryId,
 					order: (_max.order ?? -1) + 1
 				}
 			});
