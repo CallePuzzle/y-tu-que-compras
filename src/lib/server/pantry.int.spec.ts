@@ -528,6 +528,73 @@ describe('Re-añadir a la compra (#74)', () => {
 		expect(Number(rows[1].quantity)).toBe(2);
 	});
 
+	it('el item nuevo hereda la categoría del producto de despensa (#302)', async () => {
+		const familyId = await familyRow('Familia Recategorizada');
+		const list = await createList(familyId, LIST);
+		const dairy = await createCategory(familyId, { name: 'Lácteos' });
+		const product = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+		await prisma.pantryItem.update({
+			where: { id: product.id },
+			data: { categoryId: dairy.id }
+		});
+
+		await expect(
+			readdPantryItem(familyId, product.id, { ...READD_BASE, listId: list.id, quantity: 1 })
+		).resolves.toBe('added');
+
+		const rows = await prisma.item.findMany({ where: { listId: list.id } });
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ name: 'Leche entera', categoryId: dairy.id });
+	});
+
+	it('el item creado de un producto SIN categoría nace sin categoría', async () => {
+		const familyId = await familyRow('Familia Sin Categorias');
+		const list = await createList(familyId, LIST);
+		const product = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+
+		await expect(
+			readdPantryItem(familyId, product.id, { ...READD_BASE, listId: list.id, quantity: 1 })
+		).resolves.toBe('added');
+
+		const rows = await prisma.item.findMany({ where: { listId: list.id } });
+		expect(rows).toHaveLength(1);
+		expect(rows[0].categoryId).toBeNull();
+	});
+
+	it('al sumar sobre el pendiente equivalente, su categoría escrita se conserva', async () => {
+		const familyId = await familyRow('Familia Que Suma');
+		const list = await createList(familyId, LIST);
+		const dairy = await createCategory(familyId, { name: 'Lácteos' });
+		const drinks = await createCategory(familyId, { name: 'Bebidas' });
+		const product = await pantryRow(familyId, 'Leche entera', 2, 'liter');
+		await prisma.pantryItem.update({
+			where: { id: product.id },
+			data: { categoryId: dairy.id }
+		});
+		// El pendiente equivalente ya tiene SU categoría: la suma no la toca,
+		// como tampoco toca su nombre escrito.
+		const pending = await prisma.item.create({
+			data: {
+				listId: list.id,
+				name: 'leche ENTERA',
+				quantity: 0.5,
+				unit: 'liter',
+				categoryId: drinks.id,
+				order: 0
+			}
+		});
+
+		await expect(
+			readdPantryItem(familyId, product.id, { ...READD_BASE, listId: list.id, quantity: 1 })
+		).resolves.toBe('added');
+
+		const rows = await prisma.item.findMany({ where: { listId: list.id } });
+		expect(rows).toHaveLength(1);
+		expect(rows[0].id).toBe(pending.id);
+		expect(rows[0].categoryId).toBe(drinks.id);
+		expect(Number(rows[0].quantity)).toBe(1.5);
+	});
+
 	it('suma la cantidad sobre el pendiente equivalente (mismo nombre normalizado y unidad)', async () => {
 		const familyId = await familyRow('Familia Sumadora');
 		const list = await createList(familyId, LIST);
