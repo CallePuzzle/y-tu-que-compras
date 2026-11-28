@@ -71,6 +71,43 @@ export async function listPantryItems(familyId: string): Promise<PantryItemView[
 }
 
 /**
+ * Los ids de los productos de despensa con un equivalente PENDIENTE en alguna
+ * lista de la familia (issue #304): es el flag que tiñe de gris el botón de
+ * re-añadir de la despensa — «esto ya está apuntado para comprar».
+ *
+ * La equivalencia es por nombre CANÓNICO: el item de lista no guarda columna
+ * canónica, así que su nombre visible se normaliza aquí con el mismo
+ * `normalizeItemName` del re-añadido y se compara contra el `normalizedName`
+ * guardado del producto. Sin exigencia de unidad — a diferencia del
+ * re-añadido, que la pide para SUMAR cantidades —: lo que se comunica es «el
+ * producto ya está en una lista», y que lo apuntasen en gramos con la
+ * despensa en kilos no lo hace menos añadido. Los items ya COMPRADOS no
+ * cuentan: se compraron, no queda pendiente ir a por ellos, y el botón
+ * vuelve a verde.
+ */
+export async function pantryIdsInAnyList(familyId: string): Promise<Set<string>> {
+	// Dos consultas baratas en paralelo: los canónicos de la despensa y los
+	// nombres de los pendientes de todas las listas de la familia. Sin listas
+	// la segunda vuelve vacía y el conjunto sale vacío — sin excepción que
+	// gestiona la vista.
+	const [products, pending] = await Promise.all([
+		prisma.pantryItem.findMany({
+			where: { organizationId: familyId },
+			select: { id: true, normalizedName: true }
+		}),
+		prisma.item.findMany({
+			where: { purchased: false, list: { organizationId: familyId } },
+			select: { name: true }
+		})
+	]);
+
+	const pendingNames = new Set(pending.map((row) => normalizeItemName(row.name)));
+	return new Set(
+		products.filter((row) => pendingNames.has(row.normalizedName)).map((row) => row.id)
+	);
+}
+
+/**
  * Consume (−) o devuelve (+) UN paso del producto en la despensa (issue #73).
  * El paso lo fija el SERVIDOR con `UNIT_STEP` según la unidad guardada: lo
  * que viaja en el formulario es solo el id y el signo, nunca una cantidad.

@@ -13,6 +13,7 @@ import prisma from './prisma.js';
 import {
 	adjustPantryItem,
 	listPantryItems,
+	pantryIdsInAnyList,
 	removePantryItem,
 	readdPantryItem,
 	setPantryItemCategory,
@@ -97,6 +98,63 @@ describe('Consulta de despensa por familia (#72)', () => {
 	it('una familia sin despensa devuelve una lista vacía', async () => {
 		const familyId = await familyRow('Familia Vacía');
 		await expect(listPantryItems(familyId)).resolves.toEqual([]);
+	});
+});
+
+describe('Flag «ya está en alguna lista» (#304)', () => {
+	it('una familia sin pendientes devuelve un conjunto vacío', async () => {
+		const familyId = await familyRow('Familia Sin Pendientes');
+		await pantryRow(familyId, 'Leche entera', 1, 'liter');
+		await expect(pantryIdsInAnyList(familyId)).resolves.toEqual(new Set());
+	});
+
+	it('cuenta el equivalente pendiente en cualquier lista, aunque la unidad difiera', async () => {
+		const familyId = await familyRow('Familia Apuntada');
+		const leche = await pantryRow(familyId, 'Leche entera', 1, 'liter');
+		const pan = await pantryRow(familyId, 'Pan', 1, 'unit');
+		const list = await createList(familyId, LIST);
+		// La despensa la tiene en litros; el pendiente está apuntado en gramos
+		// y escrito a su manera: por nombre canónico sigue contando (#304).
+		await createItem(familyId, list.id, { name: 'LECHE ENTERA', quantity: 500, unit: 'gram' });
+
+		const ids = await pantryIdsInAnyList(familyId);
+		expect(ids.has(leche.id)).toBe(true);
+		expect(ids.has(pan.id)).toBe(false);
+	});
+
+	it('los comprados no cuentan: comprado es «ya no está pendiente»', async () => {
+		const familyId = await familyRow('Familia Comprada');
+		await pantryRow(familyId, 'Leche entera', 1, 'liter');
+		const list = await createList(familyId, LIST);
+		// Un comprado en la lista (sembrado directo: lo que deja el toggle).
+		await prisma.item.create({
+			data: {
+				listId: list.id,
+				name: 'Leche entera',
+				quantity: 1,
+				unit: 'liter',
+				purchased: true,
+				order: 0
+			}
+		});
+
+		await expect(pantryIdsInAnyList(familyId)).resolves.toEqual(new Set());
+	});
+
+	it('los pendientes de otra familia no cuentan', async () => {
+		const ownFamily = await familyRow('Familia Propia 304');
+		const otherFamily = await familyRow('Familia Ajena 304');
+		// El producto vive en la propia, pero su único equivalente pendiente
+		// está en la lista de la ajena: como si no existiera (#66).
+		await pantryRow(ownFamily, 'Leche entera', 1, 'liter');
+		const otherList = await createList(otherFamily, LIST);
+		await createItem(otherFamily, otherList.id, {
+			name: 'Leche entera',
+			quantity: 1,
+			unit: 'liter'
+		});
+
+		await expect(pantryIdsInAnyList(ownFamily)).resolves.toEqual(new Set());
 	});
 });
 

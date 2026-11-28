@@ -271,6 +271,7 @@
 	"pantry_readd": "Re-add to shopping list",
 	"pantry_readd_title": "Re-add «{name}»",
 	"pantry_readd_description": "Pick the destination list and the quantity.",
+	"pantry_readd_in_list": "Already on a shopping list",
 	"pantry_readd_quantity_label": "Quantity for the list",
 	"pantry_readd_no_lists": "This family has no lists yet: create one to re-add items.",
 	"pantry_readd_success": "Added to the shopping list.",

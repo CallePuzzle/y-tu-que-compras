@@ -271,6 +271,7 @@
 	"pantry_readd": "Re-añadir a la compra",
 	"pantry_readd_title": "Re-añadir «{name}»",
 	"pantry_readd_description": "Elige la lista de destino y la cantidad.",
+	"pantry_readd_in_list": "Ya está en una lista de compra",
 	"pantry_readd_quantity_label": "Cantidad para la lista",
 	"pantry_readd_no_lists": "Esta familia no tiene listas: crea una para poder re-añadir.",
 	"pantry_readd_success": "Añadido a la lista de la compra.",
