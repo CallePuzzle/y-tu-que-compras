@@ -586,11 +586,16 @@
 						</button>
 						<!-- Re-añadir a la compra (checklist #74): abre el modal con el
 						     selector de lista y la cantidad. En un agotado es EL botón:
-						     la memoria de «esto se compra» lista para volver. -->
+						     la memoria de «esto se compra» lista para volver. Verde
+						     mientras el producto no tiene equivalente pendiente en
+						     ninguna lista (#304) y gris cuando ya lo tiene — «esto ya
+						     está apuntado» —, sin dejar de ser clickable: la lista
+						     destino se elige en el modal y puede ser otra. El
+						     aria-label conserva la acción; el title explica el estado. -->
 						<button
 							type="button"
-							class="btn btn-ghost btn-sm"
-							title={m.pantry_readd()}
+							class={`btn btn-ghost btn-sm ${item.inList ? 'text-base-content opacity-40' : 'text-success'}`}
+							title={item.inList ? m.pantry_readd_in_list() : m.pantry_readd()}
 							aria-label={m.pantry_readd()}
 							onclick={() => openReadd(item)}
 						>

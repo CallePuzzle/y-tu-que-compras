@@ -355,6 +355,56 @@ test('re-añadir suma sobre el pendiente equivalente de la lista (#74)', async (
 	await expect(page.locator('section li')).toHaveCount(1);
 });
 
+test('el botón de re-añadir pinta verde y pasa a gris si el producto ya está en una lista (#304)', async ({
+	page
+}) => {
+	const user = await createUser();
+	const family = await createFamily({ owner: user });
+	const list = await createList({ familyId: family.id, name: 'Super' });
+	await createPantryItem({ familyId: family.id, name: 'Leche entera', quantity: 1, unit: 'liter' });
+	await createPantryItem({ familyId: family.id, name: 'Pan', quantity: 1, unit: 'unit' });
+	// «Leche entera» ya espera en la lista — apuntada en gramos y a su
+	// manera: aquí manda el nombre canónico. «Pan» no está en ninguna.
+	const pendiente = await createItem({
+		listId: list.id,
+		name: 'LECHE ENTERA',
+		quantity: 500,
+		unit: 'gram'
+	});
+	await seedSession(page, user);
+
+	await page.goto('/pantry');
+	await waitForHydration(page);
+
+	const leche = page
+		.locator('li', { hasText: 'Leche entera' })
+		.getByRole('button', { name: 'Re-añadir a la compra' });
+	const pan = page
+		.locator('li', { hasText: 'Pan' })
+		.getByRole('button', { name: 'Re-añadir a la compra' });
+
+	// Con equivalente pendiente: gris, con el title que lo explica; sin él,
+	// verde con el title de la acción.
+	await expect(leche).not.toHaveClass(/text-success/);
+	await expect(leche).toHaveAttribute('title', 'Ya está en una lista de compra');
+	await expect(pan).toHaveClass(/text-success/);
+	await expect(pan).toHaveAttribute('title', 'Re-añadir a la compra');
+
+	// Re-añadir «Pan» por la UI: al aterrizar el refresco pesimista, pasa a gris.
+	await pan.click();
+	const dialog = page.locator('dialog[open]');
+	await dialog.getByRole('button', { name: 'Re-añadir a la compra' }).click();
+	await expect(page.getByRole('status')).toContainText('Añadido a la lista de la compra.');
+	await expect(pan).not.toHaveClass(/text-success/);
+
+	// Y comprado el pendiente (el toggle de la lista), «Leche entera» vuelve
+	// a verde: comprado es «ya no está pendiente».
+	await prisma.item.update({ where: { id: pendiente.id }, data: { purchased: true } });
+	await page.reload();
+	await waitForHydration(page);
+	await expect(leche).toHaveClass(/text-success/);
+});
+
 test('sin listas el modal explica que hay que crear una (#74)', async ({ page }) => {
 	const user = await createUser();
 	const family = await createFamily({ owner: user });

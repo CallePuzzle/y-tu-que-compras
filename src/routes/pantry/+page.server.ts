@@ -9,6 +9,7 @@ import { listLists } from '#lib/server/lists.js';
 import {
 	adjustPantryItem,
 	listPantryItems,
+	pantryIdsInAnyList,
 	removePantryItem,
 	readdPantryItem,
 	setPantryItemCategory,
@@ -27,7 +28,9 @@ import type { Actions, PageServerLoad } from './$types';
 // la membresía — es el que filtra la query. Con las categorías (#176), el
 // load trae también las de la familia y la acción `recategorize` cambia la de
 // un producto: escritura para cualquier miembro (issue #111), sin checks de
-// rol — igual que consumir o re-añadir.
+// rol — igual que consumir o re-añadir. El load marca además (#304) qué
+// productos tienen ya un equivalente pendiente en alguna lista: es el flag
+// que tiñe de gris su botón de re-añadir.
 
 // Los schemas se construyen EN REQUEST, nunca en scope de módulo (regla i18n
 // de la librería): los textos de Paraglide se resuelven con la locale de la
@@ -68,8 +71,14 @@ const EMPTY_EDIT = { name: '', quantity: 1, unit: 'unit' } as const;
 
 export const load: PageServerLoad = async (event) => {
 	const family = requireActiveFamily(event);
+	const items = await listPantryItems(family.id);
+	// El flag «ya está en alguna lista» (#304): tiñe de gris el botón de
+	// re-añadir de cada fila. Los ids vienen en un Set para que la marca sea
+	// O(1) por producto; se reparte aquí para que la vista solo lea
+	// `item.inList`.
+	const inAnyList = await pantryIdsInAnyList(family.id);
 	return {
-		items: await listPantryItems(family.id),
+		items: items.map((item) => ({ ...item, inList: inAnyList.has(item.id) })),
 		// Las categorías de la familia (#176): dan a la vista sus secciones (en
 		// su orden: posición, y por creación para desempatar) y al modal de
 		// recategorización sus opciones.
