@@ -61,6 +61,39 @@ test('sin sesion, el boton de instalar la app solo sale con beforeinstallprompt 
 	expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
 });
 
+test('sin sesion en Android, el boton de instalar sale sin beforeinstallprompt (#291)', async ({
+	page
+}) => {
+	// Chrome en Android no siempre dispara el evento con la app instalable
+	// (engagement del perfil, cooldown por descartar el banner de antes,
+	// navegadores in-app, Firefox…): el botón de reserva debe verse igual y
+	// el click abrir las instrucciones del menú del navegador.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator, 'userAgent', {
+			value:
+				'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+			configurable: true
+		});
+	});
+	await page.goto('/');
+	await waitForHydration(page);
+
+	const installButton = page.getByRole('main').getByRole('button', { name: 'Instalar aplicación' });
+
+	// Sin evento sintético esta vez: el fallback de Android basta.
+	await expect(installButton).toBeVisible();
+
+	await installButton.click();
+	await expect(page.getByRole('heading', { name: 'Instalar en tu Android' })).toBeVisible();
+
+	// Sin desbordar, igual que el camino con evento.
+	const box = await installButton.boundingBox();
+	expect(box).not.toBeNull();
+	expect(box?.x).toBeGreaterThanOrEqual(0);
+	expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+});
+
 test('con sesion, la portada es el home con saludo y accesos (#161)', async ({ page }) => {
 	await resetDb();
 	const user = await createUser({ name: 'Ana' });
